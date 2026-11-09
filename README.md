@@ -88,6 +88,19 @@ to the job log sheet, which the page shows.
 
    Each person approves the app's Drive access the first time they open it.
 
+## Supported files
+
+| Format | Extensions | What is read |
+|---|---|---|
+| TMX | `.tmx`, `.xml` | The source-language side of each translation unit |
+| XLIFF 1.2 and 2.x | `.xlf`, `.xliff`, `.xml` | The `<source>` of each unit; targets, TM matches and units marked "do not translate" are ignored |
+| memoQ XLIFF | `.mqxliff` | As XLIFF |
+| memoQ compressed export | `.mqxlz` | The `.mqxliff` inside the package (memoQ's *Export bilingual → memoQ XLIFF* with "Save a compressed file" ticked) |
+| Plain text | `.txt`, `.md` | Split into sentences |
+
+`.xml` files are recognised as TMX or XLIFF from their content. Formatting codes such as `{}` or `<b>` are removed, so they never become terms.
+An XLIFF file that declares a different source language from the job's is skipped, and the job's results note says so. TMX files are only read on the job's language side anyway.
+
 ## How it behaves
 
 - **Folders are checked twice, from both sides.**
@@ -95,7 +108,7 @@ to the job log sheet, which the page shows.
   - It then asks n8n to check its account's access. If n8n can't use the folder, the page names the account to share it with.
   - Both checks run again on submit.
 - **Source files** come from one of two places:
-  - an existing Drive folder: every `.tmx .xml .txt .md` file directly inside it, with no size limit;
+  - an existing Drive folder: every supported file directly inside it, with no size limit;
   - uploads (25 MB per file, 20 files), which go into a new job folder in the working folder.
 - **Results** go to a folder you choose (you need edit access) or to a new job folder. File names include the job ID, so nothing is overwritten.
 - **Several jobs can run at once.** Each is independent, and failures are matched to their log row by the n8n execution ID.

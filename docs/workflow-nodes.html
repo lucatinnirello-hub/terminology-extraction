@@ -258,7 +258,7 @@
 </tr><tr data-setup="0" data-google="0" data-stops="1" data-name="check job files">
   <td class="num">17</td>
   <td class="node"><span class="nm">Check job files</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Keeps .tmx, .xml, .txt and .md files. Skips PDFs, Word files and Google Docs, and counts them for the results note.<div class="stops"><span class="stop-label">Can stop the job</span> No usable files in the folder</div></td>
+  <td class="what">Keeps TMX, XLIFF (including memoQ .mqxliff and .mqxlz), .txt and .md files. Skips PDFs, Word files and Google Docs, and counts them for the results note.<div class="stops"><span class="stop-label">Can stop the job</span> No usable files in the folder</div></td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="1" data-google="1" data-stops="0" data-name="download job files">
   <td class="num">18</td>
@@ -268,7 +268,7 @@
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="normalise drive files">
   <td class="num">19</td>
   <td class="node"><span class="nm">Normalise Drive files</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Works out each file's encoding (UTF-8, or UTF-16 as MemoQ often exports TMX) and decodes it. Labels each file as TMX or plain text.</td>
+  <td class="what">Opens memoQ .mqxlz packages (they are ZIP files) and takes the .mqxliff inside. Works out each file's encoding (UTF-8, or UTF-16 as memoQ often exports) and decodes it. Labels each file as TMX, XLIFF or plain text, looking inside .xml files to tell TMX from XLIFF.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="1" data-name="documents in">
   <td class="num">20</td>
@@ -286,7 +286,7 @@
     <tbody><tr data-setup="0" data-google="0" data-stops="0" data-name="stage 1 statistical extraction">
   <td class="num">21</td>
   <td class="node"><span class="nm">Stage 1 statistical extraction</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Takes the source-language side of each TMX unit (or sentences from text), removes duplicate segments, and scores every 1–4 word phrase with YAKE's features. Then merges near-duplicates, drops sub-phrases that rarely appear on their own, and keeps the top N terms with example segments.</td>
+  <td class="what">Takes the source-language side of each TMX unit, the source text of each XLIFF unit (skipping TM matches and units marked do-not-translate), or sentences from text. Skips XLIFF files in a different source language. Removes duplicate segments, and scores every 1–4 word phrase with YAKE's features. Then merges near-duplicates, drops sub-phrases that rarely appear on their own, and keeps the top N terms with example segments.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="1" data-name="stage 1 rows">
   <td class="num">22</td>

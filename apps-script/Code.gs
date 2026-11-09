@@ -42,7 +42,8 @@ const HEADERS = [
 const MAX_FILE_MB = 25;              // per uploaded file; google.script.run payload limit
 const MAX_FILES_PER_JOB = 20;
 const MAX_FOLDER_SCAN = 500;         // files listed per source folder
-const ALLOWED_EXTENSIONS = ['tmx', 'xml', 'txt', 'md'];
+// TMX, XLIFF (incl. memoQ .mqxliff and compressed .mqxlz exports) and plain text.
+const ALLOWED_EXTENSIONS = ['tmx', 'xml', 'xlf', 'xliff', 'mqxliff', 'mqxlz', 'txt', 'md'];
 const STALE_MINUTES = 45;            // 'running' for longer than this probably stopped
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
