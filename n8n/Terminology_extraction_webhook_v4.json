@@ -108,18 +108,32 @@
     },
     {
       "parameters": {
-        "jsCode": "// ===========================================================================\n// STAGE 2 — lemmatisation and part-of-speech filtering.  *** STUB ***\n//\n// Passes stage 1's output straight through so the workflow runs end to end.\n//\n// The real version must:\n//   1. Group inflected forms (\"valve\" / \"valves\") and SUM their occurrences\n//      and segment counts, so the metrics stay correct.\n//   2. Drop verb phrases (\"inspected annually\" is the classic example).\n//   3. Set `lemma` and `pos_filtered` on each term.\n//\n// It must return the same shape: { stage, log, terms, rows }.\n// ===========================================================================\n\n// Reads stage 1 by name: its direct input is now the stage 1 spreadsheet.\nconst input = $('Stage 1 statistical extraction').first().json;\n\nconst terms = input.terms.map((t) => ({ ...t, lemma: null, pos_filtered: false }));\n\nreturn [\n  {\n    json: {\n      ...input,\n      stage: 'stage_2_nlp_stub',\n      log: {\n        ...input.log,\n        stage_2: {\n          status: 'stub — no lemmatisation or POS filtering applied',\n          terms_in: input.terms.length,\n          terms_out: terms.length,\n          merged_by_lemma: 0,\n          dropped_by_pos: 0,\n        },\n      },\n      terms,\n    },\n  },\n];\n"
+        "jsCode": "// n8n Code node: \"Stage 2 input\"\n// Paste this whole file into that node, replacing everything in it.\n// (Copy of the code in Terminology_extraction_webhook_v4.json.)\n\n// Hands stage 1's terms and the job's language to \"Stage 2 NLP\" as one item.\n// That node is Python, and Python Code nodes only read their own input, not\n// other nodes by name. Its direct input here would be the stage 1 spreadsheet.\nconst settings = $('Settings').first().json;\nreturn [{\n  json: {\n    stage1: $('Stage 1 statistical extraction').first().json,\n    source_lang: settings.source_lang,\n    include_examples: settings.include_examples,\n  },\n}];\n"
       },
-      "id": "64c85828-05cc-44e6-a0a6-63dc33566ed5",
-      "name": "Stage 2 NLP stub",
+      "id": "404eac7b-8b04-4ba2-9d02-23028170209a",
+      "name": "Stage 2 input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         -9856,
         2608
+      ]
+    },
+    {
+      "parameters": {
+        "language": "pythonNative",
+        "pythonCode": "# n8n Code node: \"Stage 2 NLP\"\n# Language: Python. Mode: Run Once for All Items.\n# Paste this whole file into that node, replacing everything in it.\n# (Copy of the code in Terminology_extraction_webhook_v4.json.)\n#\n# ===========================================================================\n# STAGE 2: lemmatisation and part-of-speech filtering, with spaCy.\n#\n# Runs after the JavaScript stage 1 and refines its candidates:\n#   1. Drops candidates that aren't term-shaped: no noun at all\n#      (\"inspected annually\"), a finite verb or auxiliary inside, or a\n#      leading verb (\"replace filter\").\n#   2. Groups inflected forms (\"valve\" / \"valves\") under one lemma and adds\n#      up their occurrences and segment counts.\n#   3. Sets `lemma`, `pos` and `pos_filtered` on each term. `lemma` is the\n#      group's singular form as found in the corpus (\"valve\" for \"valves\"),\n#      or, if only plurals occur, the term with its nouns lemmatised.\n#\n# Each term is tagged where it occurs in one of its example segments, so\n# spaCy sees the sentence around it. Without a match it tags the term alone.\n#\n# Needs the custom runner image in n8n/runners/ (spaCy plus the models).\n# If the job's language has no model installed, terms pass through\n# unchanged and the run manifest's stage_2.status says why.\n#\n# Input: one item from \"Stage 2 input\" ({ stage1, source_lang, include_examples }).\n# Output: stage 1's shape, { stage, log, terms, rows, ... }.\n# Uses only spaCy: the runner allows no standard-library modules by default.\n# ===========================================================================\n\nimport spacy\n\n# --- EDITABLE: spaCy model per language -------------------------------------\n# Keys are the stopword-list codes the page sends ('no' is Norwegian Bokmål).\n# Every model listed here must also be installed in the runner image\n# (SPACY_MODELS in n8n/runners/Dockerfile). Languages with no spaCy model\n# (cz, sk, hu, et, lv, tr, id...) pass through unchanged.\nMODELS = {\n    \"en\": \"en_core_web_sm\",\n    \"de\": \"de_core_news_sm\",\n    \"fr\": \"fr_core_news_sm\",\n    \"es\": \"es_core_news_sm\",\n    \"it\": \"it_core_news_sm\",\n    \"pt\": \"pt_core_news_sm\",\n    \"nl\": \"nl_core_news_sm\",\n    \"da\": \"da_core_news_sm\",\n    \"sv\": \"sv_core_news_sm\",\n    \"no\": \"nb_core_news_sm\",\n    \"fi\": \"fi_core_news_sm\",\n    \"pl\": \"pl_core_news_sm\",\n    \"ro\": \"ro_core_news_sm\",\n    \"hr\": \"hr_core_news_sm\",\n    \"lt\": \"lt_core_news_sm\",\n    \"sl\": \"sl_core_news_sm\",\n}\n\n# Example segments tagged per term, to find the term in context.\nEXAMPLES_TO_TAG = 3\n\n# Verb forms allowed inside a term, as modifiers: participles (\"laminated\n# glass\", \"vetro laminato\") and gerunds (\"cutting tool\").\nMODIFIER_VERB_FORMS = (\"Part\", \"Ger\")\n# ---------------------------------------------------------------------------\n\ndata = _items[0][\"json\"]\nstage1 = data[\"stage1\"]\nlang = str(data.get(\"source_lang\") or \"\").lower()\nkeep_examples = data.get(\"include_examples\")\nif keep_examples is None:\n    keep_examples = 3\nterms_in = stage1.get(\"terms\") or []\n\n\ndef to_rows(terms):\n    # Same columns as stage 1's rows.\n    rows = []\n    for t in terms:\n        rows.append({\n            \"rank\": t[\"rank\"],\n            \"term\": t[\"term\"],\n            \"word_count\": t[\"word_count\"],\n            \"yake_score\": t[\"yake_score\"],\n            \"occurrences\": t[\"occurrences\"],\n            \"segments\": t[\"segments\"],\n            \"source_types\": \" | \".join(t.get(\"source_types\") or []),\n            \"merged_variants\": \" | \".join(t.get(\"merged_variants\") or []),\n            \"examples\": \" | \".join(t.get(\"examples\") or []),\n            \"definition\": \"\",\n            \"translation\": \"\",\n        })\n    return rows\n\n\ndef finish(terms, stage_2_log):\n    stage_2_log[\"terms_in\"] = len(terms_in)\n    stage_2_log[\"terms_out\"] = len(terms)\n    log = dict(stage1.get(\"log\") or {})\n    log[\"stage_2\"] = stage_2_log\n    out = dict(stage1)\n    out[\"stage\"] = \"stage_2_nlp\"\n    out[\"log\"] = log\n    out[\"terms\"] = terms\n    out[\"rows\"] = to_rows(terms)\n    return [{\"json\": out}]\n\n\ndef pass_through(status):\n    terms = []\n    for t in terms_in:\n        t = dict(t)\n        t[\"lemma\"] = None\n        t[\"pos\"] = None\n        t[\"pos_filtered\"] = False\n        terms.append(t)\n    return finish(terms, {\n        \"status\": status,\n        \"model\": None,\n        \"merged_by_lemma\": 0,\n        \"dropped_by_pos\": 0,\n        \"dropped\": [],\n    })\n\n\ndef is_word_char(ch):\n    return ch.isalnum() or ch == \"_\"\n\n\ndef find_in(text, term):\n    # Character offsets of `term` in `text`, case-insensitive, whole words only.\n    hay = text.lower()\n    needle = term.lower()\n    start = hay.find(needle)\n    while start != -1:\n        end = start + len(needle)\n        before_ok = start == 0 or not is_word_char(hay[start - 1])\n        after_ok = end == len(hay) or not is_word_char(hay[end])\n        if before_ok and after_ok:\n            return start, end\n        start = hay.find(needle, start + 1)\n    return None\n\n\ndef verb_forms(token):\n    return token.morph.get(\"VerbForm\")\n\n\ndef verdict(span):\n    # None if the span is term-shaped, otherwise the reason to drop it.\n    tokens = [t for t in span if not t.is_punct and not t.is_space]\n    if not tokens:\n        return \"no words\"\n    if not any(t.pos_ in (\"NOUN\", \"PROPN\") for t in tokens):\n        return \"no noun\"\n    for t in tokens:\n        if t.pos_ == \"AUX\":\n            return \"auxiliary verb '\" + t.text + \"'\"\n        if t.pos_ == \"VERB\" and \"Fin\" in verb_forms(t):\n            return \"finite verb '\" + t.text + \"'\"\n    first = tokens[0]\n    if first.pos_ == \"VERB\" and not any(f in verb_forms(first) for f in MODIFIER_VERB_FORMS):\n        return \"starts with verb '\" + first.text + \"'\"\n    return None\n\n\ndef lemma_key(span):\n    # Every word lemmatised: the key that groups inflected forms.\n    return \" \".join((t.lemma_ or t.text).lower() for t in span if not t.is_space)\n\n\ndef is_singular(span):\n    return not any(\"Plur\" in t.morph.get(\"Number\") for t in span if t.pos_ in (\"NOUN\", \"PROPN\"))\n\n\ndef nouns_lemmatised(span, term):\n    # Fallback citation form when only plural forms were found: nouns\n    # lemmatised, other words as written. Lemmatising every word mangles\n    # terms (\"cutting tools\" -> \"cut tool\"; adjectives lose agreement in\n    # German and Romance languages).\n    text = \"\"\n    for t in span:\n        word = (t.lemma_ or t.text) if t.pos_ in (\"NOUN\", \"PROPN\") else t.text\n        text += word + t.whitespace_\n    text = text.strip()\n    # The span keeps the example's casing (\"Cutting\" at a sentence start);\n    # follow the term's own instead.\n    return text.lower() if term == term.lower() else text\n\n\n# ---- load the model --------------------------------------------------------\nmodel_name = MODELS.get(lang)\nif not model_name:\n    return pass_through(\"No spaCy model configured for language '\" + lang + \"'; terms passed through unchanged.\")\nif not spacy.util.is_package(model_name):\n    return pass_through(\"spaCy model \" + model_name + \" is not installed in the runner image; terms passed through unchanged.\")\n\nnlp = spacy.load(model_name)\nunused = [p for p in (\"parser\", \"ner\") if p in nlp.pipe_names]\nif unused:\n    nlp.select_pipes(disable=unused)\n\n# ---- tag every example segment once ----------------------------------------\ntexts = []\nseen = {}\nfor t in terms_in:\n    for ex in (t.get(\"examples\") or [])[:EXAMPLES_TO_TAG]:\n        if ex not in seen:\n            seen[ex] = len(texts)\n            texts.append(ex)\ndocs = list(nlp.pipe(texts, batch_size=64))\n\n# Terms with no usable example are tagged on their own, in one batch.\nbare_needed = []\nspans = []\nfor t in terms_in:\n    span = None\n    for ex in (t.get(\"examples\") or [])[:EXAMPLES_TO_TAG]:\n        hit = find_in(ex, t[\"term\"])\n        if hit:\n            span = docs[seen[ex]].char_span(hit[0], hit[1], alignment_mode=\"expand\")\n            if span is not None and len(span):\n                break\n            span = None\n    spans.append(span)\n    if span is None:\n        bare_needed.append(t[\"term\"])\n\nbare = {}\nfor term, doc in zip(bare_needed, nlp.pipe(bare_needed, batch_size=256)):\n    bare[term] = doc[:]\n\n# ---- filter, then group by lemma -------------------------------------------\n# Stage 1's terms arrive best first, so the first form of each lemma is\n# the one that stays; the others become its merged variants.\ngroups = {}\norder = []\ndropped = []\ntagged_in_context = 0\nfor t, span in zip(terms_in, spans):\n    if span is None:\n        span = bare[t[\"term\"]]\n    else:\n        tagged_in_context += 1\n    pos = \" \".join(tok.pos_ for tok in span)\n    reason = verdict(span)\n    if reason:\n        dropped.append({\"term\": t[\"term\"], \"pos\": pos, \"reason\": reason})\n        continue\n\n    key = lemma_key(span)\n    singular = is_singular(span)\n    host = groups.get(key)\n    if host is None:\n        t = dict(t)\n        t[\"lemma\"] = t[\"term\"] if singular else nouns_lemmatised(span, t[\"term\"])\n        t[\"lemma_from_corpus\"] = singular\n        t[\"pos\"] = pos\n        t[\"pos_filtered\"] = True\n        t[\"merged_variants\"] = list(t.get(\"merged_variants\") or [])\n        t[\"examples\"] = list(t.get(\"examples\") or [])\n        groups[key] = t\n        order.append(key)\n        continue\n\n    # Counts are added up. A segment holding both forms counts twice, so\n    # `segments` is an upper bound for merged terms.\n    host[\"occurrences\"] += t[\"occurrences\"]\n    host[\"segments\"] += t[\"segments\"]\n    host[\"source_types\"] = sorted(set(host.get(\"source_types\") or []) | set(t.get(\"source_types\") or []))\n    host[\"sources\"] = sorted(set(host.get(\"sources\") or []) | set(t.get(\"sources\") or []))\n    if singular and not host[\"lemma_from_corpus\"]:\n        host[\"lemma\"] = t[\"term\"]\n        host[\"lemma_from_corpus\"] = True\n    host[\"merged_variants\"].append(\"(lemma) \" + t[\"term\"])\n    host[\"merged_variants\"].extend(t.get(\"merged_variants\") or [])\n    for ex in t.get(\"examples\") or []:\n        if len(host[\"examples\"]) < keep_examples and ex not in host[\"examples\"]:\n            host[\"examples\"].append(ex)\n\nterms = []\nfor i, key in enumerate(order):\n    t = groups[key]\n    t.pop(\"lemma_from_corpus\")\n    t[\"rank\"] = i + 1\n    terms.append(t)\n\nreturn finish(terms, {\n    \"status\": \"Lemmatised and POS-filtered with spaCy.\",\n    \"model\": model_name + \" \" + str(nlp.meta.get(\"version\") or \"\"),\n    \"tagged_in_context\": tagged_in_context,\n    \"tagged_alone\": len(terms_in) - tagged_in_context,\n    \"merged_by_lemma\": len(terms_in) - len(dropped) - len(terms),\n    \"dropped_by_pos\": len(dropped),\n    \"dropped\": dropped,\n})\n"
+      },
+      "id": "64c85828-05cc-44e6-a0a6-63dc33566ed5",
+      "name": "Stage 2 NLP",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -9632,
+        2608
       ],
       "notesInFlow": true,
-      "notes": "STUB — replace when NLP exists"
+      "notes": "Python + spaCy: needs the runner image in n8n/runners/"
     },
     {
       "parameters": {
@@ -130,7 +144,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -9632,
+        -9408,
         2608
       ],
       "notesInFlow": true,
@@ -165,20 +179,20 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -9408,
+        -9184,
         2608
       ]
     },
     {
       "parameters": {
-        "jsCode": "const stage = $('Stage 2 NLP stub').first().json;\nconst terms = stage.terms || [];\nif (!terms.length) throw new Error('Stage 2 returned no terms.');\nreturn terms.map((t) => ({ json: t }));\n"
+        "jsCode": "const stage = $('Stage 2 NLP').first().json;\nconst terms = stage.terms || [];\nif (!terms.length) throw new Error('Stage 2 returned no terms.');\nreturn terms.map((t) => ({ json: t }));\n"
       },
       "id": "5333242f-0b74-4198-a6a9-0b554a0ad912",
       "name": "Terms to items",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -9184,
+        -8960,
         2448
       ]
     },
@@ -192,7 +206,7 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        -8960,
+        -8736,
         2448
       ]
     },
@@ -205,7 +219,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -8736,
+        -8512,
         2288
       ]
     },
@@ -238,7 +252,7 @@
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1,
       "position": [
-        -8512,
+        -8288,
         2288
       ],
       "id": "5a24f530-c664-4d17-96ed-d67f098ad8e9"
@@ -252,7 +266,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -8288,
+        -8064,
         2288
       ]
     },
@@ -265,7 +279,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -8736,
+        -8512,
         2704
       ]
     },
@@ -282,20 +296,20 @@
       "type": "n8n-nodes-base.convertToFile",
       "typeVersion": 1.1,
       "position": [
-        -8512,
+        -8288,
         2704
       ]
     },
     {
       "parameters": {
-        "jsCode": "// The run record, plus the three output files ready for upload: one item per\n// file, each with its binary in 'data'. Keep the manifest with the glossary:\n// it is what lets someone reproduce or question a result later.\nconst stage = $('Stage 2 NLP stub').first().json;\nconst gate = $('Check restricted list').first().json.gate || {};\nconst settings = $('Settings').first().json;\nconst finalRows = $('Final rows').all().map((i) => i.json);\n\nconst manifest = {\n  run_at: new Date().toISOString(),\n  job_id: settings.job_id,\n  submitted_by: settings.submitted_by,\n  client: settings.client || '',\n  source_lang: settings.source_lang,\n  tmx_lang: settings.tmx_lang,\n  language_used: stage.language,\n  stopwords: stage.stopwords,\n  settings_used: settings,\n  input_files: $('Documents in').all().map((i) => i.json.file_name),\n  coverage: {\n    files_seen: stage.log.files_seen,\n    files_parsed: stage.log.files_parsed,\n    by_source_type: stage.log.by_source_type,\n    segments: stage.log.segments_total,\n    skipped: stage.log.skipped,\n    unsupported_in_folder: ($('Check job files').first().json.skipped_in_folder || 0),\n  },\n  extraction: {\n    candidates_before_filter: stage.log.candidates_before_filter,\n    merges: stage.log.merges,\n    suppressed_subphrases: stage.log.suppressed_subphrases,\n    dropped_below_min_segments: stage.log.dropped_below_min_segments,\n    terms_returned: stage.log.terms_returned,\n  },\n  stage_2: stage.log.stage_2,\n  ai_stage: {\n    requested: gate.requested || false,\n    approved: gate.approved || false,\n    restricted: gate.restricted || false,\n    ran: gate.may_run_ai || false,\n    note: gate.reason || '',\n    terms_with_parse_errors: finalRows.filter((r) => r.ai_error).length,\n  },\n};\n\nconst safe = (s) => String(s || '').replace(/[^\\w.\\-]+/g, '_').slice(0, 60);\nconst base = `${safe(settings.client)}_${settings.source_lang}_${settings.job_id}`;\n\nconst glossary = ($('Final spreadsheet').first().binary || {}).data;\nconst stage1 = ($('Stage 1 spreadsheet').first().binary || {}).data;\nif (!glossary || !stage1) throw new Error('A spreadsheet node produced no file.');\n\nconst manifestFile = await this.helpers.prepareBinaryData(\n  Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'),\n  `run_manifest_${base}.json`,\n  'application/json',\n);\n\nreturn [\n  { json: { kind: 'glossary', fileName: `glossary_${base}.xlsx`, manifest }, binary: { data: glossary } },\n  { json: { kind: 'stage1', fileName: `stage1_candidates_${base}.xlsx` }, binary: { data: stage1 } },\n  { json: { kind: 'manifest', fileName: `run_manifest_${base}.json` }, binary: { data: manifestFile } },\n];\n"
+        "jsCode": "// The run record, plus the three output files ready for upload: one item per\n// file, each with its binary in 'data'. Keep the manifest with the glossary:\n// it is what lets someone reproduce or question a result later.\nconst stage = $('Stage 2 NLP').first().json;\nconst gate = $('Check restricted list').first().json.gate || {};\nconst settings = $('Settings').first().json;\nconst finalRows = $('Final rows').all().map((i) => i.json);\n\nconst manifest = {\n  run_at: new Date().toISOString(),\n  job_id: settings.job_id,\n  submitted_by: settings.submitted_by,\n  client: settings.client || '',\n  source_lang: settings.source_lang,\n  tmx_lang: settings.tmx_lang,\n  language_used: stage.language,\n  stopwords: stage.stopwords,\n  settings_used: settings,\n  input_files: $('Documents in').all().map((i) => i.json.file_name),\n  coverage: {\n    files_seen: stage.log.files_seen,\n    files_parsed: stage.log.files_parsed,\n    by_source_type: stage.log.by_source_type,\n    segments: stage.log.segments_total,\n    skipped: stage.log.skipped,\n    unsupported_in_folder: ($('Check job files').first().json.skipped_in_folder || 0),\n  },\n  extraction: {\n    candidates_before_filter: stage.log.candidates_before_filter,\n    merges: stage.log.merges,\n    suppressed_subphrases: stage.log.suppressed_subphrases,\n    dropped_below_min_segments: stage.log.dropped_below_min_segments,\n    terms_returned: stage.log.terms_returned,\n  },\n  stage_2: stage.log.stage_2,\n  ai_stage: {\n    requested: gate.requested || false,\n    approved: gate.approved || false,\n    restricted: gate.restricted || false,\n    ran: gate.may_run_ai || false,\n    note: gate.reason || '',\n    terms_with_parse_errors: finalRows.filter((r) => r.ai_error).length,\n  },\n};\n\nconst safe = (s) => String(s || '').replace(/[^\\w.\\-]+/g, '_').slice(0, 60);\nconst base = `${safe(settings.client)}_${settings.source_lang}_${settings.job_id}`;\n\nconst glossary = ($('Final spreadsheet').first().binary || {}).data;\nconst stage1 = ($('Stage 1 spreadsheet').first().binary || {}).data;\nif (!glossary || !stage1) throw new Error('A spreadsheet node produced no file.');\n\nconst manifestFile = await this.helpers.prepareBinaryData(\n  Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'),\n  `run_manifest_${base}.json`,\n  'application/json',\n);\n\nreturn [\n  { json: { kind: 'glossary', fileName: `glossary_${base}.xlsx`, manifest }, binary: { data: glossary } },\n  { json: { kind: 'stage1', fileName: `stage1_candidates_${base}.xlsx` }, binary: { data: stage1 } },\n  { json: { kind: 'manifest', fileName: `run_manifest_${base}.json` }, binary: { data: manifestFile } },\n];\n"
       },
       "id": "4bae6e1e-b4d5-4cc8-a6be-8e1073568b7c",
       "name": "Run manifest",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -8288,
+        -8064,
         2704
       ],
       "notesInFlow": true,
@@ -303,14 +317,14 @@
     },
     {
       "parameters": {
-        "jsCode": "// AI stage did not run (the gate reason goes into the run manifest and the\n// Jobs sheet). Same items as \"Terms to items\", without AI columns.\nconst stage = $('Stage 2 NLP stub').first().json;\nconst terms = stage.terms || [];\nif (!terms.length) throw new Error('Stage 2 returned no terms.');\nreturn terms.map((t) => ({ json: t }));\n"
+        "jsCode": "// AI stage did not run (the gate reason goes into the run manifest and the\n// Jobs sheet). Same items as \"Terms to items\", without AI columns.\nconst stage = $('Stage 2 NLP').first().json;\nconst terms = stage.terms || [];\nif (!terms.length) throw new Error('Stage 2 returned no terms.');\nreturn terms.map((t) => ({ json: t }));\n"
       },
       "id": "e36ba8b6-f908-41c9-93f6-035a89e8b3d9",
       "name": "Terms to items (no AI)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -9184,
+        -8960,
         2704
       ]
     },
@@ -392,7 +406,7 @@
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
       "position": [
-        -8064,
+        -7840,
         2704
       ],
       "id": "f4eff4e4-bf24-43e7-b02c-92cfaadf80fb"
@@ -405,7 +419,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -7840,
+        -7616,
         2704
       ],
       "id": "2f2e9b8e-2f1d-4cf3-89c5-7f42c7e41700"
@@ -440,7 +454,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
       "position": [
-        -7616,
+        -7392,
         2704
       ],
       "id": "dc9e3aa5-2878-434a-989e-f717f4762cdf"
@@ -1000,18 +1014,7 @@
       "main": [
         [
           {
-            "node": "Stage 2 NLP stub",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Stage 2 NLP stub": {
-      "main": [
-        [
-          {
-            "node": "Check restricted list",
+            "node": "Stage 2 input",
             "type": "main",
             "index": 0
           }
@@ -1169,6 +1172,28 @@
         [
           {
             "node": "Mark job done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage 2 input": {
+      "main": [
+        [
+          {
+            "node": "Stage 2 NLP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage 2 NLP": {
+      "main": [
+        [
+          {
+            "node": "Check restricted list",
             "type": "main",
             "index": 0
           }
