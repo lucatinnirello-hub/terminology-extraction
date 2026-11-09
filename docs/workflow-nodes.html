@@ -1,0 +1,464 @@
+<title>Terminology Workflow Nodes</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Schibsted+Grotesk:wght@600;700&display=swap">
+<style>
+  /* Layout: a reference sheet. Stage strip as the map, then one table per
+     stage in workflow order. Colour = what the node talks to, the same key
+     as the Terminology Job Flow diagrams. */
+  :root {
+    --bg: #f2f4f3; --surface: #ffffff; --ink: #17201c; --ink-2: #3c4843; --muted: #5d6a64; --line: #c8d1cd; --band: #eef2f0;
+    --c-web: #3646a6;    --t-web: #eef0fb;
+    --c-google: #9c6200; --t-google: #fbf2e1;
+    --c-n8n: #0d6f65;    --t-n8n: #e2f2ef;
+    --c-ai: #8a3779;     --t-ai: #f7e9f3;
+    --c-bad: #b1271e;    --t-bad: #fbe9e7;
+    --c-warn: #8a5a00;   --t-warn: #fdf3dc;
+    --font-display: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+    --font-body: "IBM Plex Sans", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101513; --surface: #18201c; --ink: #e4ebe8; --ink-2: #b5c1bc; --muted: #93a19a; --line: #34413b; --band: #141b18;
+      --c-web: #93a1ff; --t-web: #1d2242; --c-google: #e6aa45; --t-google: #2d2412; --c-n8n: #52c6b7; --t-n8n: #0f2f2b;
+      --c-ai: #e48bd2; --t-ai: #33182e; --c-bad: #ff8a80; --t-bad: #3a1b19; --c-warn: #f2c35b; --t-warn: #33290f;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101513; --surface: #18201c; --ink: #e4ebe8; --ink-2: #b5c1bc; --muted: #93a19a; --line: #34413b; --band: #141b18;
+    --c-web: #93a1ff; --t-web: #1d2242; --c-google: #e6aa45; --t-google: #2d2412; --c-n8n: #52c6b7; --t-n8n: #0f2f2b;
+    --c-ai: #e48bd2; --t-ai: #33182e; --c-bad: #ff8a80; --t-bad: #3a1b19; --c-warn: #f2c35b; --t-warn: #33290f;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--ink); font: 400 15px/1.55 var(--font-body);
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 36px 64px;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 36px; }
+  header { display: grid; gap: 12px; max-width: 760px; }
+  .eyebrow { font: 500 12px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  h1 { font: 700 clamp(28px, 5vw, 42px)/1.08 var(--font-display); margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+  h2 { font: 700 20px/1.2 var(--font-display); margin: 0; }
+  p { margin: 0; max-width: 70ch; }
+  .lead { font-size: 16.5px; color: var(--ink-2); }
+  code { font: 400 .88em var(--font-mono); background: var(--band); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+
+  /* stage strip */
+  .strip { display: flex; flex-wrap: wrap; gap: 6px; }
+  .seg { display: grid; gap: 2px; padding: 10px 14px; border-radius: 10px; text-decoration: none; color: var(--ink);
+         background: var(--surface); border: 1px solid var(--line); min-width: 0; flex: 1 1 120px; }
+  .seg b { font: 600 14px/1.2 var(--font-display); }
+  .seg span { font: 400 12px var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+  .seg span::after { content: " nodes"; }
+  .seg.s-error { border-style: dashed; }
+  .seg:hover, .seg:focus-visible { border-color: var(--c-n8n); }
+  .seg:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--c-n8n); outline-offset: 2px; }
+
+  /* setup summary */
+  .setup-box { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .setup-box h2 { font-size: 17px; padding: 14px 18px 4px; }
+  .setup-box > p { padding: 0 18px 12px; color: var(--ink-2); font-size: 14px; }
+  .setup-box .table-wrap { border: none; border-top: 1px solid var(--line); border-radius: 0; }
+  .setup-box td:nth-child(2) { font-variant-numeric: tabular-nums; color: var(--muted); width: 3.5em; }
+  .setup-box td:first-child { font-weight: 600; white-space: nowrap; }
+
+  /* controls */
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; position: sticky; top: env(safe-area-inset-top, 0px);
+              background: var(--bg); padding-block: 10px; z-index: 5; border-bottom: 1px solid var(--line); }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+  .filters { display: flex; flex-wrap: wrap; gap: 6px; }
+  .filters button { font: 500 13px var(--font-body); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line);
+                    background: var(--surface); color: var(--ink-2); cursor: pointer; }
+  .filters button[aria-pressed="true"] { background: var(--t-n8n); border-color: var(--c-n8n); color: var(--c-n8n); }
+  .search { flex: 1 1 220px; min-width: 0; display: flex; }
+  .search input { width: 100%; font: 400 14px var(--font-body); padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line);
+                  background: var(--surface); color: var(--ink); }
+  .shown { font: 400 12.5px var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* stage tables */
+  .phase { display: grid; gap: 12px; scroll-margin-top: 80px; }
+  .phase[hidden] { display: none; }
+  .phase-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+  .phase-head p { color: var(--muted); font-size: 14px; flex: 1 1 260px; }
+  .count { font: 400 12px var(--font-mono); color: var(--muted); }
+  .table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  table { border-collapse: collapse; width: 100%; min-width: 760px; }
+  th, td { text-align: left; vertical-align: top; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  tbody tr:last-child td { border-bottom: none; }
+  th { font: 500 11px var(--font-mono); letter-spacing: .07em; text-transform: uppercase; color: var(--muted); background: var(--band); }
+  td.num, th.num { width: 3.2em; color: var(--muted); font: 400 12.5px var(--font-mono); font-variant-numeric: tabular-nums; }
+  td.node { width: 26%; }
+  .nm { display: block; font-weight: 600; margin-bottom: 6px; }
+  .type { display: inline-block; font: 500 11.5px/1.5 var(--font-mono); padding: 1px 8px; border-radius: 6px; border: 1px solid; }
+  .t-web { color: var(--c-web); background: var(--t-web); border-color: var(--c-web); }
+  .t-google { color: var(--c-google); background: var(--t-google); border-color: var(--c-google); }
+  .t-n8n { color: var(--c-n8n); background: var(--t-n8n); border-color: var(--c-n8n); }
+  .t-dec { color: var(--c-n8n); background: transparent; border-color: var(--c-n8n); border-style: dashed; }
+  .t-ai { color: var(--c-ai); background: var(--t-ai); border-color: var(--c-ai); }
+  .t-bad { color: var(--c-bad); background: var(--t-bad); border-color: var(--c-bad); }
+  td.what { color: var(--ink-2); font-size: 14.5px; min-width: 0; }
+  td.setup { width: 22%; }
+  .need { display: inline-block; margin: 0 4px 4px 0; font: 500 12px/1.45 var(--font-body); padding: 2px 8px; border-radius: 6px;
+          background: var(--t-warn); color: var(--c-warn); }
+  .none { color: var(--muted); font-size: 13px; }
+  .stops { margin-top: 8px; font-size: 13.5px; color: var(--c-bad); }
+  .stop-label { font: 500 10.5px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; padding: 1px 6px; border-radius: 4px;
+                background: var(--t-bad); margin-right: 4px; }
+  tr[hidden] { display: none; }
+  .empty-phase { color: var(--muted); font-size: 14px; }
+
+  .key { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 13px; color: var(--ink-2); }
+  .key span { display: inline-flex; align-items: center; gap: 6px; }
+  footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 14px; }
+  @media (max-width: 640px) { .controls { position: static; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">ICS · Terminology extraction · n8n</div>
+    <h1>Terminology Workflow Nodes</h1>
+    <p class="lead">Every node in the two n8n workflows, in the order a job passes through them: what it does, what you need to set up on it, and whether it can stop a job. Names match what you see in n8n.</p>
+    <div class="key" aria-label="Colour key">
+      <span><i class="type t-web">Web</i> talks to the page</span>
+      <span><i class="type t-google">Google</i> Drive or Sheets</span>
+      <span><i class="type t-n8n">n8n</i> works inside n8n</span>
+      <span><i class="type t-dec">Decision</i> chooses a path</span>
+      <span><i class="type t-ai">Anthropic</i> AI review</span>
+    </div>
+  </header>
+
+  <nav class="strip" aria-label="Stages"><a href="#request" class="seg s-main"><b>Request</b><span>13</span></a><a href="#prepare" class="seg s-main"><b>Prepare</b><span>2</span></a><a href="#fetch" class="seg s-main"><b>Fetch input</b><span>5</span></a><a href="#extract" class="seg s-main"><b>Extract</b><span>6</span></a><a href="#ai" class="seg s-main"><b>AI review</b><span>6</span></a><a href="#deliver" class="seg s-main"><b>Deliver</b><span>6</span></a><a href="#errors" class="seg s-error"><b>Error workflow</b><span>4</span></a></nav>
+
+  <section class="setup-box" aria-labelledby="setup-h">
+    <h2 id="setup-h">What to set on which nodes</h2>
+    <p>Everything else works as imported. The Google credentials must sign in as the same account on every node.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Setting</th><th>Nodes</th><th>Where</th></tr></thead>
+      <tbody><tr><td>Header Auth: X-Terminology-Key</td><td>1</td><td>Webhook</td></tr><tr><td>Google Drive credential</td><td>5</td><td>Get folder (as n8n), n8n account, List job files, Download job files, Upload to job folder</td></tr><tr><td>Google Sheets credential</td><td>4</td><td>Log job started, Mark job done, Read jobs sheet, Mark job failed</td></tr><tr><td>Log sheet ID</td><td>4</td><td>Log job started, Mark job done, Read jobs sheet, Mark job failed</td></tr><tr><td>Anthropic key (x-api-key)</td><td>1</td><td>AI review</td></tr><tr><td>Publish this workflow</td><td>1</td><td>Error Trigger</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <div class="controls">
+    <div class="filters" role="group" aria-label="Show">
+      <button type="button" id="f-all" data-filter="all" aria-pressed="true">All 42</button>
+      <button type="button" id="f-setup" data-filter="setup" aria-pressed="false">Needs setup</button>
+      <button type="button" id="f-google" data-filter="google" aria-pressed="false">Uses Google</button>
+      <button type="button" id="f-stops" data-filter="stops" aria-pressed="false">Can stop a job</button>
+    </div>
+    <label class="search"><span class="eyebrow" style="position:absolute;left:-9999px">Find a node</span>
+      <input id="node-search" type="search" placeholder="Find a node by name" autocomplete="off"></label>
+    <span class="shown" id="shown" aria-live="polite"></span>
+  </div>
+
+  <section class="phase" id="request" aria-labelledby="h-request">
+  <div class="phase-head"><h2 id="h-request">Request</h2><p>Answered while the page waits, in a second or two</p><span class="count">13 nodes</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th class="num">#</th><th>Node and type</th><th>What it does</th><th>Setup you do</th></tr></thead>
+    <tbody><tr data-setup="1" data-google="0" data-stops="1" data-name="webhook">
+  <td class="num">1</td>
+  <td class="node"><span class="nm">Webhook</span><span class="type t-web">Webhook</span></td>
+  <td class="what">Receives the page's request at <code>/webhook/terminology-extraction</code>, after Cloudflare has let it through. Refuses it unless the <code>X-Terminology-Key</code> header matches. Holds the connection open until one of the Reply nodes answers.<div class="stops"><span class="stop-label">Can stop the job</span> Wrong key: refused before any node runs</div></td>
+  <td class="setup"><span class="need">Header Auth: X-Terminology-Key</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="1" data-name="read request">
+  <td class="num">2</td>
+  <td class="node"><span class="nm">Read request</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Works out what the page wants: <b>check</b> folders, or <b>start</b> a job. For a job, checks the job ID, client, language, folder IDs and email, and clamps every setting to its limits. Nothing out of range gets past this point.<div class="stops"><span class="stop-label">Can stop the job</span> Anything missing or malformed: replies 400 with the reason</div></td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="request valid?">
+  <td class="num">3</td>
+  <td class="node"><span class="nm">Request valid?</span><span class="type t-dec">If</span></td>
+  <td class="what">Valid requests go on to the folder checks. Invalid ones go straight to <i>Reply: rejected</i>.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="folders to check">
+  <td class="num">4</td>
+  <td class="node"><span class="nm">Folders to check</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Turns the request into one item per folder: the source folder, the results folder, or the single folder being checked.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="1" data-google="1" data-stops="0" data-name="get folder (as n8n)">
+  <td class="num">5</td>
+  <td class="node"><span class="nm">Get folder (as n8n)</span><span class="type t-google">HTTP Request · Drive API</span></td>
+  <td class="what">Asks Google Drive, as n8n's own account, whether it can open each folder, list its files and add files to it. Never fails on "no access": it passes Drive's answer on so the next nodes can explain it.</td>
+  <td class="setup"><span class="need">Google Drive credential</span></td>
+</tr><tr data-setup="1" data-google="1" data-stops="0" data-name="n8n account">
+  <td class="num">6</td>
+  <td class="node"><span class="nm">n8n account</span><span class="type t-google">HTTP Request · Drive API</span></td>
+  <td class="what">Runs once. Fetches the email address of n8n's Google account, so messages can say exactly who to share a folder with.</td>
+  <td class="setup"><span class="need">Google Drive credential</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="access verdict">
+  <td class="num">7</td>
+  <td class="node"><span class="nm">Access verdict</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Turns Drive's answers into plain messages ("Share it with … as Editor"). Builds the reply for the page. For an accepted job, also builds its first log row, including the n8n execution ID the error workflow uses later.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="folder check only?">
+  <td class="num">8</td>
+  <td class="node"><span class="nm">Folder check only?</span><span class="type t-dec">If</span></td>
+  <td class="what">A <b>check</b> goes to <i>Reply: folder check</i> and ends there. A <b>start</b> goes on to <i>Access ok?</i></td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="1" data-name="access ok?">
+  <td class="num">9</td>
+  <td class="node"><span class="nm">Access ok?</span><span class="type t-dec">If</span></td>
+  <td class="what">If n8n can use both folders, the job is logged and accepted. If not, it goes to <i>Reply: rejected</i>.<div class="stops"><span class="stop-label">Can stop the job</span> n8n can&#x27;t use a folder: replies 403 naming the account to share with</div></td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="reply: folder check">
+  <td class="num">10</td>
+  <td class="node"><span class="nm">Reply: folder check</span><span class="type t-web">Respond to Webhook</span></td>
+  <td class="what">Answers a folder check: whether n8n can use the folder, and if not, who to share it with. The page shows this under the folder link.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="reply: rejected">
+  <td class="num">11</td>
+  <td class="node"><span class="nm">Reply: rejected</span><span class="type t-web">Respond to Webhook</span></td>
+  <td class="what">Answers 400 or 403 with the reason. The page shows it and nothing is logged or started.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="1" data-google="1" data-stops="0" data-name="log job started">
+  <td class="num">12</td>
+  <td class="node"><span class="nm">Log job started</span><span class="type t-google">Google Sheets</span></td>
+  <td class="what">Adds the job to the <b>Jobs</b> tab of the job log with status <code>running</code>, before replying, so a job the page reports as started is always in the list.</td>
+  <td class="setup"><span class="need">Google Sheets credential</span><span class="need">Log sheet ID</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="reply: accepted">
+  <td class="num">13</td>
+  <td class="node"><span class="nm">Reply: accepted</span><span class="type t-web">Respond to Webhook</span></td>
+  <td class="what">Answers 202 <i>accepted</i>. The page shows "Job … has started". The workflow keeps running after this.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr></tbody>
+  </table></div>
+  <p class="empty-phase" hidden>No nodes in this stage match.</p>
+</section>
+<section class="phase" id="prepare" aria-labelledby="h-prepare">
+  <div class="phase-head"><h2 id="h-prepare">Prepare</h2><p>After the reply; from here on, problems are written to the job log</p><span class="count">2 nodes</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th class="num">#</th><th>Node and type</th><th>What it does</th><th>Setup you do</th></tr></thead>
+    <tbody><tr data-setup="0" data-google="0" data-stops="0" data-name="settings">
+  <td class="num">14</td>
+  <td class="node"><span class="nm">Settings</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Hands the validated settings to the rest of the workflow. Later nodes read them from here by name.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="1" data-name="stopword lists">
+  <td class="num">15</td>
+  <td class="node"><span class="nm">Stopword lists</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Picks the word list for the source language (34 languages, from YAKE), plus extra boundary words and the "connector" words that may sit inside a term, such as <i>di</i> in <i>valvola di sicurezza</i>.<div class="stops"><span class="stop-label">Can stop the job</span> Language not in the list</div></td>
+  <td class="setup"><span class="none">None</span></td>
+</tr></tbody>
+  </table></div>
+  <p class="empty-phase" hidden>No nodes in this stage match.</p>
+</section>
+<section class="phase" id="fetch" aria-labelledby="h-fetch">
+  <div class="phase-head"><h2 id="h-fetch">Fetch input</h2><p>Reading the source files from Drive</p><span class="count">5 nodes</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th class="num">#</th><th>Node and type</th><th>What it does</th><th>Setup you do</th></tr></thead>
+    <tbody><tr data-setup="1" data-google="1" data-stops="0" data-name="list job files">
+  <td class="num">16</td>
+  <td class="node"><span class="nm">List job files</span><span class="type t-google">Google Drive</span></td>
+  <td class="what">Lists the files directly inside the source folder (not subfolders). Set to always output something, so an empty folder reaches the next check instead of stopping silently.</td>
+  <td class="setup"><span class="need">Google Drive credential</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="1" data-name="check job files">
+  <td class="num">17</td>
+  <td class="node"><span class="nm">Check job files</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Keeps .tmx, .xml, .txt and .md files. Skips PDFs, Word files and Google Docs, and counts them for the results note.<div class="stops"><span class="stop-label">Can stop the job</span> No usable files in the folder</div></td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="1" data-google="1" data-stops="0" data-name="download job files">
+  <td class="num">18</td>
+  <td class="node"><span class="nm">Download job files</span><span class="type t-google">Google Drive</span></td>
+  <td class="what">Downloads each usable file.</td>
+  <td class="setup"><span class="need">Google Drive credential</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="normalise drive files">
+  <td class="num">19</td>
+  <td class="node"><span class="nm">Normalise Drive files</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Works out each file's encoding (UTF-8, or UTF-16 as MemoQ often exports TMX) and decodes it. Labels each file as TMX or plain text.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="1" data-name="documents in">
+  <td class="num">20</td>
+  <td class="node"><span class="nm">Documents in</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Hand-off check before extraction: drops anything empty or unsupported.<div class="stops"><span class="stop-label">Can stop the job</span> Nothing usable left</div></td>
+  <td class="setup"><span class="none">None</span></td>
+</tr></tbody>
+  </table></div>
+  <p class="empty-phase" hidden>No nodes in this stage match.</p>
+</section>
+<section class="phase" id="extract" aria-labelledby="h-extract">
+  <div class="phase-head"><h2 id="h-extract">Extract</h2><p>Finding and scoring candidate terms</p><span class="count">6 nodes</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th class="num">#</th><th>Node and type</th><th>What it does</th><th>Setup you do</th></tr></thead>
+    <tbody><tr data-setup="0" data-google="0" data-stops="0" data-name="stage 1 statistical extraction">
+  <td class="num">21</td>
+  <td class="node"><span class="nm">Stage 1 statistical extraction</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Takes the source-language side of each TMX unit (or sentences from text), removes duplicate segments, and scores every 1–4 word phrase with YAKE's features. Then merges near-duplicates, drops sub-phrases that rarely appear on their own, and keeps the top N terms with example segments.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="1" data-name="stage 1 rows">
+  <td class="num">22</td>
+  <td class="node"><span class="nm">Stage 1 rows</span><span class="type t-n8n">Code</span></td>
+  <td class="what">One row per term for the spreadsheet.<div class="stops"><span class="stop-label">Can stop the job</span> No candidate terms (usually the wrong source language)</div></td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="stage 1 spreadsheet">
+  <td class="num">23</td>
+  <td class="node"><span class="nm">Stage 1 spreadsheet</span><span class="type t-n8n">Convert to File</span></td>
+  <td class="what">Builds <code>stage1_candidates_….xlsx</code>. Kept in memory until the upload at the end.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="stage 2 nlp stub">
+  <td class="num">24</td>
+  <td class="node"><span class="nm">Stage 2 NLP stub</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Placeholder for future lemmatising (valve / valves) and dropping verb phrases. Passes terms through unchanged for now.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="check restricted list">
+  <td class="num">25</td>
+  <td class="node"><span class="nm">Check restricted list</span><span class="type t-n8n">Code</span></td>
+  <td class="what">The compliance gate. AI review is allowed only if it was requested, client approval was ticked, and the client is not on the restricted list written into this node.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="ai review approved?">
+  <td class="num">26</td>
+  <td class="node"><span class="nm">AI review approved?</span><span class="type t-dec">If</span></td>
+  <td class="what">Allowed: terms go to the AI review. Not allowed: straight to <i>Terms to items (no AI)</i>.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr></tbody>
+  </table></div>
+  <p class="empty-phase" hidden>No nodes in this stage match.</p>
+</section>
+<section class="phase" id="ai" aria-labelledby="h-ai">
+  <div class="phase-head"><h2 id="h-ai">AI review</h2><p>Optional. Only runs when the gate allows it</p><span class="count">6 nodes</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th class="num">#</th><th>Node and type</th><th>What it does</th><th>Setup you do</th></tr></thead>
+    <tbody><tr data-setup="0" data-google="0" data-stops="0" data-name="terms to items">
+  <td class="num">27</td>
+  <td class="node"><span class="nm">Terms to items</span><span class="type t-n8n">Code</span></td>
+  <td class="what">One item per term, ready for batching.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="batch terms">
+  <td class="num">28</td>
+  <td class="node"><span class="nm">Batch terms</span><span class="type t-dec">Loop Over Items</span></td>
+  <td class="what">Sends terms on in batches of 25 and loops until all are done, then passes everything to <i>Final rows</i>.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="build ai request">
+  <td class="num">29</td>
+  <td class="node"><span class="nm">Build AI request</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Builds one request per batch: each term, its counts and 2 example segments. Never whole files. Asks for keep or drop, a reason and a one-line definition, as JSON.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="1" data-google="0" data-stops="1" data-name="ai review">
+  <td class="num">30</td>
+  <td class="node"><span class="nm">AI review</span><span class="type t-ai">HTTP Request · Anthropic</span></td>
+  <td class="what">Sends the batch to Anthropic's API.<div class="stops"><span class="stop-label">Can stop the job</span> API error or outage</div></td>
+  <td class="setup"><span class="need">Anthropic key (x-api-key)</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="parse ai response">
+  <td class="num">31</td>
+  <td class="node"><span class="nm">Parse AI response</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Adds the verdicts and definitions to the terms. If a reply can't be read, that batch is marked <code>ai_error</code> and the job carries on.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="terms to items (no ai)">
+  <td class="num">32</td>
+  <td class="node"><span class="nm">Terms to items (no AI)</span><span class="type t-n8n">Code</span></td>
+  <td class="what">The route when AI review is off or not allowed: the same terms, with the AI columns left empty.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr></tbody>
+  </table></div>
+  <p class="empty-phase" hidden>No nodes in this stage match.</p>
+</section>
+<section class="phase" id="deliver" aria-labelledby="h-deliver">
+  <div class="phase-head"><h2 id="h-deliver">Deliver</h2><p>Building, saving and recording the results</p><span class="count">6 nodes</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th class="num">#</th><th>Node and type</th><th>What it does</th><th>Setup you do</th></tr></thead>
+    <tbody><tr data-setup="0" data-google="0" data-stops="0" data-name="final rows">
+  <td class="num">33</td>
+  <td class="node"><span class="nm">Final rows</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Lays out the glossary columns: rank, term, score, counts, variants, AI verdict, definition and examples.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="final spreadsheet">
+  <td class="num">34</td>
+  <td class="node"><span class="nm">Final spreadsheet</span><span class="type t-n8n">Convert to File</span></td>
+  <td class="what">Builds the glossary <code>.xlsx</code>.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="run manifest">
+  <td class="num">35</td>
+  <td class="node"><span class="nm">Run manifest</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Writes the run record: settings, files read, segments, counts and the AI decision. Outputs the three files, named <code>…_client_language_jobID</code> so nothing is overwritten.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="1" data-google="1" data-stops="0" data-name="upload to job folder">
+  <td class="num">36</td>
+  <td class="node"><span class="nm">Upload to job folder</span><span class="type t-google">Google Drive</span></td>
+  <td class="what">Uploads the glossary, stage 1 spreadsheet and manifest to the results folder.</td>
+  <td class="setup"><span class="need">Google Drive credential</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="job done">
+  <td class="num">37</td>
+  <td class="node"><span class="nm">Job done</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Builds the log update: links to the three files, the term count, and a short note (for example "AI review skipped" or "2 other files were ignored").</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="1" data-google="1" data-stops="0" data-name="mark job done">
+  <td class="num">38</td>
+  <td class="node"><span class="nm">Mark job done</span><span class="type t-google">Google Sheets</span></td>
+  <td class="what">Updates the job's row, matched on <code>job_id</code>, to <code>done</code> with the links. The page picks this up within 15 seconds.</td>
+  <td class="setup"><span class="need">Google Sheets credential</span><span class="need">Log sheet ID</span></td>
+</tr></tbody>
+  </table></div>
+  <p class="empty-phase" hidden>No nodes in this stage match.</p>
+</section>
+<section class="phase" id="errors" aria-labelledby="h-errors">
+  <div class="phase-head"><h2 id="h-errors">Error workflow</h2><p>A separate workflow, Terminology job errors</p><span class="count">4 nodes</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th class="num">#</th><th>Node and type</th><th>What it does</th><th>Setup you do</th></tr></thead>
+    <tbody><tr data-setup="1" data-google="0" data-stops="0" data-name="error trigger">
+  <td class="num">E1</td>
+  <td class="node"><span class="nm">Error Trigger</span><span class="type t-bad">Error Trigger</span></td>
+  <td class="what">Starts when any node in the main workflow fails during a real run (not a test run in the editor). Only starts if this workflow is published and chosen as the main workflow's Error workflow.</td>
+  <td class="setup"><span class="need">Publish this workflow</span></td>
+</tr><tr data-setup="1" data-google="1" data-stops="0" data-name="read jobs sheet">
+  <td class="num">E2</td>
+  <td class="node"><span class="nm">Read jobs sheet</span><span class="type t-google">Google Sheets</span></td>
+  <td class="what">Reads the job log.</td>
+  <td class="setup"><span class="need">Google Sheets credential</span><span class="need">Log sheet ID</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="failed job">
+  <td class="num">E3</td>
+  <td class="node"><span class="nm">Failed job</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Finds the row whose execution ID matches the failed run and is still <code>running</code>. Builds the message: the error, the node it happened in and a link to the run.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="1" data-google="1" data-stops="0" data-name="mark job failed">
+  <td class="num">E4</td>
+  <td class="node"><span class="nm">Mark job failed</span><span class="type t-google">Google Sheets</span></td>
+  <td class="what">Sets that row to <code>failed</code> with the message, which the page then shows.</td>
+  <td class="setup"><span class="need">Google Sheets credential</span><span class="need">Log sheet ID</span></td>
+</tr></tbody>
+  </table></div>
+  <p class="empty-phase" hidden>No nodes in this stage match.</p>
+</section>
+
+  <footer>
+    38 nodes in <code>Terminology_extraction_webhook_v4.json</code> (plus a setup note) and 4 in <code>Terminology_job_errors.json</code>.
+    Repository: lucatinnirello-hub/terminology-extraction.
+  </footer>
+</div>
+
+<script>
+(function () {
+  var filter = 'all';
+  var rows = Array.prototype.slice.call(document.querySelectorAll('.phase tbody tr'));
+  var phases = Array.prototype.slice.call(document.querySelectorAll('.phase'));
+  var search = document.getElementById('node-search');
+  function apply() {
+    var q = search.value.trim().toLowerCase();
+    var shown = 0;
+    rows.forEach(function (r) {
+      var ok = (filter === 'all' || r.dataset[filter] === '1') && (!q || r.dataset.name.indexOf(q) !== -1);
+      r.hidden = !ok;
+      if (ok) shown += 1;
+    });
+    phases.forEach(function (p) {
+      var any = p.querySelector('tbody tr:not([hidden])');
+      p.querySelector('.table-wrap').hidden = !any;
+      p.querySelector('.empty-phase').hidden = !!any;
+    });
+    document.getElementById('shown').textContent = shown + ' of ' + rows.length + ' shown';
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.filters button'), function (b) {
+    b.addEventListener('click', function () {
+      filter = b.dataset.filter;
+      Array.prototype.forEach.call(document.querySelectorAll('.filters button'), function (x) {
+        x.setAttribute('aria-pressed', String(x === b));
+      });
+      apply();
+    });
+  });
+  search.addEventListener('input', apply);
+  apply();
+})();
+</script>
