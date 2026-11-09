@@ -198,7 +198,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// One request body per batch. Only terms, metrics and examples are sent —\n// never whole files.\nconst batch = $input.all().map((i) => i.json);\n\nconst terms = batch.map((t) => ({\n  term: t.term,\n  occurrences: t.occurrences,\n  segments: t.segments,\n  examples: (t.examples || []).slice(0, 2),\n}));\n\nconst instruction = [\n  'You are reviewing candidate glossary terms extracted from a client corpus.',\n  'For each term, decide whether it belongs in a terminology glossary and write a one-sentence definition grounded in the examples given.',\n  'Reply with JSON only — no preamble, no code fences.',\n  'Shape: {\"results\":[{\"term\":\"...\",\"keep\":true,\"reason\":\"...\",\"definition\":\"...\"}]}',\n  'Set keep to false for verb phrases, generic language, and sentence fragments.',\n].join(' ');\n\nconst body = {\n  model: 'claude-sonnet-5-5',\n  max_tokens: 4000,\n  messages: [{ role: 'user', content: `${instruction}\\n\\nTerms:\\n${JSON.stringify(terms, null, 2)}` }],\n};\n\n// `prompt` feeds the Anthropic node (\"Message a Model\"); `llm_body` is the\n// same request as raw JSON, for use with an HTTP Request node instead.\nreturn [{ json: { prompt: body.messages[0].content, llm_body: JSON.stringify(body), batch_size: batch.length, terms: batch } }];\n"
+        "jsCode": "// One prompt per batch of 25 terms. Only terms, counts and 2 example segments\n// are sent to Google's Gemini API. Never whole files.\nconst batch = $input.all().map((i) => i.json);\n\nconst terms = batch.map((t) => ({\n  term: t.term,\n  occurrences: t.occurrences,\n  segments: t.segments,\n  examples: (t.examples || []).slice(0, 2),\n}));\n\nconst instruction = [\n  'You are reviewing candidate glossary terms extracted from a client corpus.',\n  'For each term, decide whether it belongs in a terminology glossary and write a one-sentence definition grounded in the examples given.',\n  'Reply with JSON only, no preamble and no code fences.',\n  'Shape: {\"results\":[{\"term\":\"...\",\"keep\":true,\"reason\":\"...\",\"definition\":\"...\"}]}',\n  'Set keep to false for verb phrases, generic language, and sentence fragments.',\n].join(' ');\n\n// `prompt` feeds the Google Gemini node (\"Message a Model\") in \"AI review\".\nreturn [{\n  json: {\n    prompt: `${instruction}\\n\\nTerms:\\n${JSON.stringify(terms, null, 2)}`,\n    batch_size: batch.length,\n    terms: batch,\n  },\n}];\n"
       },
       "id": "c81f0be8-0eba-41da-9fdc-afbe98d0e051",
       "name": "Build AI request",
@@ -215,8 +215,9 @@
         "operation": "message",
         "modelId": {
           "__rl": true,
-          "value": "claude-sonnet-5-5",
-          "mode": "id"
+          "value": "models/gemini-3-flash-preview",
+          "mode": "list",
+          "cachedResultName": "models/gemini-3-flash-preview"
         },
         "messages": {
           "values": [
@@ -227,13 +228,14 @@
           ]
         },
         "simplify": true,
+        "jsonOutput": true,
         "options": {
-          "maxTokens": 4000,
+          "maxOutputTokens": 16000,
           "temperature": 0.2
         }
       },
       "name": "AI review",
-      "type": "@n8n/n8n-nodes-langchain.anthropic",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1,
       "position": [
         -8512,
@@ -243,7 +245,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Merge the model's verdicts back onto the terms.\nconst response = $input.first().json;\nconst sent = $('Build AI request').first().json.terms || [];\n\nlet parsed = { results: [] };\ntry {\n  const text = (response.content || [])\n    .filter((b) => b.type === 'text')\n    .map((b) => b.text)\n    .join('\\n')\n    .replace(/```json|```/g, '')\n    .trim();\n  parsed = JSON.parse(text);\n} catch (e) {\n  return sent.map((t) => ({ json: { ...t, ai_error: `Could not parse model response: ${e.message}` } }));\n}\n\nconst byTerm = new Map((parsed.results || []).map((r) => [String(r.term).toLowerCase(), r]));\n\nreturn sent.map((t) => {\n  const v = byTerm.get(String(t.term).toLowerCase());\n  return {\n    json: {\n      ...t,\n      ai_keep: v ? v.keep !== false : null,\n      ai_reason: v ? v.reason || '' : 'no verdict returned',\n      definition: v && v.definition ? v.definition : t.definition || '',\n    },\n  };\n});\n"
+        "jsCode": "// Merge the model's verdicts back onto the terms.\n//\n// Reads the reply from the Google Gemini node (\"Simplify Output\" on or off).\n// Also understands an Anthropic-style reply, so the AI node can be swapped\n// without touching this code.\nconst response = $input.first().json;\nconst sent = $('Build AI request').first().json.terms || [];\n\nconst fail = (why) => sent.map((t) => ({ json: { ...t, ai_keep: null, ai_reason: '', ai_error: why } }));\n\n// Gemini: { content: { parts: [{ text }] }, finishReason } per candidate,\n// or { candidates: [...] } with Simplify Output off.\nconst candidate = Array.isArray(response.candidates) ? response.candidates[0] || {} : response;\nlet text = '';\nif (candidate.content && Array.isArray(candidate.content.parts)) {\n  text = candidate.content.parts.filter((p) => p.text && !p.thought).map((p) => p.text).join('');\n} else if (Array.isArray(response.content)) {\n  text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('\\n');\n} else if (typeof response.text === 'string') {\n  text = response.text;\n}\n\nconst finish = String(candidate.finishReason || '');\nif (finish === 'MAX_TOKENS') {\n  return fail('Reply was cut off: raise \"Maximum Number of Tokens\" on the AI review node.');\n}\nif (finish && finish !== 'STOP') {\n  return fail(`The model stopped early (${finish}).`);\n}\n\nlet parsed;\ntry {\n  parsed = JSON.parse(text.replace(/```json|```/g, '').trim());\n} catch (e) {\n  return fail(`Could not parse model response: ${e.message}`);\n}\n\nconst byTerm = new Map((parsed.results || []).map((r) => [String(r.term).toLowerCase(), r]));\n\nreturn sent.map((t) => {\n  const v = byTerm.get(String(t.term).toLowerCase());\n  return {\n    json: {\n      ...t,\n      ai_keep: v ? v.keep !== false : null,\n      ai_reason: v ? v.reason || '' : 'no verdict returned',\n      definition: v && v.definition ? v.definition : t.definition || '',\n    },\n  };\n});\n"
       },
       "id": "c8823290-b126-425f-b2d5-1eb70f4f61ec",
       "name": "Parse AI response",
@@ -736,7 +738,7 @@
     },
     {
       "parameters": {
-        "content": "## Terminology extraction (v4, started by the web page)\n\nThe Apps Script page calls **Webhook** (through Cloudflare) in two ways:\n- `check`: can n8n use these folders? Answered at once.\n- `start`: answered *accepted* within a second or two; the job then runs on and reports to the **log sheet** (links, counts, errors).\n\n**Setup**\n1. **Webhook**: attach a Header Auth credential (name `X-Terminology-Key`, value = a long random string). The same value goes in the Apps Script property `N8N_WEBHOOK_KEY`.\n2. Replace `PASTE_LOG_SHEET_ID_HERE` in **Log job started** and **Mark job done** (and in the error workflow).\n3. Google Drive credential on the Drive and HTTP nodes; Google Sheets credential on the Sheets nodes. Folders must be shared with this Google account.\n4. Anthropic credential (API key) on **AI review**, only needed for AI review.\n5. Publish *Terminology job errors* first (unpublished workflows are greyed out in the list), set it as this workflow's Error workflow, then activate this one.",
+        "content": "## Terminology extraction (v4, started by the web page)\n\nThe Apps Script page calls **Webhook** (through Cloudflare) in two ways:\n- `check`: can n8n use these folders? Answered at once.\n- `start`: answered *accepted* within a second or two; the job then runs on and reports to the **log sheet** (links, counts, errors).\n\n**Setup**\n1. **Webhook**: attach a Header Auth credential (name `X-Terminology-Key`, value = a long random string). The same value goes in the Apps Script property `N8N_WEBHOOK_KEY`.\n2. Replace `PASTE_LOG_SHEET_ID_HERE` in **Log job started** and **Mark job done** (and in the error workflow).\n3. Google Drive credential on the Drive and HTTP nodes; Google Sheets credential on the Sheets nodes. Folders must be shared with this Google account.\n4. Google Gemini credential (API key from a billing-enabled Google AI Studio project) on **AI review**, only needed for AI review.\n5. Publish *Terminology job errors* first (unpublished workflows are greyed out in the list), set it as this workflow's Error workflow, then activate this one.",
         "height": 400,
         "width": 560,
         "color": 4

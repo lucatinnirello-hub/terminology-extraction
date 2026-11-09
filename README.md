@@ -30,7 +30,7 @@ to the job log sheet, which the page shows.
 | `n8n/Terminology_extraction_webhook_v4.json` | Main workflow: Webhook → checks → reply → extraction → log |
 | `n8n/Terminology_job_errors.json` | Error workflow: marks the failed job's log row, matched by execution ID |
 | `docs/terminology-job-flow.html` | The diagrams |
-| `n8n/code/` | Plain copies of Code nodes changed since first setup (XLIFF support, *Build AI request*), for pasting into an existing workflow |
+| `n8n/code/` | Plain copies of Code nodes changed since first setup (XLIFF support, Gemini AI review), for pasting into an existing workflow |
 | `docs/workflow-nodes.html` | Every n8n node: what it does, what to set up on it, whether it can stop a job |
 | `n8n/superseded/` | The earlier scheduled-check version, for reference only |
 
@@ -46,7 +46,9 @@ to the job log sheet, which the page shows.
 3. Attach credentials:
    - **Google Drive** on *Get folder (as n8n)*, *n8n account*, *List job files*, *Download job files* and *Upload to job folder*;
    - **Google Sheets** on *Log job started* and *Mark job done*, plus the two Sheets nodes in the error workflow;
-   - **Anthropic** credential (your API key) on *AI review*, only needed for AI review. *AI review* is n8n's Anthropic node (*Message a Model*); pick the model there.
+   - **Google Gemini** credential on *AI review*, only needed for AI review. *AI review* is n8n's Google Gemini node (*Message a Model*).
+     - Get the API key from Google AI Studio, in a project **with billing enabled**. Google may use content sent through free-tier keys to improve its products, which isn't acceptable for client material.
+     - On the node: pick a current Gemini model, keep *Output Content as JSON* on, and keep *Maximum Number of Tokens* at about 16000. The node's default of 16 makes every reply useless.
 
    The Google account you use here is "n8n's account": folders must be shared with it.
 4. Publish (activate) *Terminology job errors*. Current n8n versions grey out unpublished workflows in the error workflow list.
@@ -115,7 +117,7 @@ An XLIFF file that declares a different source language from the job's is skippe
 - **Several jobs can run at once.** Each is independent, and failures are matched to their log row by the n8n execution ID.
 - **Failures:**
   - Problems found before the reply (folders, the key, Cloudflare, n8n down or the workflow inactive) appear on the page at once, and nothing is logged.
-  - Problems after the reply (no usable files, no terms, Drive or Anthropic errors) are written to the job's log row, with a link to the n8n execution.
+  - Problems after the reply (no usable files, no terms, Drive or Gemini errors) are written to the job's log row, with a link to the n8n execution.
   - If n8n restarts mid-job, nothing can report back, so the page flags a job still running after 45 minutes.
 - **AI review** still needs both ticks on the page, and the client must not be on the restricted list in n8n (*Check restricted list*). The page can't override that list.
 - **Languages** offered are the Latin-script ones, because the stage 1 tokeniser only reads Latin script. Each language maps to its TMX code, e.g. Czech is `cz` in the stopword lists and `cs-CZ` in TMX files.
