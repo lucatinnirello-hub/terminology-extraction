@@ -377,19 +377,22 @@ function testConnection() {
  */
 function callN8n_(body) {
   const props = PropertiesService.getScriptProperties();
-  const url = props.getProperty('N8N_WEBHOOK_URL');
+  // Trimmed: a space or line break picked up when pasting a value would
+  // otherwise make n8n or Cloudflare reject every request.
+  const prop = (name) => String(props.getProperty(name) || '').trim();
+  const url = prop('N8N_WEBHOOK_URL');
   if (!url) throw new Error('The app is not connected to n8n yet (N8N_WEBHOOK_URL is not set).');
 
   const headers = {
-    'X-Terminology-Key': props.getProperty('N8N_WEBHOOK_KEY') || '',
-    'CF-Access-Client-Id': props.getProperty('CF_ACCESS_CLIENT_ID') || '',
-    'CF-Access-Client-Secret': props.getProperty('CF_ACCESS_CLIENT_SECRET') || '',
+    'X-Terminology-Key': prop('N8N_WEBHOOK_KEY'),
+    'CF-Access-Client-Id': prop('CF_ACCESS_CLIENT_ID'),
+    'CF-Access-Client-Secret': prop('CF_ACCESS_CLIENT_SECRET'),
   };
-  const extra = props.getProperty('N8N_EXTRA_HEADERS');
+  const extra = prop('N8N_EXTRA_HEADERS');
   if (extra) {
     try {
       const parsed = JSON.parse(extra);
-      Object.keys(parsed).forEach(function (k) { headers[k] = String(parsed[k]); });
+      Object.keys(parsed).forEach(function (k) { headers[k.trim()] = String(parsed[k]).trim(); });
     } catch (e) {
       throw new Error('N8N_EXTRA_HEADERS is not valid JSON.');
     }
