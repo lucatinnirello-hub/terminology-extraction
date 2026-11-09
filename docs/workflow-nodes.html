@@ -139,7 +139,7 @@
     <p>Everything else works as imported. The Google credentials must sign in as the same account on every node.</p>
     <div class="table-wrap"><table>
       <thead><tr><th>Setting</th><th>Nodes</th><th>Where</th></tr></thead>
-      <tbody><tr><td>Header Auth: X-Terminology-Key</td><td>1</td><td>Webhook</td></tr><tr><td>Google Drive credential</td><td>5</td><td>Get folder (as n8n), n8n account, List job files, Download job files, Upload to job folder</td></tr><tr><td>Google Sheets credential</td><td>4</td><td>Log job started, Mark job done, Read jobs sheet, Mark job failed</td></tr><tr><td>Log sheet ID</td><td>4</td><td>Log job started, Mark job done, Read jobs sheet, Mark job failed</td></tr><tr><td>Anthropic key (x-api-key)</td><td>1</td><td>AI review</td></tr><tr><td>Publish this workflow</td><td>1</td><td>Error Trigger</td></tr></tbody>
+      <tbody><tr><td>Header Auth: X-Terminology-Key</td><td>1</td><td>Webhook</td></tr><tr><td>Google Drive credential</td><td>5</td><td>Get folder (as n8n), n8n account, List job files, Download job files, Upload to job folder</td></tr><tr><td>Google Sheets credential</td><td>4</td><td>Log job started, Mark job done, Read jobs sheet, Mark job failed</td></tr><tr><td>Log sheet ID</td><td>4</td><td>Log job started, Mark job done, Read jobs sheet, Mark job failed</td></tr><tr><td>Anthropic credential (API key)</td><td>1</td><td>AI review</td></tr><tr><td>Publish this workflow</td><td>1</td><td>Error Trigger</td></tr></tbody>
     </table></div>
   </section>
 
@@ -338,9 +338,9 @@
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="1" data-google="0" data-stops="1" data-name="ai review">
   <td class="num">30</td>
-  <td class="node"><span class="nm">AI review</span><span class="type t-ai">HTTP Request · Anthropic</span></td>
-  <td class="what">Sends the batch to Anthropic's API.<div class="stops"><span class="stop-label">Can stop the job</span> API error or outage</div></td>
-  <td class="setup"><span class="need">Anthropic key (x-api-key)</span></td>
+  <td class="node"><span class="nm">AI review</span><span class="type t-ai">Anthropic · Message a Model</span></td>
+  <td class="what">Sends each batch's prompt to Claude through n8n's Anthropic node and passes the reply on. Choose the model here; keep <i>Maximum Number of Tokens</i> at about 4000, as the default 1024 cuts replies short.<div class="stops"><span class="stop-label">Can stop the job</span> API error or outage</div></td>
+  <td class="setup"><span class="need">Anthropic credential (API key)</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="parse ai response">
   <td class="num">31</td>
   <td class="node"><span class="nm">Parse AI response</span><span class="type t-n8n">Code</span></td>
