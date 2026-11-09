@@ -1,0 +1,1006 @@
+{
+  "name": "Terminology extraction (job queue, v3)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "9bdf4c93-0b31-4d66-ae3e-ec5230e88c22",
+      "name": "Run now (manual)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -13440,
+        2720
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===========================================================================\n// SETTINGS: built from the job row written by the web page.\n//\n// DEFAULTS apply when the job doesn't set a value. LIMITS are enforced here\n// as well as in the web page, so a hand-edited row can't push values out of\n// range. The restricted-client list is NOT here; it stays in\n// \"Check restricted list\" on purpose.\n// ===========================================================================\n\nconst DEFAULTS = {\n  ngram_max: 4,\n  dedupe_threshold: 0.85,\n  top_n: 500,\n  min_segments: 2,\n  min_chars: 15,\n  include_examples: 3,\n  dedupe_segments: true,\n  independence_ratio: 1.25,\n  run_ai_review: false,\n  ai_review_approved: false,\n};\n\nconst LIMITS = {\n  ngram_max: [1, 6, true],\n  dedupe_threshold: [0.5, 1, false],\n  top_n: [10, 5000, true],\n  min_segments: [1, 50, true],\n  min_chars: [0, 200, true],\n  include_examples: [0, 10, true],\n  independence_ratio: [1, 5, false],\n};\n\nconst job = $('Pick next job').first().json;\n\nlet fromJob;\ntry {\n  fromJob = JSON.parse(job.settings_json || '{}');\n} catch (e) {\n  throw new Error(`Job ${job.job_id}: settings_json is not valid JSON.`);\n}\n\nconst settings = { ...DEFAULTS };\nfor (const [key, [min, max, integer]] of Object.entries(LIMITS)) {\n  const n = Number(fromJob[key]);\n  if (fromJob[key] === undefined || fromJob[key] === '' || Number.isNaN(n)) continue;\n  const clamped = Math.min(max, Math.max(min, n));\n  settings[key] = integer ? Math.round(clamped) : clamped;\n}\nsettings.dedupe_segments = fromJob.dedupe_segments !== false;\nsettings.run_ai_review = fromJob.run_ai_review === true;\nsettings.ai_review_approved = settings.run_ai_review && fromJob.ai_review_approved === true;\n\nsettings.client = String(fromJob.client || job.client || '').trim();\nsettings.source_lang = String(fromJob.source_lang || job.source_lang || 'en').toLowerCase();\n// What the language is called inside TMX files; may differ from the stopword\n// key (Czech is 'cz' in YAKE but 'cs' in TMX). Comma-separated prefixes.\nsettings.tmx_lang = String(fromJob.tmx_lang || settings.source_lang).toLowerCase();\nsettings.input_mode = 'drive';\n\nsettings.job_id = job.job_id;\nsettings.submitted_by = job.submitted_by || '';\nsettings.input_folder_id = job.input_folder_id;\nsettings.output_folder_id = job.output_folder_id;\n\nif (!settings.client) throw new Error(`Job ${job.job_id}: no client name.`);\nif (!settings.input_folder_id || !settings.output_folder_id) {\n  throw new Error(`Job ${job.job_id}: input or output folder ID missing from the Jobs sheet.`);\n}\n\nreturn [{ json: settings }];\n"
+      },
+      "id": "f1376d85-77e6-4f99-a360-114fbeefe9cd",
+      "name": "Settings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -12320,
+        2640
+      ],
+      "notesInFlow": true,
+      "notes": "EDIT THIS before running"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===========================================================================\n// STOPWORD LISTS\n//\n// YAKE's own stopword lists, extracted from the Python package, so this\n// workflow and any future Python component treat word boundaries the same\n// way. 34 languages.\n//\n// Stopwords do one job here: they mark where a candidate phrase ends. Too few\n// and verb phrases slip through; too many and real terms get cut in half.\n//\n// The long list below is one line. Scroll past it to the editable settings.\n// ===========================================================================\n\nconst STOPWORD_LISTS = {\"ar\":[\"،\",\"أ\",\"ا\",\"اثر\",\"اجل\",\"احد\",\"اخرى\",\"اذا\",\"اربعة\",\"اطار\",\"اعادة\",\"اعلنت\",\"اف\",\"اكثر\",\"اكد\",\"الا\",\"الاخيرة\",\"الان\",\"الاول\",\"الاولى\",\"التى\",\"التي\",\"الثاني\",\"الثانية\",\"الذاتي\",\"الذى\",\"الذي\",\"الذين\",\"السابق\",\"الف\",\"الماضي\",\"المقبل\",\"الوقت\",\"الى\",\"اليوم\",\"اما\",\"امام\",\"امس\",\"ان\",\"انه\",\"انها\",\"او\",\"اول\",\"اي\",\"ايار\",\"ايام\",\"ايضا\",\"ب\",\"باسم\",\"بان\",\"برس\",\"بسبب\",\"بشكل\",\"بعد\",\"بعض\",\"بن\",\"به\",\"بها\",\"بين\",\"تم\",\"ثلاثة\",\"ثم\",\"جميع\",\"حاليا\",\"حتى\",\"حوالى\",\"حول\",\"حيث\",\"حين\",\"خلال\",\"دون\",\"ذلك\",\"زيارة\",\"سنة\",\"سنوات\",\"شخصا\",\"صباح\",\"صفر\",\"ضد\",\"ضمن\",\"عام\",\"عاما\",\"عدة\",\"عدد\",\"عدم\",\"عشر\",\"عشرة\",\"على\",\"عليه\",\"عليها\",\"عن\",\"عند\",\"عندما\",\"غدا\",\"غير\",\"ـ\",\"ف\",\"فان\",\"فى\",\"في\",\"فيه\",\"فيها\",\"قال\",\"قبل\",\"قد\",\"قوة\",\"كان\",\"كانت\",\"كل\",\"كلم\",\"كما\",\"لا\",\"لدى\",\"لقاء\",\"لكن\",\"للامم\",\"لم\",\"لن\",\"له\",\"لها\",\"لوكالة\",\"ما\",\"مايو\",\"مساء\",\"مع\",\"مقابل\",\"مليار\",\"مليون\",\"من\",\"منذ\",\"منها\",\"نحو\",\"نفسه\",\"نهاية\",\"هذا\",\"هذه\",\"هناك\",\"هو\",\"هي\",\"و\",\"و6\",\"واحد\",\"واضاف\",\"واضافت\",\"واكد\",\"وان\",\"واوضح\",\"وفي\",\"وقال\",\"وقالت\",\"وقد\",\"وقف\",\"وكان\",\"وكانت\",\"ولا\",\"ولم\",\"ومن\",\"وهو\",\"وهي\",\"يكون\",\"يمكن\",\"يوم\"],\"bg\":[\"а\",\"автентичен\",\"аз\",\"ако\",\"ала\",\"бе\",\"без\",\"беше\",\"би\",\"бивш\",\"бивша\",\"бившо\",\"бил\",\"била\",\"били\",\"било\",\"благодаря\",\"близо\",\"бъдат\",\"бъде\",\"бяха\",\"в\",\"вас\",\"ваш\",\"ваша\",\"вероятно\",\"вече\",\"взема\",\"ви\",\"вие\",\"винаги\",\"внимава\",\"време\",\"все\",\"всеки\",\"всички\",\"всичко\",\"всяка\",\"във\",\"въпреки\",\"върху\",\"г\",\"ги\",\"главен\",\"главна\",\"главно\",\"глас\",\"го\",\"година\",\"години\",\"годишен\",\"д\",\"да\",\"дали\",\"два\",\"двама\",\"двамата\",\"две\",\"двете\",\"ден\",\"днес\",\"дни\",\"до\",\"добра\",\"добре\",\"добро\",\"добър\",\"докато\",\"докога\",\"дори\",\"досега\",\"доста\",\"друг\",\"друга\",\"други\",\"е\",\"евтин\",\"едва\",\"един\",\"една\",\"еднаква\",\"еднакви\",\"еднакъв\",\"едно\",\"екип\",\"ето\",\"живот\",\"за\",\"забавям\",\"зад\",\"заедно\",\"заради\",\"засега\",\"заспал\",\"затова\",\"защо\",\"защото\",\"и\",\"из\",\"или\",\"им\",\"има\",\"имат\",\"иска\",\"й\",\"каза\",\"как\",\"каква\",\"какво\",\"както\",\"какъв\",\"като\",\"кога\",\"когато\",\"което\",\"които\",\"кой\",\"който\",\"колко\",\"която\",\"къде\",\"където\",\"към\",\"лесен\",\"лесно\",\"ли\",\"лош\",\"м\",\"май\",\"малко\",\"ме\",\"между\",\"мек\",\"мен\",\"месец\",\"ми\",\"много\",\"мнозина\",\"мога\",\"могат\",\"може\",\"мокър\",\"моля\",\"момента\",\"му\",\"н\",\"на\",\"над\",\"назад\",\"най\",\"направи\",\"напред\",\"например\",\"нас\",\"не\",\"него\",\"нещо\",\"нея\",\"ни\",\"ние\",\"никой\",\"нито\",\"нищо\",\"но\",\"нов\",\"нова\",\"нови\",\"новина\",\"някои\",\"някой\",\"няколко\",\"няма\",\"обаче\",\"около\",\"освен\",\"особено\",\"от\",\"отгоре\",\"отново\",\"още\",\"пак\",\"по\",\"повече\",\"повечето\",\"под\",\"поне\",\"поради\",\"после\",\"почти\",\"прави\",\"пред\",\"преди\",\"през\",\"при\",\"пък\",\"първата\",\"първи\",\"първо\",\"пъти\",\"равен\",\"равна\",\"с\",\"са\",\"сам\",\"само\",\"се\",\"сега\",\"си\",\"син\",\"скоро\",\"след\",\"следващ\",\"сме\",\"смях\",\"според\",\"сред\",\"срещу\",\"сте\",\"съм\",\"със\",\"също\",\"т\",\"т.н.\",\"тази\",\"така\",\"такива\",\"такъв\",\"там\",\"твой\",\"те\",\"тези\",\"ти\",\"то\",\"това\",\"тогава\",\"този\",\"той\",\"толкова\",\"точно\",\"три\",\"трябва\",\"тук\",\"тъй\",\"тя\",\"тях\",\"у\",\"утре\",\"харесва\",\"хиляди\",\"ч\",\"часа\",\"че\",\"често\",\"чрез\",\"ще\",\"щом\",\"юмрук\",\"я\",\"як\"],\"br\":[\"a\",\"adeus\",\"agora\",\"ainda\",\"algo\",\"algumas\",\"alguns\",\"ali\",\"além\",\"ano\",\"anos\",\"antes\",\"ao\",\"aos\",\"apenas\",\"apoio\",\"após\",\"aquela\",\"aquelas\",\"aquele\",\"aqueles\",\"aqui\",\"aquilo\",\"as\",\"assim\",\"através\",\"atrás\",\"até\",\"aí\",\"baixo\",\"bastante\",\"bem\",\"boa\",\"boas\",\"bom\",\"bons\",\"breve\",\"cada\",\"catorze\",\"cedo\",\"cento\",\"certamente\",\"certeza\",\"cima\",\"cinco\",\"coisa\",\"com\",\"como\",\"conselho\",\"contra\",\"custa\",\"cá\",\"da\",\"daquela\",\"daquelas\",\"daquele\",\"daqueles\",\"dar\",\"das\",\"de\",\"debaixo\",\"demais\",\"dentro\",\"depois\",\"desde\",\"dessa\",\"dessas\",\"desse\",\"desses\",\"desta\",\"destas\",\"deste\",\"destes\",\"deve\",\"deverá\",\"dez\",\"dezanove\",\"dezasseis\",\"dezassete\",\"dezoito\",\"dia\",\"diante\",\"diz\",\"dizem\",\"dizer\",\"do\",\"dois\",\"dos\",\"doze\",\"duas\",\"dá\",\"dão\",\"dúvida\",\"e\",\"ela\",\"elas\",\"ele\",\"eles\",\"em\",\"embora\",\"entre\",\"era\",\"essa\",\"essas\",\"esse\",\"esses\",\"esta\",\"estar\",\"estas\",\"estava\",\"este\",\"estes\",\"esteve\",\"estive\",\"estivemos\",\"estiveram\",\"estiveste\",\"estivestes\",\"estou\",\"está\",\"estás\",\"estão\",\"eu\",\"exemplo\",\"falta\",\"favor\",\"faz\",\"fazeis\",\"fazem\",\"fazemos\",\"fazer\",\"fazes\",\"faço\",\"fez\",\"fim\",\"final\",\"foi\",\"fomos\",\"for\",\"foram\",\"forma\",\"foste\",\"fostes\",\"fui\",\"geral\",\"grande\",\"grandes\",\"grupo\",\"hoje\",\"hora\",\"horas\",\"há\",\"isso\",\"isto\",\"já\",\"lado\",\"local\",\"logo\",\"longe\",\"lugar\",\"lá\",\"maior\",\"maioria\",\"mais\",\"mal\",\"mas\",\"me\",\"meio\",\"menor\",\"menos\",\"meses\",\"meu\",\"meus\",\"mil\",\"minha\",\"minhas\",\"momento\",\"muito\",\"muitos\",\"máximo\",\"mês\",\"na\",\"nada\",\"naquela\",\"naquelas\",\"naquele\",\"naqueles\",\"nas\",\"nem\",\"nenhuma\",\"nessa\",\"nessas\",\"nesse\",\"nesses\",\"nesta\",\"nestas\",\"neste\",\"nestes\",\"no\",\"noite\",\"nome\",\"nos\",\"nossa\",\"nossas\",\"nosso\",\"nossos\",\"nova\",\"novas\",\"nove\",\"novo\",\"novos\",\"num\",\"numa\",\"nunca\",\"não\",\"nível\",\"nós\",\"número\",\"o\",\"obra\",\"obrigada\",\"obrigado\",\"oitava\",\"oitavo\",\"oito\",\"onde\",\"ontem\",\"onze\",\"os\",\"ou\",\"outra\",\"outras\",\"outro\",\"outros\",\"para\",\"parece\",\"parte\",\"partir\",\"paucas\",\"pela\",\"pelas\",\"pelo\",\"pelos\",\"perto\",\"pode\",\"podem\",\"poder\",\"ponto\",\"pontos\",\"por\",\"porque\",\"porquê\",\"posição\",\"possivelmente\",\"posso\",\"possível\",\"pouca\",\"pouco\",\"poucos\",\"primeira\",\"primeiras\",\"primeiro\",\"primeiros\",\"própria\",\"próprias\",\"próprio\",\"próprios\",\"próxima\",\"próximas\",\"próximo\",\"próximos\",\"puderam\",\"pôde\",\"põe\",\"põem\",\"qual\",\"quando\",\"quanto\",\"quarta\",\"quarto\",\"quatro\",\"que\",\"quem\",\"quer\",\"quereis\",\"querem\",\"queremas\",\"queres\",\"quero\",\"questão\",\"quinta\",\"quinto\",\"quinze\",\"quáis\",\"quê\",\"relação\",\"sabe\",\"sabem\",\"se\",\"segunda\",\"segundo\",\"sei\",\"seis\",\"sem\",\"sempre\",\"ser\",\"seria\",\"sete\",\"seu\",\"seus\",\"sexta\",\"sexto\",\"sim\",\"sistema\",\"sob\",\"sobre\",\"sois\",\"somos\",\"sou\",\"sua\",\"suas\",\"são\",\"sétima\",\"sétimo\",\"tal\",\"talvez\",\"também\",\"tanta\",\"tantas\",\"tanto\",\"tarde\",\"te\",\"tem\",\"temos\",\"tendes\",\"tenho\",\"tens\",\"ter\",\"terceira\",\"terceiro\",\"teu\",\"teus\",\"teve\",\"tive\",\"tivemos\",\"tiveram\",\"tiveste\",\"tivestes\",\"toda\",\"todas\",\"todo\",\"todos\",\"trabalho\",\"treze\",\"três\",\"tu\",\"tua\",\"tuas\",\"tudo\",\"tão\",\"têm\",\"um\",\"uma\",\"umas\",\"uns\",\"vai\",\"vais\",\"vem\",\"vens\",\"ver\",\"vez\",\"vezes\",\"viagem\",\"vindo\",\"vinte\",\"você\",\"vocês\",\"vos\",\"vossa\",\"vossas\",\"vosso\",\"vossos\",\"vários\",\"vão\",\"vêm\",\"vós\",\"zero\",\"à\",\"às\",\"área\",\"é\",\"és\"],\"cz\":[\"ahoj\",\"ale\",\"anebo\",\"ano\",\"asi\",\"aspoň\",\"ačkoli\",\"bez\",\"beze\",\"blízko\",\"bohužel\",\"brzo\",\"bude\",\"budeme\",\"budete\",\"budeš\",\"budou\",\"budu\",\"byl\",\"byla\",\"byli\",\"bylo\",\"byly\",\"bys\",\"během\",\"chce\",\"chceme\",\"chcete\",\"chceš\",\"chci\",\"chtít\",\"chtějí\",\"chut'\",\"chuti\",\"co\",\"daleko\",\"den\",\"deset\",\"devatenáct\",\"devět\",\"do\",\"dobrý\",\"docela\",\"dva\",\"dvacet\",\"dvanáct\",\"dvě\",\"dál\",\"dále\",\"děkovat\",\"děkujeme\",\"děkuji\",\"hodně\",\"jak\",\"jde\",\"je\",\"jeden\",\"jedenáct\",\"jedna\",\"jedno\",\"jednou\",\"jedou\",\"jeho\",\"jejich\",\"její\",\"jemu\",\"jen\",\"jenom\",\"jestli\",\"jestliže\",\"ještě\",\"jich\",\"jimi\",\"jinak\",\"jsem\",\"jsi\",\"jsme\",\"jsou\",\"jste\",\"já\",\"jí\",\"jím\",\"kam\",\"kde\",\"kdo\",\"kdy\",\"když\",\"ke\",\"kolik\",\"kromě\",\"která\",\"které\",\"který\",\"kteří\",\"kvůli\",\"mají\",\"mezi\",\"mnou\",\"mně\",\"moc\",\"mohl\",\"mohou\",\"moje\",\"moji\",\"možná\",\"musí\",\"my\",\"má\",\"málo\",\"mám\",\"máme\",\"máte\",\"máš\",\"mé\",\"mí\",\"mít\",\"mě\",\"můj\",\"může\",\"na\",\"nad\",\"nade\",\"naproti\",\"naše\",\"naši\",\"ne\",\"nebo\",\"nebyl\",\"nebyla\",\"nebyli\",\"nebyly\",\"nedělají\",\"nedělá\",\"nedělám\",\"neděláme\",\"neděláte\",\"neděláš\",\"nejsi\",\"nemají\",\"nemáme\",\"nemáte\",\"neměl\",\"není\",\"nestačí\",\"nevadí\",\"než\",\"nic\",\"nich\",\"nimi\",\"nula\",\"nám\",\"námi\",\"nás\",\"náš\",\"ním\",\"ně\",\"něco\",\"nějak\",\"někde\",\"někdo\",\"němu\",\"od\",\"ode\",\"on\",\"ona\",\"oni\",\"ono\",\"ony\",\"osm\",\"osmnáct\",\"pak\",\"patnáct\",\"po\",\"potom\",\"pozdě\",\"pořád\",\"pro\",\"prostě\",\"prosím\",\"proti\",\"protože\",\"proč\",\"pět\",\"před\",\"přes\",\"přese\",\"rovně\",\"se\",\"sedm\",\"sedmnáct\",\"skoro\",\"smí\",\"smějí\",\"snad\",\"spolu\",\"sta\",\"sto\",\"sté\",\"ta\",\"tady\",\"tak\",\"takhle\",\"taky\",\"tam\",\"tamhle\",\"tamhleto\",\"tamto\",\"tebe\",\"tebou\",\"ted'\",\"tedy\",\"ten\",\"ti\",\"tisíc\",\"tisíce\",\"to\",\"tobě\",\"tohle\",\"toto\",\"trošku\",\"tvoje\",\"tvá\",\"tvé\",\"tvůj\",\"ty\",\"tě\",\"třeba\",\"tři\",\"třináct\",\"určitě\",\"už\",\"vaše\",\"vaši\",\"ve\",\"vedle\",\"večer\",\"vlastně\",\"vy\",\"vám\",\"vámi\",\"vás\",\"váš\",\"všechno\",\"všichni\",\"vůbec\",\"vždy\",\"za\",\"zatímco\",\"zač\",\"ze\",\"čau\",\"čtrnáct\",\"čtyři\",\"šest\",\"šestnáct\",\"že\"],\"da\":[\"af\",\"aldrig\",\"alle\",\"altid\",\"bagved\",\"de\",\"der\",\"du\",\"efter\",\"eller\",\"en\",\"endnu\",\"et\",\"fjernt\",\"for\",\"foran\",\"fra\",\"få\",\"gennem\",\"god\",\"han\",\"her\",\"hos\",\"hovfor\",\"hun\",\"hurtig\",\"hvad\",\"hvem\",\"hvonår\",\"hvor\",\"hvordan\",\"hvorhen\",\"i\",\"imod\",\"ja\",\"jeg\",\"langsom\",\"lidt\",\"mange\",\"med\",\"meget\",\"mellem\",\"mere\",\"mindre\",\"måske\",\"nede\",\"nej\",\"nok\",\"nu\",\"når\",\"og\",\"oppe\",\"på\",\"rask\",\"sammen\",\"temmelig\",\"til\",\"uden\",\"udenfor\",\"under\",\"ved\",\"vi\"],\"de\":[\"a\",\"ab\",\"aber\",\"ach\",\"acht\",\"achte\",\"achten\",\"achter\",\"achtes\",\"ag\",\"alle\",\"allein\",\"allem\",\"allen\",\"aller\",\"allerdings\",\"alles\",\"allgemeinen\",\"als\",\"also\",\"am\",\"an\",\"andere\",\"anderen\",\"andern\",\"anders\",\"au\",\"auch\",\"auf\",\"aus\",\"ausser\",\"ausserdem\",\"außer\",\"außerdem\",\"b\",\"bald\",\"bei\",\"beide\",\"beiden\",\"beim\",\"beispiel\",\"bekannt\",\"bereits\",\"besonders\",\"besser\",\"besten\",\"bin\",\"bis\",\"bisher\",\"bist\",\"c\",\"d\",\"d.h\",\"da\",\"dabei\",\"dadurch\",\"dafür\",\"dagegen\",\"daher\",\"dahin\",\"dahinter\",\"damals\",\"damit\",\"danach\",\"daneben\",\"dank\",\"dann\",\"daran\",\"darauf\",\"daraus\",\"darf\",\"darfst\",\"darin\",\"darum\",\"darunter\",\"darüber\",\"das\",\"dasein\",\"daselbst\",\"dass\",\"dasselbe\",\"davon\",\"davor\",\"dazu\",\"dazwischen\",\"daß\",\"dein\",\"deine\",\"deinem\",\"deiner\",\"dem\",\"dementsprechend\",\"demgegenüber\",\"demgemäss\",\"demgemäß\",\"demselben\",\"demzufolge\",\"den\",\"denen\",\"denn\",\"denselben\",\"der\",\"deren\",\"derjenige\",\"derjenigen\",\"dermassen\",\"dermaßen\",\"derselbe\",\"derselben\",\"des\",\"deshalb\",\"desselben\",\"dessen\",\"deswegen\",\"dich\",\"die\",\"diejenige\",\"diejenigen\",\"dies\",\"diese\",\"dieselbe\",\"dieselben\",\"diesem\",\"diesen\",\"dieser\",\"dieses\",\"dir\",\"doch\",\"dort\",\"drei\",\"drin\",\"dritte\",\"dritten\",\"dritter\",\"drittes\",\"du\",\"durch\",\"durchaus\",\"durfte\",\"durften\",\"dürfen\",\"dürft\",\"e\",\"eben\",\"ebenso\",\"ehrlich\",\"ei\",\"ei,\",\"eigen\",\"eigene\",\"eigenen\",\"eigener\",\"eigenes\",\"ein\",\"einander\",\"eine\",\"einem\",\"einen\",\"einer\",\"eines\",\"einige\",\"einigen\",\"einiger\",\"einiges\",\"einmal\",\"eins\",\"elf\",\"en\",\"ende\",\"endlich\",\"entweder\",\"er\",\"ernst\",\"erst\",\"erste\",\"ersten\",\"erster\",\"erstes\",\"es\",\"etwa\",\"etwas\",\"euch\",\"f\",\"früher\",\"fünf\",\"fünfte\",\"fünften\",\"fünfter\",\"fünftes\",\"für\",\"g\",\"gab\",\"ganz\",\"ganze\",\"ganzen\",\"ganzer\",\"ganzes\",\"gar\",\"gedurft\",\"gegen\",\"gegenüber\",\"gehabt\",\"gehen\",\"geht\",\"gekannt\",\"gekonnt\",\"gemacht\",\"gemocht\",\"gemusst\",\"genug\",\"gerade\",\"gern\",\"gesagt\",\"geschweige\",\"gewesen\",\"gewollt\",\"geworden\",\"gibt\",\"ging\",\"gleich\",\"gott\",\"gross\",\"grosse\",\"grossen\",\"grosser\",\"grosses\",\"groß\",\"große\",\"großen\",\"großer\",\"großes\",\"gut\",\"gute\",\"guter\",\"gutes\",\"h\",\"habe\",\"haben\",\"habt\",\"hast\",\"hat\",\"hatte\",\"hatten\",\"heisst\",\"her\",\"heute\",\"hier\",\"hin\",\"hinter\",\"hoch\",\"hätte\",\"hätten\",\"i\",\"ich\",\"ihm\",\"ihn\",\"ihnen\",\"ihr\",\"ihre\",\"ihrem\",\"ihren\",\"ihrer\",\"ihres\",\"im\",\"immer\",\"in\",\"indem\",\"infolgedessen\",\"ins\",\"irgend\",\"ist\",\"j\",\"ja\",\"jahr\",\"jahre\",\"jahren\",\"je\",\"jede\",\"jedem\",\"jeden\",\"jeder\",\"jedermann\",\"jedermanns\",\"jedoch\",\"jemand\",\"jemandem\",\"jemanden\",\"jene\",\"jenem\",\"jenen\",\"jener\",\"jenes\",\"jetzt\",\"k\",\"kam\",\"kann\",\"kannst\",\"kaum\",\"kein\",\"keine\",\"keinem\",\"keinen\",\"keiner\",\"kleine\",\"kleinen\",\"kleiner\",\"kleines\",\"kommen\",\"kommt\",\"konnte\",\"konnten\",\"kurz\",\"können\",\"könnt\",\"könnte\",\"l\",\"lang\",\"lange\",\"leicht\",\"leide\",\"lieber\",\"los\",\"m\",\"machen\",\"macht\",\"machte\",\"mag\",\"magst\",\"mahn\",\"man\",\"manche\",\"manchem\",\"manchen\",\"mancher\",\"manches\",\"mann\",\"mehr\",\"mein\",\"meine\",\"meinem\",\"meinen\",\"meiner\",\"meines\",\"mensch\",\"menschen\",\"mich\",\"mir\",\"mit\",\"mittel\",\"mochte\",\"mochten\",\"morgen\",\"muss\",\"musst\",\"musste\",\"mussten\",\"muß\",\"möchte\",\"mögen\",\"möglich\",\"mögt\",\"müssen\",\"müsst\",\"n\",\"na\",\"nach\",\"nachdem\",\"nahm\",\"natürlich\",\"neben\",\"nein\",\"neue\",\"neuen\",\"neun\",\"neunte\",\"neunten\",\"neunter\",\"neuntes\",\"nicht\",\"nichts\",\"nie\",\"niemand\",\"niemandem\",\"niemanden\",\"noch\",\"nun\",\"nur\",\"o\",\"ob\",\"oben\",\"oder\",\"offen\",\"oft\",\"ohne\",\"ordnung\",\"p\",\"q\",\"r\",\"recht\",\"rechte\",\"rechten\",\"rechter\",\"rechtes\",\"richtig\",\"rund\",\"s\",\"sa\",\"sache\",\"sagt\",\"sagte\",\"sah\",\"satt\",\"schlecht\",\"schluss\",\"schon\",\"sechs\",\"sechste\",\"sechsten\",\"sechster\",\"sechstes\",\"sehr\",\"sei\",\"seid\",\"seien\",\"sein\",\"seine\",\"seinem\",\"seinen\",\"seiner\",\"seines\",\"seit\",\"seitdem\",\"selbst\",\"sich\",\"sie\",\"sieben\",\"siebente\",\"siebenten\",\"siebenter\",\"siebentes\",\"sind\",\"so\",\"solang\",\"solche\",\"solchem\",\"solchen\",\"solcher\",\"solches\",\"soll\",\"sollen\",\"sollte\",\"sollten\",\"sondern\",\"sonst\",\"sowie\",\"später\",\"statt\",\"t\",\"tag\",\"tage\",\"tagen\",\"tat\",\"teil\",\"tel\",\"tritt\",\"trotzdem\",\"tun\",\"u\",\"uhr\",\"um\",\"und\",\"und?\",\"uns\",\"unser\",\"unsere\",\"unserer\",\"unter\",\"v\",\"vergangenen\",\"viel\",\"viele\",\"vielem\",\"vielen\",\"vielleicht\",\"vier\",\"vierte\",\"vierten\",\"vierter\",\"viertes\",\"vom\",\"von\",\"vor\",\"w\",\"wahr?\",\"wann\",\"war\",\"waren\",\"wart\",\"warum\",\"was\",\"wegen\",\"weil\",\"weit\",\"weiter\",\"weitere\",\"weiteren\",\"weiteres\",\"welche\",\"welchem\",\"welchen\",\"welcher\",\"welches\",\"wem\",\"wen\",\"wenig\",\"wenige\",\"weniger\",\"weniges\",\"wenigstens\",\"wenn\",\"wer\",\"werde\",\"werden\",\"werdet\",\"wessen\",\"wie\",\"wieder\",\"will\",\"willst\",\"wir\",\"wird\",\"wirklich\",\"wirst\",\"wo\",\"wohl\",\"wollen\",\"wollt\",\"wollte\",\"wollten\",\"worden\",\"wurde\",\"wurden\",\"während\",\"währenddem\",\"währenddessen\",\"wäre\",\"würde\",\"würden\",\"x\",\"y\",\"z\",\"z.b\",\"zehn\",\"zehnte\",\"zehnten\",\"zehnter\",\"zehntes\",\"zeit\",\"zu\",\"zuerst\",\"zugleich\",\"zum\",\"zunächst\",\"zur\",\"zurück\",\"zusammen\",\"zwanzig\",\"zwar\",\"zwei\",\"zweite\",\"zweiten\",\"zweiter\",\"zweites\",\"zwischen\",\"zwölf\",\"über\",\"überhaupt\",\"übrigens\"],\"el\":[\"ένα\",\"έναν\",\"ένας\",\"αδιακοπα\",\"αι\",\"ακομα\",\"ακομη\",\"ακριβως\",\"αληθεια\",\"αληθινα\",\"αλλα\",\"αλλαχου\",\"αλλες\",\"αλλη\",\"αλλην\",\"αλλης\",\"αλλιως\",\"αλλιωτικα\",\"αλλο\",\"αλλοι\",\"αλλοιως\",\"αλλοιωτικα\",\"αλλον\",\"αλλος\",\"αλλοτε\",\"αλλου\",\"αλλους\",\"αλλων\",\"αμα\",\"αμεσα\",\"αμεσως\",\"αν\",\"ανα\",\"αναμεσα\",\"αναμεταξυ\",\"ανευ\",\"αντι\",\"αντιπερα\",\"αντις\",\"ανω\",\"ανωτερω\",\"αξαφνα\",\"απ\",\"απεναντι\",\"απο\",\"αποψε\",\"από\",\"αρα\",\"αραγε\",\"αργα\",\"αργοτερο\",\"αριστερα\",\"αρκετα\",\"αρχικα\",\"ας\",\"αυριο\",\"αυτα\",\"αυτες\",\"αυτεσ\",\"αυτη\",\"αυτην\",\"αυτης\",\"αυτο\",\"αυτοι\",\"αυτον\",\"αυτος\",\"αυτοσ\",\"αυτου\",\"αυτους\",\"αυτουσ\",\"αυτων\",\"αφοτου\",\"αφου\",\"αἱ\",\"αἳ\",\"αἵ\",\"αὐτόσ\",\"αὐτὸς\",\"αὖ\",\"βεβαια\",\"βεβαιοτατα\",\"γάρ\",\"γα\",\"γα^\",\"γε\",\"γι\",\"για\",\"γοῦν\",\"γρηγορα\",\"γυρω\",\"γὰρ\",\"δ'\",\"δέ\",\"δή\",\"δα\",\"δαί\",\"δαίσ\",\"δαὶ\",\"δαὶς\",\"δε\",\"δεινα\",\"δεν\",\"δεξια\",\"δηθεν\",\"δηλαδη\",\"δι\",\"δι'\",\"διά\",\"δια\",\"διαρκως\",\"δικα\",\"δικο\",\"δικοι\",\"δικος\",\"δικου\",\"δικους\",\"διολου\",\"διπλα\",\"διχως\",\"διὰ\",\"δὲ\",\"δὴ\",\"δ’\",\"εαν\",\"εαυτο\",\"εαυτον\",\"εαυτου\",\"εαυτους\",\"εαυτων\",\"εγκαιρα\",\"εγκαιρως\",\"εγω\",\"εδω\",\"ειδεμη\",\"ειθε\",\"ειμαι\",\"ειμαστε\",\"ειναι\",\"εις\",\"εισαι\",\"εισαστε\",\"ειστε\",\"ειτε\",\"ειχα\",\"ειχαμε\",\"ειχαν\",\"ειχατε\",\"ειχε\",\"ειχες\",\"εκ\",\"εκαστα\",\"εκαστες\",\"εκαστη\",\"εκαστην\",\"εκαστης\",\"εκαστο\",\"εκαστοι\",\"εκαστον\",\"εκαστος\",\"εκαστου\",\"εκαστους\",\"εκαστων\",\"εκει\",\"εκεινα\",\"εκεινες\",\"εκεινεσ\",\"εκεινη\",\"εκεινην\",\"εκεινης\",\"εκεινο\",\"εκεινοι\",\"εκεινον\",\"εκεινος\",\"εκεινοσ\",\"εκεινου\",\"εκεινους\",\"εκεινουσ\",\"εκεινων\",\"εκτος\",\"εμας\",\"εμεις\",\"εμενα\",\"εμπρος\",\"εν\",\"ενα\",\"εναν\",\"ενας\",\"ενος\",\"εντελως\",\"εντος\",\"εντωμεταξυ\",\"ενω\",\"ενός\",\"εξ\",\"εξαφνα\",\"εξης\",\"εξισου\",\"εξω\",\"επ\",\"επί\",\"επανω\",\"επειδη\",\"επειτα\",\"επι\",\"επισης\",\"επομενως\",\"εσας\",\"εσεις\",\"εσενα\",\"εστω\",\"εσυ\",\"ετερα\",\"ετεραι\",\"ετερας\",\"ετερες\",\"ετερη\",\"ετερης\",\"ετερο\",\"ετεροι\",\"ετερον\",\"ετερος\",\"ετερου\",\"ετερους\",\"ετερων\",\"ετουτα\",\"ετουτες\",\"ετουτη\",\"ετουτην\",\"ετουτης\",\"ετουτο\",\"ετουτοι\",\"ετουτον\",\"ετουτος\",\"ετουτου\",\"ετουτους\",\"ετουτων\",\"ετσι\",\"ευγε\",\"ευθυς\",\"ευτυχως\",\"εφεξης\",\"εχει\",\"εχεις\",\"εχετε\",\"εχθες\",\"εχομε\",\"εχουμε\",\"εχουν\",\"εχτες\",\"εχω\",\"εως\",\"εἰ\",\"εἰμί\",\"εἰμὶ\",\"εἰς\",\"εἰσ\",\"εἴ\",\"εἴμι\",\"εἴτε\",\"η\",\"ηδη\",\"ημασταν\",\"ημαστε\",\"ημουν\",\"ησασταν\",\"ησαστε\",\"ησουν\",\"ηταν\",\"ητανε\",\"ητοι\",\"ηττον\",\"θα\",\"ιδια\",\"ιδιαν\",\"ιδιας\",\"ιδιες\",\"ιδιο\",\"ιδιοι\",\"ιδιον\",\"ιδιος\",\"ιδιου\",\"ιδιους\",\"ιδιων\",\"ιδιως\",\"ισαμε\",\"ισια\",\"ισως\",\"ισωσ\",\"κ\",\"καί\",\"καίτοι\",\"καθ\",\"καθε\",\"καθεμια\",\"καθεμιας\",\"καθενα\",\"καθενας\",\"καθενος\",\"καθετι\",\"καθολου\",\"καθως\",\"και\",\"κακα\",\"κακως\",\"καλα\",\"καλως\",\"καμια\",\"καμιαν\",\"καμιας\",\"καμποσα\",\"καμποσες\",\"καμποση\",\"καμποσην\",\"καμποσης\",\"καμποσο\",\"καμποσοι\",\"καμποσον\",\"καμποσος\",\"καμποσου\",\"καμποσους\",\"καμποσων\",\"κανεις\",\"κανεν\",\"κανενα\",\"κανεναν\",\"κανενας\",\"κανενος\",\"καποια\",\"καποιαν\",\"καποιας\",\"καποιες\",\"καποιο\",\"καποιοι\",\"καποιον\",\"καποιος\",\"καποιου\",\"καποιους\",\"καποιων\",\"καποτε\",\"καπου\",\"καπως\",\"κατ\",\"κατά\",\"κατα\",\"κατι\",\"κατιτι\",\"κατοπιν\",\"κατω\",\"κατὰ\",\"καὶ\",\"κι\",\"κιολας\",\"κλπ\",\"κοντα\",\"κτλ\",\"κυριως\",\"κἀν\",\"κἂν\",\"λιγακι\",\"λιγο\",\"λιγωτερο\",\"λογω\",\"λοιπα\",\"λοιπον\",\"μέν\",\"μέσα\",\"μή\",\"μήτε\",\"μία\",\"μα\",\"μαζι\",\"μακαρι\",\"μακρυα\",\"μαλιστα\",\"μαλλον\",\"μας\",\"με\",\"μεθ\",\"μεθαυριο\",\"μειον\",\"μελει\",\"μελλεται\",\"μεμιας\",\"μεν\",\"μερικα\",\"μερικες\",\"μερικοι\",\"μερικους\",\"μερικων\",\"μεσα\",\"μετ\",\"μετά\",\"μετα\",\"μεταξυ\",\"μετὰ\",\"μεχρι\",\"μη\",\"μηδε\",\"μην\",\"μηπως\",\"μητε\",\"μιά\",\"μια\",\"μιαν\",\"μιας\",\"μολις\",\"μολονοτι\",\"μοναχα\",\"μονες\",\"μονη\",\"μονην\",\"μονης\",\"μονο\",\"μονοι\",\"μονομιας\",\"μονος\",\"μονου\",\"μονους\",\"μονων\",\"μου\",\"μπορει\",\"μπορουν\",\"μπραβο\",\"μπρος\",\"μἐν\",\"μὲν\",\"μὴ\",\"μὴν\",\"να\",\"ναι\",\"νωρις\",\"ξανα\",\"ξαφνικα\",\"ο\",\"οι\",\"ολα\",\"ολες\",\"ολη\",\"ολην\",\"ολης\",\"ολο\",\"ολογυρα\",\"ολοι\",\"ολον\",\"ολονεν\",\"ολος\",\"ολοτελα\",\"ολου\",\"ολους\",\"ολων\",\"ολως\",\"ολωςδιολου\",\"ομως\",\"ομωσ\",\"οποια\",\"οποιαδηποτε\",\"οποιαν\",\"οποιανδηποτε\",\"οποιας\",\"οποιαςδηποτε\",\"οποιδηποτε\",\"οποιες\",\"οποιεσδηποτε\",\"οποιο\",\"οποιοδηποτε\",\"οποιοι\",\"οποιον\",\"οποιονδηποτε\",\"οποιος\",\"οποιοσδηποτε\",\"οποιου\",\"οποιουδηποτε\",\"οποιους\",\"οποιουσδηποτε\",\"οποιων\",\"οποιωνδηποτε\",\"οποτε\",\"οποτεδηποτε\",\"οπου\",\"οπουδηποτε\",\"οπως\",\"οπωσ\",\"ορισμενα\",\"ορισμενες\",\"ορισμενων\",\"ορισμενως\",\"οσα\",\"οσαδηποτε\",\"οσες\",\"οσεςδηποτε\",\"οση\",\"οσηδηποτε\",\"οσην\",\"οσηνδηποτε\",\"οσης\",\"οσο\",\"οσοδηποτε\",\"οσοι\",\"οσοιδηποτε\",\"οσον\",\"οσονδηποτε\",\"οσος\",\"οσοσδηποτε\",\"οσου\",\"οσουδηποτε\",\"οσους\",\"οσουσδηποτε\",\"οσων\",\"οσωνδηποτε\",\"οταν\",\"οτι\",\"οτιδηποτε\",\"οτου\",\"ου\",\"ουδε\",\"ουτε\",\"οχι\",\"οἱ\",\"οἳ\",\"οἷς\",\"οὐ\",\"οὐδ\",\"οὐδέ\",\"οὐδείσ\",\"οὐδεὶς\",\"οὐδὲ\",\"οὐδὲν\",\"οὐκ\",\"οὐχ\",\"οὐχὶ\",\"οὓς\",\"οὔτε\",\"οὕτω\",\"οὕτως\",\"οὕτωσ\",\"οὖν\",\"οὗ\",\"οὗτος\",\"οὗτοσ\",\"παλι\",\"παντοτε\",\"παντου\",\"παντως\",\"παρ\",\"παρά\",\"παρα\",\"παρὰ\",\"περί\",\"περα\",\"περι\",\"περιπου\",\"περισσοτερο\",\"περσι\",\"περυσι\",\"περὶ\",\"πια\",\"πιθανον\",\"πιο\",\"πισω\",\"πλαι\",\"πλεον\",\"πλην\",\"ποια\",\"ποιαν\",\"ποιας\",\"ποιες\",\"ποιεσ\",\"ποιο\",\"ποιοι\",\"ποιον\",\"ποιος\",\"ποιοσ\",\"ποιου\",\"ποιους\",\"ποιουσ\",\"ποιων\",\"πολυ\",\"ποσες\",\"ποση\",\"ποσην\",\"ποσης\",\"ποσοι\",\"ποσος\",\"ποσους\",\"ποτε\",\"που\",\"πουθε\",\"πουθενα\",\"ποῦ\",\"πρεπει\",\"πριν\",\"προ\",\"προκειμενου\",\"προκειται\",\"προπερσι\",\"προς\",\"προσ\",\"προτου\",\"προχθες\",\"προχτες\",\"πρωτυτερα\",\"πρόσ\",\"πρὸ\",\"πρὸς\",\"πως\",\"πωσ\",\"σαν\",\"σας\",\"σε\",\"σεις\",\"σημερα\",\"σιγα\",\"σου\",\"στα\",\"στη\",\"στην\",\"στης\",\"στις\",\"στο\",\"στον\",\"στου\",\"στους\",\"στων\",\"συγχρονως\",\"συν\",\"συναμα\",\"συνεπως\",\"συνηθως\",\"συχνα\",\"συχνας\",\"συχνες\",\"συχνη\",\"συχνην\",\"συχνης\",\"συχνο\",\"συχνοι\",\"συχνον\",\"συχνος\",\"συχνου\",\"συχνους\",\"συχνων\",\"συχνως\",\"σχεδον\",\"σωστα\",\"σόσ\",\"σύ\",\"σύν\",\"σὸς\",\"σὺ\",\"σὺν\",\"τά\",\"τήν\",\"τί\",\"τίς\",\"τίσ\",\"τα\",\"ταδε\",\"ταυτα\",\"ταυτες\",\"ταυτη\",\"ταυτην\",\"ταυτης\",\"ταυτο\",\"ταυτον\",\"ταυτος\",\"ταυτου\",\"ταυτων\",\"ταχα\",\"ταχατε\",\"ταῖς\",\"τε\",\"τελικα\",\"τελικως\",\"τες\",\"τετοια\",\"τετοιαν\",\"τετοιας\",\"τετοιες\",\"τετοιο\",\"τετοιοι\",\"τετοιον\",\"τετοιος\",\"τετοιου\",\"τετοιους\",\"τετοιων\",\"τη\",\"την\",\"της\",\"τησ\",\"τι\",\"τινα\",\"τιποτα\",\"τιποτε\",\"τις\",\"τισ\",\"το\",\"τοί\",\"τοι\",\"τοιοῦτος\",\"τοιοῦτοσ\",\"τον\",\"τος\",\"τοσα\",\"τοσες\",\"τοση\",\"τοσην\",\"τοσης\",\"τοσο\",\"τοσοι\",\"τοσον\",\"τοσος\",\"τοσου\",\"τοσους\",\"τοσων\",\"τοτε\",\"του\",\"τουλαχιστο\",\"τουλαχιστον\",\"τους\",\"τουτα\",\"τουτες\",\"τουτη\",\"τουτην\",\"τουτης\",\"τουτο\",\"τουτοι\",\"τουτοις\",\"τουτον\",\"τουτος\",\"τουτου\",\"τουτους\",\"τουτων\",\"τούσ\",\"τοὺς\",\"τοῖς\",\"τοῦ\",\"τυχον\",\"των\",\"τωρα\",\"τό\",\"τόν\",\"τότε\",\"τὰ\",\"τὰς\",\"τὴν\",\"τὸ\",\"τὸν\",\"τῆς\",\"τῆσ\",\"τῇ\",\"τῶν\",\"τῷ\",\"υπ\",\"υπερ\",\"υπο\",\"υποψη\",\"υποψιν\",\"υπό\",\"υστερα\",\"φετος\",\"χαμηλα\",\"χθες\",\"χτες\",\"χωρις\",\"χωριστα\",\"ψηλα\",\"ω\",\"ωραια\",\"ως\",\"ωσ\",\"ωσαν\",\"ωσοτου\",\"ωσπου\",\"ωστε\",\"ωστοσο\",\"ωχ\",\"ἀλλ'\",\"ἀλλά\",\"ἀλλὰ\",\"ἀλλ’\",\"ἀπ\",\"ἀπό\",\"ἀπὸ\",\"ἀφ\",\"ἂν\",\"ἃ\",\"ἄλλος\",\"ἄλλοσ\",\"ἄν\",\"ἄρα\",\"ἅμα\",\"ἐάν\",\"ἐγώ\",\"ἐγὼ\",\"ἐκ\",\"ἐμόσ\",\"ἐμὸς\",\"ἐν\",\"ἐξ\",\"ἐπί\",\"ἐπεὶ\",\"ἐπὶ\",\"ἐστι\",\"ἐφ\",\"ἐὰν\",\"ἑαυτοῦ\",\"ἔτι\",\"ἡ\",\"ἢ\",\"ἣ\",\"ἤ\",\"ἥ\",\"ἧς\",\"ἵνα\",\"ὁ\",\"ὃ\",\"ὃν\",\"ὃς\",\"ὅ\",\"ὅδε\",\"ὅθεν\",\"ὅπερ\",\"ὅς\",\"ὅσ\",\"ὅστις\",\"ὅστισ\",\"ὅτε\",\"ὅτι\",\"ὑμόσ\",\"ὑπ\",\"ὑπέρ\",\"ὑπό\",\"ὑπὲρ\",\"ὑπὸ\",\"ὡς\",\"ὡσ\",\"ὥς\",\"ὥστε\",\"ὦ\",\"ᾧ\"],\"en\":[\"a\",\"a's\",\"able\",\"about\",\"above\",\"according\",\"accordingly\",\"across\",\"actually\",\"after\",\"afterwards\",\"again\",\"against\",\"ain't\",\"all\",\"allow\",\"allows\",\"almost\",\"alone\",\"along\",\"already\",\"also\",\"although\",\"always\",\"am\",\"among\",\"amongst\",\"an\",\"and\",\"another\",\"any\",\"anybody\",\"anyhow\",\"anyone\",\"anything\",\"anyway\",\"anyways\",\"anywhere\",\"apart\",\"appear\",\"appreciate\",\"appropriate\",\"are\",\"aren't\",\"around\",\"as\",\"aside\",\"ask\",\"asking\",\"associated\",\"at\",\"available\",\"away\",\"awfully\",\"b\",\"be\",\"became\",\"because\",\"become\",\"becomes\",\"becoming\",\"been\",\"before\",\"beforehand\",\"behind\",\"being\",\"believe\",\"below\",\"beside\",\"besides\",\"best\",\"better\",\"between\",\"beyond\",\"both\",\"brief\",\"but\",\"by\",\"c\",\"c'mon\",\"c's\",\"came\",\"can\",\"can't\",\"cannot\",\"cant\",\"cause\",\"causes\",\"certain\",\"certainly\",\"changes\",\"clearly\",\"co\",\"com\",\"come\",\"comes\",\"concerning\",\"consequently\",\"consider\",\"considering\",\"contain\",\"containing\",\"contains\",\"corresponding\",\"could\",\"couldn't\",\"course\",\"currently\",\"d\",\"definitely\",\"described\",\"despite\",\"did\",\"didn't\",\"different\",\"do\",\"does\",\"doesn't\",\"doing\",\"don't\",\"done\",\"down\",\"downwards\",\"dr\",\"dra\",\"during\",\"e\",\"each\",\"edu\",\"eg\",\"eight\",\"either\",\"else\",\"elsewhere\",\"enough\",\"entirely\",\"especially\",\"et\",\"etc\",\"even\",\"ever\",\"every\",\"everybody\",\"everyone\",\"everything\",\"everywhere\",\"ex\",\"exactly\",\"example\",\"except\",\"f\",\"far\",\"few\",\"fifth\",\"first\",\"five\",\"followed\",\"following\",\"follows\",\"for\",\"former\",\"formerly\",\"forth\",\"four\",\"from\",\"further\",\"furthermore\",\"g\",\"get\",\"gets\",\"getting\",\"given\",\"gives\",\"go\",\"goes\",\"going\",\"gone\",\"got\",\"gotten\",\"greetings\",\"h\",\"had\",\"hadn't\",\"happens\",\"hardly\",\"has\",\"hasn't\",\"have\",\"haven't\",\"having\",\"he\",\"he's\",\"hello\",\"help\",\"hence\",\"her\",\"here\",\"here's\",\"hereafter\",\"hereby\",\"herein\",\"hereupon\",\"hers\",\"herself\",\"hi\",\"him\",\"himself\",\"his\",\"hither\",\"hopefully\",\"how\",\"howbeit\",\"however\",\"i\",\"i'd\",\"i'll\",\"i'm\",\"i've\",\"ie\",\"if\",\"ignored\",\"immediate\",\"in\",\"inasmuch\",\"inc\",\"indeed\",\"indicate\",\"indicated\",\"indicates\",\"inner\",\"insofar\",\"instead\",\"into\",\"inward\",\"is\",\"isn't\",\"it\",\"it'd\",\"it'll\",\"it's\",\"its\",\"itself\",\"j\",\"just\",\"k\",\"keep\",\"keeps\",\"kept\",\"know\",\"known\",\"knows\",\"l\",\"last\",\"lately\",\"later\",\"latter\",\"latterly\",\"least\",\"less\",\"lest\",\"let\",\"let's\",\"like\",\"liked\",\"likely\",\"little\",\"look\",\"looking\",\"looks\",\"ltd\",\"m\",\"mainly\",\"many\",\"may\",\"maybe\",\"me\",\"mean\",\"meanwhile\",\"merely\",\"might\",\"more\",\"moreover\",\"most\",\"mostly\",\"mr\",\"ms\",\"much\",\"must\",\"my\",\"myself\",\"n\",\"name\",\"namely\",\"nd\",\"near\",\"nearly\",\"necessary\",\"need\",\"needs\",\"neither\",\"never\",\"nevertheless\",\"new\",\"next\",\"nine\",\"no\",\"nobody\",\"non\",\"none\",\"noone\",\"nor\",\"normally\",\"not\",\"nothing\",\"novel\",\"now\",\"nowhere\",\"o\",\"obviously\",\"of\",\"off\",\"often\",\"oh\",\"ok\",\"okay\",\"old\",\"on\",\"once\",\"one\",\"ones\",\"only\",\"onto\",\"or\",\"other\",\"others\",\"otherwise\",\"ought\",\"our\",\"ours\",\"ourselves\",\"out\",\"outside\",\"over\",\"overall\",\"own\",\"p\",\"particular\",\"particularly\",\"per\",\"perhaps\",\"placed\",\"please\",\"plus\",\"possible\",\"presumably\",\"probably\",\"provides\",\"q\",\"que\",\"quite\",\"qv\",\"r\",\"rather\",\"rd\",\"re\",\"really\",\"reasonably\",\"regarding\",\"regardless\",\"regards\",\"relatively\",\"respectively\",\"right\",\"s\",\"said\",\"same\",\"saw\",\"say\",\"saying\",\"says\",\"second\",\"secondly\",\"see\",\"seeing\",\"seem\",\"seemed\",\"seeming\",\"seems\",\"seen\",\"self\",\"selves\",\"sensible\",\"sent\",\"serious\",\"seriously\",\"seven\",\"several\",\"shall\",\"she\",\"should\",\"shouldn't\",\"since\",\"six\",\"so\",\"some\",\"somebody\",\"somehow\",\"someone\",\"something\",\"sometime\",\"sometimes\",\"somewhat\",\"somewhere\",\"soon\",\"sorry\",\"specified\",\"specify\",\"specifying\",\"still\",\"sub\",\"such\",\"sup\",\"sure\",\"t\",\"t's\",\"take\",\"taken\",\"tell\",\"tends\",\"th\",\"than\",\"thank\",\"thanks\",\"thanx\",\"that\",\"that's\",\"thats\",\"the\",\"their\",\"theirs\",\"them\",\"themselves\",\"then\",\"thence\",\"there\",\"there's\",\"thereafter\",\"thereby\",\"therefore\",\"therein\",\"theres\",\"thereupon\",\"these\",\"they\",\"they'd\",\"they'll\",\"they're\",\"they've\",\"think\",\"third\",\"this\",\"thorough\",\"thoroughly\",\"those\",\"though\",\"three\",\"through\",\"throughout\",\"thru\",\"thus\",\"to\",\"together\",\"too\",\"took\",\"toward\",\"towards\",\"tried\",\"tries\",\"truly\",\"try\",\"trying\",\"twice\",\"two\",\"u\",\"un\",\"under\",\"unfortunately\",\"unless\",\"unlikely\",\"until\",\"unto\",\"up\",\"upon\",\"us\",\"use\",\"used\",\"useful\",\"uses\",\"using\",\"usually\",\"uucp\",\"v\",\"value\",\"various\",\"very\",\"via\",\"viz\",\"vs\",\"w\",\"want\",\"wants\",\"was\",\"wasn't\",\"way\",\"we\",\"we'd\",\"we'll\",\"we're\",\"we've\",\"welcome\",\"well\",\"went\",\"were\",\"weren't\",\"what\",\"what's\",\"whatever\",\"when\",\"whence\",\"whenever\",\"where\",\"where's\",\"whereafter\",\"whereas\",\"whereby\",\"wherein\",\"whereupon\",\"wherever\",\"whether\",\"which\",\"while\",\"whither\",\"who\",\"who's\",\"whoever\",\"whole\",\"whom\",\"whose\",\"why\",\"will\",\"willing\",\"wish\",\"with\",\"within\",\"without\",\"won't\",\"wonder\",\"would\",\"wouldn't\",\"x\",\"y\",\"yes\",\"yet\",\"you\",\"you'd\",\"you'll\",\"you're\",\"you've\",\"your\",\"yours\",\"yourself\",\"yourselves\",\"z\",\"zero\"],\"es\":[\"a\",\"actualmente\",\"adelante\",\"además\",\"afirmó\",\"agregó\",\"ahora\",\"ahí\",\"al\",\"algo\",\"alguna\",\"algunas\",\"alguno\",\"algunos\",\"algún\",\"alrededor\",\"ambos\",\"ante\",\"anterior\",\"antes\",\"apenas\",\"aproximadamente\",\"aquí\",\"aseguró\",\"así\",\"aunque\",\"ayer\",\"añadió\",\"aún\",\"bajo\",\"bien\",\"buen\",\"buena\",\"buenas\",\"bueno\",\"buenos\",\"cada\",\"casi\",\"cerca\",\"cierto\",\"cinco\",\"comentó\",\"como\",\"con\",\"conocer\",\"considera\",\"consideró\",\"contra\",\"cosas\",\"creo\",\"cual\",\"cuales\",\"cualquier\",\"cuando\",\"cuanto\",\"cuatro\",\"cuenta\",\"cómo\",\"da\",\"dado\",\"dan\",\"dar\",\"de\",\"debe\",\"deben\",\"debido\",\"decir\",\"dejó\",\"del\",\"demás\",\"dentro\",\"desde\",\"después\",\"dice\",\"dicen\",\"dicho\",\"dieron\",\"diferente\",\"diferentes\",\"dijeron\",\"dijo\",\"dio\",\"donde\",\"dos\",\"durante\",\"e\",\"ejemplo\",\"el\",\"ella\",\"ellas\",\"ello\",\"ellos\",\"embargo\",\"en\",\"encuentra\",\"entonces\",\"entre\",\"era\",\"eran\",\"es\",\"esa\",\"esas\",\"ese\",\"eso\",\"esos\",\"esta\",\"estaba\",\"estaban\",\"estamos\",\"estar\",\"estará\",\"estas\",\"este\",\"esto\",\"estos\",\"estoy\",\"estuvo\",\"está\",\"están\",\"ex\",\"existe\",\"existen\",\"explicó\",\"expresó\",\"fin\",\"fue\",\"fuera\",\"fueron\",\"gran\",\"grandes\",\"ha\",\"haber\",\"habrá\",\"había\",\"habían\",\"hace\",\"hacen\",\"hacer\",\"hacerlo\",\"hacia\",\"haciendo\",\"han\",\"hasta\",\"hay\",\"haya\",\"he\",\"hecho\",\"hemos\",\"hicieron\",\"hizo\",\"hoy\",\"hubo\",\"igual\",\"incluso\",\"indicó\",\"informó\",\"junto\",\"la\",\"lado\",\"las\",\"le\",\"les\",\"llegó\",\"lleva\",\"llevar\",\"lo\",\"los\",\"luego\",\"lugar\",\"manera\",\"manifestó\",\"mayor\",\"me\",\"mediante\",\"mejor\",\"mencionó\",\"menos\",\"mi\",\"mientras\",\"misma\",\"mismas\",\"mismo\",\"mismos\",\"momento\",\"mucha\",\"muchas\",\"mucho\",\"muchos\",\"muy\",\"más\",\"nada\",\"nadie\",\"ni\",\"ninguna\",\"ningunas\",\"ninguno\",\"ningunos\",\"ningún\",\"no\",\"nos\",\"nosotras\",\"nosotros\",\"nuestra\",\"nuestras\",\"nuestro\",\"nuestros\",\"nueva\",\"nuevas\",\"nuevo\",\"nuevos\",\"nunca\",\"o\",\"ocho\",\"otra\",\"otras\",\"otro\",\"otros\",\"para\",\"parece\",\"parte\",\"partir\",\"pasada\",\"pasado\",\"pero\",\"pesar\",\"poca\",\"pocas\",\"poco\",\"pocos\",\"podemos\",\"podrá\",\"podrán\",\"podría\",\"podrían\",\"poner\",\"por\",\"porque\",\"posible\",\"primer\",\"primera\",\"primero\",\"primeros\",\"principalmente\",\"propia\",\"propias\",\"propio\",\"propios\",\"próximo\",\"próximos\",\"pudo\",\"pueda\",\"puede\",\"pueden\",\"pues\",\"que\",\"quedó\",\"queremos\",\"quien\",\"quienes\",\"quiere\",\"quién\",\"qué\",\"realizado\",\"realizar\",\"realizó\",\"respecto\",\"se\",\"sea\",\"sean\",\"segunda\",\"segundo\",\"según\",\"seis\",\"ser\",\"será\",\"serán\",\"sería\",\"señaló\",\"si\",\"sido\",\"siempre\",\"siendo\",\"siete\",\"sigue\",\"siguiente\",\"sin\",\"sino\",\"sobre\",\"sola\",\"solamente\",\"solas\",\"solo\",\"solos\",\"son\",\"su\",\"sus\",\"sí\",\"sólo\",\"tal\",\"también\",\"tampoco\",\"tan\",\"tanto\",\"tendrá\",\"tendrán\",\"tenemos\",\"tener\",\"tenga\",\"tengo\",\"tenido\",\"tenía\",\"tercera\",\"tiene\",\"tienen\",\"toda\",\"todas\",\"todavía\",\"todo\",\"todos\",\"total\",\"tras\",\"trata\",\"través\",\"tres\",\"tuvo\",\"un\",\"una\",\"unas\",\"uno\",\"unos\",\"usted\",\"va\",\"vamos\",\"van\",\"varias\",\"varios\",\"veces\",\"ver\",\"vez\",\"y\",\"ya\",\"yo\",\"él\",\"ésta\",\"éstas\",\"éste\",\"éstos\",\"última\",\"últimas\",\"último\",\"últimos\"],\"et\":[\"ei\",\"et\",\"ja\",\"jah\",\"kas\",\"kui\",\"kõik\",\"ma\",\"me\",\"mida\",\"midagi\",\"mind\",\"minu\",\"mis\",\"mu\",\"mul\",\"mulle\",\"nad\",\"nii\",\"oled\",\"olen\",\"oli\",\"oma\",\"on\",\"pole\",\"sa\",\"seda\",\"see\",\"selle\",\"siin\",\"siis\",\"ta\",\"te\",\"ära\",\"﻿aga\"],\"fa\":[\"آباد\",\"آره\",\"آری\",\"آمد\",\"آمده\",\"آن\",\"آنان\",\"آنجا\",\"آنكه\",\"آنها\",\"آنچه\",\"آورد\",\"آورده\",\"آيد\",\"آیا\",\"اثرِ\",\"از\",\"است\",\"استفاده\",\"اش\",\"اكنون\",\"البته\",\"البتّه\",\"ام\",\"اما\",\"امروز\",\"امسال\",\"اند\",\"انکه\",\"او\",\"اول\",\"اي\",\"ايشان\",\"ايم\",\"اين\",\"اينكه\",\"اگر\",\"با\",\"بار\",\"بارة\",\"باره\",\"باشد\",\"باشند\",\"باشيم\",\"بالا\",\"بالایِ\",\"بايد\",\"بدون\",\"بر\",\"برابرِ\",\"براساس\",\"براي\",\"برایِ\",\"برخوردار\",\"برخي\",\"برداري\",\"بروز\",\"بسيار\",\"بسياري\",\"بعد\",\"بعری\",\"بعضي\",\"بلكه\",\"بله\",\"بلکه\",\"بلی\",\"بنابراين\",\"بندي\",\"به\",\"بهترين\",\"بود\",\"بودن\",\"بودند\",\"بوده\",\"بي\",\"بيست\",\"بيش\",\"بيشتر\",\"بيشتري\",\"بين\",\"بی\",\"بیرونِ\",\"تا\",\"تازه\",\"تاكنون\",\"تان\",\"تحت\",\"تر\",\"ترين\",\"تمام\",\"تمامي\",\"تنها\",\"تواند\",\"توانند\",\"توسط\",\"تولِ\",\"تویِ\",\"جا\",\"جاي\",\"جايي\",\"جدا\",\"جديد\",\"جريان\",\"جز\",\"جلوگيري\",\"جلویِ\",\"حتي\",\"حدودِ\",\"حق\",\"خارجِ\",\"خدمات\",\"خواست\",\"خواهد\",\"خواهند\",\"خواهيم\",\"خود\",\"خويش\",\"خیاه\",\"داد\",\"دادن\",\"دادند\",\"داده\",\"دارد\",\"دارند\",\"داريم\",\"داشت\",\"داشتن\",\"داشتند\",\"داشته\",\"دانست\",\"دانند\",\"در\",\"درباره\",\"دنبالِ\",\"ده\",\"دهد\",\"دهند\",\"دو\",\"دوم\",\"ديده\",\"ديروز\",\"ديگر\",\"ديگران\",\"ديگري\",\"دیگر\",\"را\",\"راه\",\"رفت\",\"رفته\",\"روب\",\"روزهاي\",\"روي\",\"رویِ\",\"ريزي\",\"زياد\",\"زير\",\"زيرا\",\"زیرِ\",\"سابق\",\"ساخته\",\"سازي\",\"سراسر\",\"سریِ\",\"سعي\",\"سمتِ\",\"سوم\",\"سوي\",\"سویِ\",\"سپس\",\"شان\",\"شايد\",\"شد\",\"شدن\",\"شدند\",\"شده\",\"شش\",\"شما\",\"شناسي\",\"شود\",\"شوند\",\"صورت\",\"ضدِّ\",\"ضمن\",\"طبقِ\",\"طريق\",\"طور\",\"طي\",\"عقبِ\",\"علّتِ\",\"عنوانِ\",\"غير\",\"فقط\",\"فكر\",\"فوق\",\"قابل\",\"قبل\",\"قصدِ\",\"كرد\",\"كردم\",\"كردن\",\"كردند\",\"كرده\",\"كسي\",\"كل\",\"كمتر\",\"كند\",\"كنم\",\"كنند\",\"كنيد\",\"كنيم\",\"كه\",\"لطفاً\",\"ما\",\"مان\",\"مانند\",\"مانندِ\",\"مثل\",\"مثلِ\",\"مختلف\",\"مدّتی\",\"مردم\",\"مرسی\",\"مقابل\",\"من\",\"مورد\",\"مي\",\"ميليارد\",\"ميليون\",\"مگر\",\"ناشي\",\"نام\",\"نبايد\",\"نبود\",\"نخست\",\"نخستين\",\"نخواهد\",\"ندارد\",\"ندارند\",\"نداشته\",\"نزديك\",\"نزدِ\",\"نزدیکِ\",\"نشان\",\"نشده\",\"نظير\",\"نكرده\",\"نمايد\",\"نمي\",\"نه\",\"نوعي\",\"نيز\",\"نيست\",\"ها\",\"هاي\",\"هايي\",\"هر\",\"هرگز\",\"هزار\",\"هست\",\"هستند\",\"هستيم\",\"هفت\",\"هم\",\"همان\",\"همه\",\"همواره\",\"همين\",\"همچنان\",\"همچنين\",\"همچون\",\"همین\",\"هنوز\",\"هنگام\",\"هنگامِ\",\"هنگامی\",\"هيچ\",\"هیچ\",\"و\",\"وسطِ\",\"وقتي\",\"وقتیکه\",\"ولی\",\"وي\",\"وگو\",\"يا\",\"يابد\",\"يك\",\"يكديگر\",\"يكي\",\"ّه\",\"پاعینِ\",\"پس\",\"پنج\",\"پيش\",\"پیش\",\"پیشِ\",\"چرا\",\"چطور\",\"چند\",\"چندین\",\"چنين\",\"چه\",\"چهار\",\"چون\",\"چيزي\",\"چگونه\",\"چیز\",\"چیزی\",\"چیست\",\"کجا\",\"کجاست\",\"کدام\",\"کس\",\"کسی\",\"کنارِ\",\"که\",\"کَی\",\"کی\",\"گذاري\",\"گذاشته\",\"گردد\",\"گرفت\",\"گرفته\",\"گروهي\",\"گفت\",\"گفته\",\"گويد\",\"گويند\",\"گيرد\",\"گيري\",\"یا\",\"یک\"],\"fi\":[\"aiemmin\",\"aika\",\"aikaa\",\"aikaan\",\"aikaisemmin\",\"aikaisin\",\"aikajen\",\"aikana\",\"aikoina\",\"aikoo\",\"aikovat\",\"aina\",\"ainakaan\",\"ainakin\",\"ainoa\",\"ainoat\",\"aiomme\",\"aion\",\"aiotte\",\"aist\",\"aivan\",\"ajan\",\"alas\",\"alemmas\",\"alkuisin\",\"alkuun\",\"alla\",\"alle\",\"aloitamme\",\"aloitan\",\"aloitat\",\"aloitatte\",\"aloitattivat\",\"aloitettava\",\"aloitettevaksi\",\"aloitettu\",\"aloitimme\",\"aloitin\",\"aloitit\",\"aloititte\",\"aloittaa\",\"aloittamatta\",\"aloitti\",\"aloittivat\",\"alta\",\"aluksi\",\"alussa\",\"alusta\",\"annettavaksi\",\"annetteva\",\"annettu\",\"antaa\",\"antamatta\",\"antoi\",\"aoua\",\"apu\",\"asia\",\"asiaa\",\"asian\",\"asiasta\",\"asiat\",\"asioiden\",\"asioihin\",\"asioita\",\"asti\",\"avuksi\",\"avulla\",\"avun\",\"avutta\",\"edelle\",\"edelleen\",\"edellä\",\"edeltä\",\"edemmäs\",\"edes\",\"edessä\",\"edestä\",\"ehkä\",\"ei\",\"eikä\",\"eilen\",\"eivät\",\"eli\",\"ellei\",\"elleivät\",\"ellemme\",\"ellen\",\"ellet\",\"ellette\",\"emme\",\"en\",\"enemmän\",\"eniten\",\"ennen\",\"ensi\",\"ensimmäinen\",\"ensimmäiseksi\",\"ensimmäisen\",\"ensimmäisenä\",\"ensimmäiset\",\"ensimmäisiksi\",\"ensimmäisinä\",\"ensimmäisiä\",\"ensimmäistä\",\"ensin\",\"entinen\",\"entisen\",\"entisiä\",\"entisten\",\"entistä\",\"enää\",\"eri\",\"erittäin\",\"erityisesti\",\"eräiden\",\"eräs\",\"eräät\",\"esi\",\"esiin\",\"esillä\",\"esimerkiksi\",\"et\",\"eteen\",\"etenkin\",\"ette\",\"ettei\",\"että\",\"halua\",\"haluaa\",\"haluamatta\",\"haluamme\",\"haluan\",\"haluat\",\"haluatte\",\"haluavat\",\"halunnut\",\"halusi\",\"halusimme\",\"halusin\",\"halusit\",\"halusitte\",\"halusivat\",\"halutessa\",\"haluton\",\"he\",\"hei\",\"heidän\",\"heihin\",\"heille\",\"heiltä\",\"heissä\",\"heistä\",\"heitä\",\"helposti\",\"heti\",\"hetkellä\",\"hieman\",\"huolimatta\",\"huomenna\",\"hyvien\",\"hyviin\",\"hyviksi\",\"hyville\",\"hyviltä\",\"hyvin\",\"hyvinä\",\"hyvissä\",\"hyvistä\",\"hyviä\",\"hyvä\",\"hyvät\",\"hyvää\",\"hän\",\"häneen\",\"hänelle\",\"hänellä\",\"häneltä\",\"hänen\",\"hänessä\",\"hänestä\",\"hänet\",\"ihan\",\"ilman\",\"ilmeisesti\",\"itse\",\"itsensä\",\"itseään\",\"ja\",\"jo\",\"johon\",\"joiden\",\"joihin\",\"joiksi\",\"joilla\",\"joille\",\"joilta\",\"joissa\",\"joista\",\"joita\",\"joka\",\"jokainen\",\"jokin\",\"joko\",\"joku\",\"jolla\",\"jolle\",\"jolloin\",\"jolta\",\"jompikumpi\",\"jonka\",\"jonkin\",\"jonne\",\"joo\",\"jopa\",\"jos\",\"joskus\",\"jossa\",\"josta\",\"jota\",\"jotain\",\"joten\",\"jotenkin\",\"jotenkuten\",\"jotka\",\"jotta\",\"jouduimme\",\"jouduin\",\"jouduit\",\"jouduitte\",\"joudumme\",\"joudun\",\"joudutte\",\"joukkoon\",\"joukossa\",\"joukosta\",\"joutua\",\"joutui\",\"joutuivat\",\"joutumaan\",\"joutuu\",\"joutuvat\",\"juuri\",\"jälkeen\",\"jälleen\",\"jää\",\"kahdeksan\",\"kahdeksannen\",\"kahdella\",\"kahdelle\",\"kahdelta\",\"kahden\",\"kahdessa\",\"kahdesta\",\"kahta\",\"kahteen\",\"kai\",\"kaiken\",\"kaikille\",\"kaikilta\",\"kaikkea\",\"kaikki\",\"kaikkia\",\"kaikkiaan\",\"kaikkialla\",\"kaikkialle\",\"kaikkialta\",\"kaikkien\",\"kaikkin\",\"kaksi\",\"kannalta\",\"kannattaa\",\"kanssa\",\"kanssaan\",\"kanssamme\",\"kanssani\",\"kanssanne\",\"kanssasi\",\"kauan\",\"kauemmas\",\"kautta\",\"kehen\",\"keiden\",\"keihin\",\"keiksi\",\"keille\",\"keillä\",\"keiltä\",\"keinä\",\"keissä\",\"keistä\",\"keitten\",\"keittä\",\"keitä\",\"keneen\",\"keneksi\",\"kenelle\",\"kenellä\",\"keneltä\",\"kenen\",\"kenenä\",\"kenessä\",\"kenestä\",\"kenet\",\"kenettä\",\"kennessästä\",\"kerran\",\"kerta\",\"kertaa\",\"kesken\",\"keskimäärin\",\"ketkä\",\"ketä\",\"kiitos\",\"kohti\",\"koko\",\"kokonaan\",\"kolmas\",\"kolme\",\"kolmen\",\"kolmesti\",\"koska\",\"koskaan\",\"kovin\",\"kuin\",\"kuinka\",\"kuitenkaan\",\"kuitenkin\",\"kuka\",\"kukaan\",\"kukin\",\"kumpainen\",\"kumpainenkaan\",\"kumpi\",\"kumpikaan\",\"kumpikin\",\"kun\",\"kuten\",\"kuuden\",\"kuusi\",\"kuutta\",\"kyllä\",\"kymmenen\",\"kyse\",\"liian\",\"liki\",\"lisäksi\",\"lisää\",\"luo\",\"lähekkäin\",\"lähelle\",\"lähellä\",\"läheltä\",\"lähemmäs\",\"lähes\",\"lähinnä\",\"lähtien\",\"läpi\",\"mahdollisimman\",\"mahdollista\",\"me\",\"meidän\",\"meille\",\"meillä\",\"melkein\",\"melko\",\"menee\",\"meneet\",\"menemme\",\"menen\",\"menet\",\"menette\",\"menevät\",\"meni\",\"menimme\",\"menin\",\"menit\",\"menivät\",\"mennessä\",\"mennyt\",\"menossa\",\"mihin\",\"mikin\",\"miksi\",\"mikä\",\"mikäli\",\"mikään\",\"milloin\",\"minne\",\"minun\",\"minut\",\"minä\",\"missä\",\"mistä\",\"miten\",\"mitä\",\"mitään\",\"moi\",\"molemmat\",\"mones\",\"monesti\",\"monet\",\"moni\",\"moniaalla\",\"moniaalle\",\"moniaalta\",\"monta\",\"muassa\",\"muiden\",\"muita\",\"muka\",\"mukaan\",\"mukaansa\",\"mukana\",\"mutta\",\"muu\",\"muualla\",\"muualle\",\"muualta\",\"muuanne\",\"muulloin\",\"muun\",\"muut\",\"muuta\",\"muutama\",\"muutaman\",\"muuten\",\"myöhemmin\",\"myös\",\"myöskin\",\"myöskään\",\"myötä\",\"ne\",\"neljä\",\"neljän\",\"neljää\",\"niiden\",\"niin\",\"niistä\",\"niitä\",\"noin\",\"nopeammin\",\"nopeasti\",\"nopeiten\",\"nro\",\"nuo\",\"nyt\",\"näiden\",\"näin\",\"näissä\",\"näissähin\",\"näissälle\",\"näissältä\",\"näissästä\",\"näitä\",\"nämä\",\"ohi\",\"oikein\",\"ole\",\"olemme\",\"olen\",\"olet\",\"olette\",\"oleva\",\"olevan\",\"olevat\",\"oli\",\"olimme\",\"olin\",\"olisi\",\"olisimme\",\"olisin\",\"olisit\",\"olisitte\",\"olisivat\",\"olit\",\"olitte\",\"olivat\",\"olla\",\"olleet\",\"olli\",\"ollut\",\"oma\",\"omaa\",\"omaan\",\"omaksi\",\"omalle\",\"omalta\",\"oman\",\"omassa\",\"omat\",\"omia\",\"omien\",\"omiin\",\"omiksi\",\"omille\",\"omilta\",\"omissa\",\"omista\",\"on\",\"onkin\",\"onko\",\"ovat\",\"paikoittain\",\"paitsi\",\"pakosti\",\"paljon\",\"paremmin\",\"parempi\",\"parhaillaan\",\"parhaiten\",\"perusteella\",\"peräti\",\"pian\",\"pieneen\",\"pieneksi\",\"pienelle\",\"pienellä\",\"pieneltä\",\"pienempi\",\"pienestä\",\"pieni\",\"pienin\",\"puolesta\",\"puolestaan\",\"päälle\",\"runsaasti\",\"saakka\",\"sadam\",\"sama\",\"samaa\",\"samaan\",\"samalla\",\"samallalta\",\"samallassa\",\"samallasta\",\"saman\",\"samat\",\"samoin\",\"sata\",\"sataa\",\"satojen\",\"se\",\"seitsemän\",\"sekä\",\"sen\",\"seuraavat\",\"siellä\",\"sieltä\",\"siihen\",\"siinä\",\"siis\",\"siitä\",\"sijaan\",\"siksi\",\"silloin\",\"sillä\",\"silti\",\"sinne\",\"sinua\",\"sinulle\",\"sinulta\",\"sinun\",\"sinussa\",\"sinusta\",\"sinut\",\"sinä\",\"sisäkkäin\",\"sisällä\",\"siten\",\"sitten\",\"sitä\",\"suoraan\",\"suuntaan\",\"suuren\",\"suuret\",\"suuri\",\"suuria\",\"suurin\",\"suurten\",\"taa\",\"taas\",\"taemmas\",\"tahansa\",\"tai\",\"takaa\",\"takaisin\",\"takana\",\"takia\",\"tapauksessa\",\"tavalla\",\"tavoitteena\",\"te\",\"tietysti\",\"todella\",\"toinen\",\"toisaalla\",\"toisaalle\",\"toisaalta\",\"toiseen\",\"toiseksi\",\"toisella\",\"toiselle\",\"toiselta\",\"toisemme\",\"toisen\",\"toisensa\",\"toisessa\",\"toisesta\",\"toista\",\"toistaiseksi\",\"toki\",\"tosin\",\"tuhannen\",\"tuhat\",\"tule\",\"tulee\",\"tulemme\",\"tulen\",\"tulet\",\"tulette\",\"tulevat\",\"tulimme\",\"tulin\",\"tulisi\",\"tulisimme\",\"tulisin\",\"tulisit\",\"tulisitte\",\"tulisivat\",\"tulit\",\"tulitte\",\"tulivat\",\"tulla\",\"tulleet\",\"tullut\",\"tuntuu\",\"tuo\",\"tuolla\",\"tuolloin\",\"tuolta\",\"tuonne\",\"tuskin\",\"tykö\",\"tähän\",\"tällä\",\"tällöin\",\"tämä\",\"tämän\",\"tänne\",\"tänä\",\"tänään\",\"tässä\",\"tästä\",\"täten\",\"tätä\",\"täysin\",\"täytyvät\",\"täytyy\",\"täällä\",\"täältä\",\"usea\",\"useasti\",\"useimmiten\",\"usein\",\"useita\",\"uudeksi\",\"uudelleen\",\"uuden\",\"uudet\",\"uusi\",\"uusia\",\"uusien\",\"uusinta\",\"uuteen\",\"uutta\",\"vaan\",\"vai\",\"vaiheessa\",\"vaikea\",\"vaikean\",\"vaikeat\",\"vaikeilla\",\"vaikeille\",\"vaikeilta\",\"vaikeissa\",\"vaikeista\",\"vaikka\",\"vain\",\"varmasti\",\"varsin\",\"varsinkin\",\"varten\",\"vasta\",\"vastaan\",\"vastakkain\",\"verran\",\"vielä\",\"vierekkäin\",\"vieri\",\"viiden\",\"viime\",\"viimeinen\",\"viimeisen\",\"viimeksi\",\"viisi\",\"voi\",\"voidaan\",\"voimme\",\"voin\",\"voisi\",\"voit\",\"voitte\",\"voivat\",\"vuoden\",\"vuoksi\",\"vuosi\",\"vuosien\",\"vuosina\",\"vuotta\",\"vähemmän\",\"vähintään\",\"vähiten\",\"vähän\",\"välillä\",\"yhdeksän\",\"yhden\",\"yhdessä\",\"yhteen\",\"yhteensä\",\"yhteydessä\",\"yhteyteen\",\"yhtä\",\"yhtäälle\",\"yhtäällä\",\"yhtäältä\",\"yhtään\",\"yhä\",\"yksi\",\"yksin\",\"yksittäin\",\"yleensä\",\"ylemmäs\",\"yli\",\"ylös\",\"ympäri\",\"älköön\",\"älä\"],\"fr\":[\"a\",\"abord\",\"afin\",\"ah\",\"ai\",\"aie\",\"ainsi\",\"allaient\",\"allo\",\"allons\",\"allô\",\"après\",\"assez\",\"attendu\",\"au\",\"aucun\",\"aucune\",\"aujourd\",\"aujourd'hui\",\"auquel\",\"aura\",\"auront\",\"aussi\",\"autre\",\"autres\",\"aux\",\"auxquelles\",\"auxquels\",\"avaient\",\"avais\",\"avait\",\"avant\",\"avec\",\"avoir\",\"ayant\",\"b\",\"bah\",\"beaucoup\",\"bien\",\"bigre\",\"boum\",\"bravo\",\"brrr\",\"c\",\"car\",\"ce\",\"ceci\",\"cela\",\"celle\",\"celle-ci\",\"celle-là\",\"celles\",\"celles-ci\",\"celles-là\",\"celui\",\"celui-ci\",\"celui-là\",\"cent\",\"cependant\",\"certain\",\"certaine\",\"certaines\",\"certains\",\"certes\",\"ces\",\"cet\",\"cette\",\"ceux\",\"ceux-ci\",\"ceux-là\",\"chacun\",\"chaque\",\"cher\",\"chers\",\"chez\",\"chiche\",\"chut\",\"chère\",\"chères\",\"ci\",\"cinq\",\"cinquantaine\",\"cinquante\",\"cinquantième\",\"cinquième\",\"clac\",\"clic\",\"combien\",\"comme\",\"comment\",\"compris\",\"concernant\",\"contre\",\"couic\",\"crac\",\"d\",\"da\",\"dans\",\"de\",\"debout\",\"dedans\",\"dehors\",\"delà\",\"depuis\",\"derrière\",\"des\",\"desquelles\",\"desquels\",\"dessous\",\"dessus\",\"deux\",\"deuxième\",\"deuxièmement\",\"devant\",\"devers\",\"devra\",\"différent\",\"différente\",\"différentes\",\"différents\",\"dire\",\"divers\",\"diverse\",\"diverses\",\"dix\",\"dix-huit\",\"dix-neuf\",\"dix-sept\",\"dixième\",\"doit\",\"doivent\",\"donc\",\"dont\",\"douze\",\"douzième\",\"dring\",\"du\",\"duquel\",\"durant\",\"dès\",\"désormais\",\"e\",\"effet\",\"eh\",\"elle\",\"elle-même\",\"elles\",\"elles-mêmes\",\"en\",\"encore\",\"entre\",\"envers\",\"environ\",\"es\",\"est\",\"et\",\"etant\",\"etc\",\"etre\",\"eu\",\"euh\",\"eux\",\"eux-mêmes\",\"excepté\",\"f\",\"fais\",\"faisaient\",\"faisant\",\"fait\",\"façon\",\"feront\",\"fi\",\"flac\",\"floc\",\"font\",\"g\",\"gens\",\"h\",\"ha\",\"hein\",\"hem\",\"hep\",\"hi\",\"ho\",\"holà\",\"hop\",\"hormis\",\"hors\",\"hou\",\"houp\",\"hue\",\"hui\",\"huit\",\"huitième\",\"hum\",\"hurrah\",\"hé\",\"hélas\",\"i\",\"il\",\"ils\",\"importe\",\"j\",\"je\",\"jusqu\",\"jusque\",\"k\",\"l\",\"la\",\"laquelle\",\"las\",\"le\",\"lequel\",\"les\",\"lesquelles\",\"lesquels\",\"leur\",\"leurs\",\"longtemps\",\"lorsque\",\"lui\",\"lui-même\",\"là\",\"lès\",\"m\",\"ma\",\"maint\",\"mais\",\"malgré\",\"me\",\"merci\",\"mes\",\"mien\",\"mienne\",\"miennes\",\"miens\",\"mille\",\"mince\",\"moi\",\"moi-même\",\"moins\",\"mon\",\"moyennant\",\"même\",\"mêmes\",\"n\",\"na\",\"ne\",\"neuf\",\"neuvième\",\"ni\",\"nombreuses\",\"nombreux\",\"non\",\"nos\",\"notre\",\"nous\",\"nous-mêmes\",\"nul\",\"néanmoins\",\"nôtre\",\"nôtres\",\"o\",\"oh\",\"ohé\",\"ollé\",\"olé\",\"on\",\"ont\",\"onze\",\"onzième\",\"ore\",\"ou\",\"ouf\",\"ouias\",\"oust\",\"ouste\",\"outre\",\"o|\",\"où\",\"p\",\"paf\",\"pan\",\"par\",\"parmi\",\"partant\",\"particulier\",\"particulière\",\"particulièrement\",\"pas\",\"passé\",\"pendant\",\"personne\",\"peu\",\"peut\",\"peuvent\",\"peux\",\"pff\",\"pfft\",\"pfut\",\"pif\",\"plein\",\"plouf\",\"plus\",\"plusieurs\",\"plutôt\",\"pouah\",\"pour\",\"pourquoi\",\"premier\",\"première\",\"premièrement\",\"proche\",\"près\",\"psitt\",\"puisque\",\"q\",\"qu\",\"quand\",\"quant\",\"quant-à-soi\",\"quanta\",\"quarante\",\"quatorze\",\"quatre\",\"quatre-vingt\",\"quatrième\",\"quatrièmement\",\"que\",\"quel\",\"quelconque\",\"quelle\",\"quelles\",\"quelqu'un\",\"quelque\",\"quelques\",\"quels\",\"qui\",\"quiconque\",\"quinze\",\"quoi\",\"quoique\",\"r\",\"revoici\",\"revoilà\",\"rien\",\"s\",\"sa\",\"sacrebleu\",\"sans\",\"sapristi\",\"sauf\",\"se\",\"seize\",\"selon\",\"sept\",\"septième\",\"sera\",\"seront\",\"ses\",\"si\",\"sien\",\"sienne\",\"siennes\",\"siens\",\"sinon\",\"six\",\"sixième\",\"soi\",\"soi-même\",\"soit\",\"soixante\",\"son\",\"sont\",\"sous\",\"stop\",\"suis\",\"suivant\",\"sur\",\"surtout\",\"t\",\"ta\",\"tac\",\"tant\",\"te\",\"tel\",\"telle\",\"tellement\",\"telles\",\"tels\",\"tenant\",\"tes\",\"tic\",\"tien\",\"tienne\",\"tiennes\",\"tiens\",\"toc\",\"toi\",\"toi-même\",\"ton\",\"touchant\",\"toujours\",\"tous\",\"tout\",\"toute\",\"toutes\",\"treize\",\"trente\",\"trois\",\"troisième\",\"troisièmement\",\"trop\",\"très\",\"tsoin\",\"tsouin\",\"tu\",\"té\",\"u\",\"un\",\"une\",\"unes\",\"uns\",\"v\",\"va\",\"vais\",\"vas\",\"vers\",\"via\",\"vif\",\"vifs\",\"vingt\",\"vivat\",\"vive\",\"vives\",\"vlan\",\"voici\",\"voilà\",\"vont\",\"vos\",\"votre\",\"vous\",\"vous-mêmes\",\"vu\",\"vé\",\"vôtre\",\"vôtres\",\"w\",\"x\",\"y\",\"z\",\"zut\",\"à\",\"â\",\"ça\",\"ès\",\"étaient\",\"étais\",\"était\",\"étant\",\"été\",\"être\",\"ô\"],\"hi\":[\"अंदर\",\"अत\",\"अपना\",\"अपनी\",\"अपने\",\"अभी\",\"आप\",\"इत्यादि\",\"इन\",\"इनका\",\"इन्हीं\",\"इन्हें\",\"इन्हों\",\"इस\",\"इसका\",\"इसकी\",\"इसके\",\"इसमें\",\"इसी\",\"इसे\",\"उन\",\"उनका\",\"उनकी\",\"उनके\",\"उनको\",\"उन्हीं\",\"उन्हें\",\"उन्हों\",\"उस\",\"उसके\",\"उसी\",\"उसे\",\"एक\",\"एवं\",\"एस\",\"ऐसे\",\"और\",\"कर\",\"करता\",\"करते\",\"करना\",\"करने\",\"करें\",\"कहते\",\"कहा\",\"का\",\"काफ़ी\",\"कि\",\"कितना\",\"किन्हें\",\"किन्हों\",\"किया\",\"किर\",\"किस\",\"किसी\",\"किसे\",\"कुछ\",\"कुल\",\"को\",\"कोई\",\"कौन\",\"कौनसा\",\"गया\",\"घर\",\"जब\",\"जहाँ\",\"जा\",\"जितना\",\"जिन\",\"जिन्हें\",\"जिन्हों\",\"जिस\",\"जिसे\",\"जीधर\",\"जैसा\",\"जैसे\",\"जो\",\"तक\",\"तब\",\"तरह\",\"तिन\",\"तिन्हें\",\"तिन्हों\",\"तिस\",\"तिसे\",\"तो\",\"था\",\"थी\",\"थे\",\"दबारा\",\"दिया\",\"दुसरा\",\"दूसरे\",\"दो\",\"द्वारा\",\"न\",\"नहीं\",\"ना\",\"निहायत\",\"नीचे\",\"ने\",\"पर\",\"पहले\",\"पूरा\",\"पे\",\"फिर\",\"बनी\",\"बही\",\"बहुत\",\"बाद\",\"बाला\",\"बिलकुल\",\"भी\",\"भीतर\",\"मगर\",\"मानो\",\"मे\",\"यदि\",\"यह\",\"यहाँ\",\"यही\",\"या\",\"यिह\",\"ये\",\"रखें\",\"रहा\",\"रहे\",\"ऱ्वासा\",\"लिए\",\"लिये\",\"लेकिन\",\"व\",\"वर्ग\",\"वह\",\"वहाँ\",\"वहीं\",\"वाले\",\"वुह\",\"वे\",\"वग़ैरह\",\"संग\",\"सकता\",\"सकते\",\"सबसे\",\"सभी\",\"साथ\",\"साबुत\",\"साभ\",\"सारा\",\"से\",\"सो\",\"ही\",\"हुआ\",\"हुई\",\"हुए\",\"हैं\",\"हो\",\"होता\",\"होती\",\"होते\",\"होना\",\"होने\",\"﻿के\"],\"hr\":[\"ako\",\"ali\",\"bi\",\"bih\",\"bila\",\"bili\",\"bilo\",\"bio\",\"bismo\",\"biste\",\"biti\",\"bumo\",\"da\",\"do\",\"duž\",\"ga\",\"hoće\",\"hoćemo\",\"hoćete\",\"hoćeš\",\"hoću\",\"i\",\"iako\",\"ih\",\"ili\",\"iz\",\"ja\",\"je\",\"jedna\",\"jedne\",\"jedno\",\"jer\",\"jesam\",\"jesi\",\"jesmo\",\"jest\",\"jeste\",\"jesu\",\"jim\",\"joj\",\"još\",\"ju\",\"kada\",\"kako\",\"kao\",\"koja\",\"koje\",\"koji\",\"kojima\",\"koju\",\"kroz\",\"li\",\"me\",\"mene\",\"meni\",\"mi\",\"mimo\",\"moj\",\"moja\",\"moje\",\"mu\",\"na\",\"nad\",\"nakon\",\"nam\",\"nama\",\"nas\",\"naš\",\"naša\",\"naše\",\"našeg\",\"ne\",\"nego\",\"neka\",\"neki\",\"nekog\",\"neku\",\"nema\",\"netko\",\"neće\",\"nećemo\",\"nećete\",\"nećeš\",\"neću\",\"nešto\",\"ni\",\"nije\",\"nikoga\",\"nikoje\",\"nikoju\",\"nisam\",\"nisi\",\"nismo\",\"niste\",\"nisu\",\"njega\",\"njegov\",\"njegova\",\"njegovo\",\"njemu\",\"njezin\",\"njezina\",\"njezino\",\"njih\",\"njihov\",\"njihova\",\"njihovo\",\"njim\",\"njima\",\"njoj\",\"nju\",\"no\",\"o\",\"od\",\"odmah\",\"on\",\"ona\",\"oni\",\"ono\",\"ova\",\"pa\",\"pak\",\"po\",\"pod\",\"pored\",\"prije\",\"s\",\"sa\",\"sam\",\"samo\",\"se\",\"sebe\",\"sebi\",\"si\",\"smo\",\"ste\",\"su\",\"sve\",\"svi\",\"svog\",\"svoj\",\"svoja\",\"svoje\",\"svom\",\"ta\",\"tada\",\"taj\",\"tako\",\"te\",\"tebe\",\"tebi\",\"ti\",\"to\",\"toj\",\"tome\",\"tu\",\"tvoj\",\"tvoja\",\"tvoje\",\"u\",\"uz\",\"vam\",\"vama\",\"vas\",\"vaš\",\"vaša\",\"vaše\",\"već\",\"vi\",\"vrlo\",\"za\",\"zar\",\"će\",\"ćemo\",\"ćete\",\"ćeš\",\"ću\",\"što\",\"﻿a\"],\"hu\":[\"a\",\"abba\",\"abban\",\"abbã³l\",\"addig\",\"ahhoz\",\"ahol\",\"aki\",\"akik\",\"akkor\",\"akã¡r\",\"alapjã¡n\",\"alatt\",\"alatta\",\"alattad\",\"alattam\",\"alattatok\",\"alattuk\",\"alattunk\",\"alã¡\",\"alã¡d\",\"alã¡juk\",\"alã¡m\",\"alã¡nk\",\"alã¡tok\",\"alã³l\",\"alã³la\",\"alã³lad\",\"alã³lam\",\"alã³latok\",\"alã³luk\",\"alã³lunk\",\"amely\",\"amelybol\",\"amelyek\",\"amelyekben\",\"amelyeket\",\"amelyet\",\"amelyik\",\"amelynek\",\"ami\",\"amikor\",\"amit\",\"amott\",\"amã­g\",\"annak\",\"annã¡l\",\"arra\",\"arrã³l\",\"attã³l\",\"az\",\"aznap\",\"azok\",\"azokat\",\"azokba\",\"azokban\",\"azokbã³l\",\"azokhoz\",\"azokig\",\"azokkal\",\"azokkã¡\",\"azoknak\",\"azoknã¡l\",\"azokon\",\"azokra\",\"azokrã³l\",\"azoktã³l\",\"azokã©rt\",\"azon\",\"azonban\",\"azonnal\",\"azt\",\"aztã¡n\",\"azzal\",\"azzã¡\",\"azã©rt\",\"bal\",\"balra\",\"ban\",\"be\",\"belã©\",\"belã©d\",\"belã©jã¼k\",\"belã©m\",\"belã©nk\",\"belã©tek\",\"belã¼l\",\"belå‘le\",\"belå‘led\",\"belå‘lem\",\"belå‘letek\",\"belå‘lã¼k\",\"belå‘lã¼nk\",\"ben\",\"benne\",\"benned\",\"bennem\",\"bennetek\",\"bennã¼k\",\"bennã¼nk\",\"bã¡r\",\"bã¡rcsak\",\"bã¡rmilyen\",\"bãºcsãº\",\"csak\",\"csakhogy\",\"csupã¡n\",\"de\",\"dehogy\",\"ebbe\",\"ebben\",\"ebbå‘l\",\"eddig\",\"egy\",\"egyebek\",\"egyebet\",\"egyedã¼l\",\"egyelå‘re\",\"egyet\",\"egyik\",\"egymã¡s\",\"egyre\",\"egyszerre\",\"egyã©b\",\"egyã¼tt\",\"egã©sz\",\"egã©szen\",\"ehhez\",\"el\",\"eleinte\",\"ellen\",\"ellenes\",\"elleni\",\"ellenã©re\",\"elmondta\",\"elså‘\",\"elså‘k\",\"elså‘sorban\",\"elså‘t\",\"elã©\",\"elã©d\",\"elã©g\",\"elã©jã¼k\",\"elã©m\",\"elã©nk\",\"elã©tek\",\"elå‘bb\",\"elå‘l\",\"elå‘le\",\"elå‘led\",\"elå‘lem\",\"elå‘letek\",\"elå‘lã¼k\",\"elå‘lã¼nk\",\"elå‘szã¶r\",\"elå‘tt\",\"elå‘tte\",\"elå‘tted\",\"elå‘ttem\",\"elå‘ttetek\",\"elå‘ttã¼k\",\"elå‘ttã¼nk\",\"elå‘zå‘\",\"engem\",\"ennek\",\"ennyi\",\"ennã©l\",\"enyã©m\",\"erre\",\"errå‘l\",\"esetben\",\"ettå‘l\",\"ez\",\"ezek\",\"ezekbe\",\"ezekben\",\"ezekbå‘l\",\"ezeken\",\"ezeket\",\"ezekhez\",\"ezekig\",\"ezekkel\",\"ezekkã©\",\"ezeknek\",\"ezeknã©l\",\"ezekre\",\"ezekrå‘l\",\"ezektå‘l\",\"ezekã©rt\",\"ezen\",\"ezentãºl\",\"ezer\",\"ezret\",\"ezt\",\"ezutã¡n\",\"ezzel\",\"ezzã©\",\"ezã©rt\",\"fel\",\"fele\",\"felek\",\"felet\",\"felett\",\"felã©\",\"fent\",\"fenti\",\"fã©l\",\"fã¶lã©\",\"gyakran\",\"ha\",\"hallã³\",\"hamar\",\"hanem\",\"harmadik\",\"harmadikat\",\"harminc\",\"hat\",\"hatodik\",\"hatodikat\",\"hatot\",\"hatvan\",\"helyett\",\"hetedik\",\"hetediket\",\"hetet\",\"hetven\",\"hirtelen\",\"hiszen\",\"hiã¡ba\",\"hogy\",\"hol\",\"holnap\",\"holnapot\",\"honnan\",\"hova\",\"hozzã¡\",\"hozzã¡d\",\"hozzã¡juk\",\"hozzã¡m\",\"hozzã¡nk\",\"hozzã¡tok\",\"hurrã¡\",\"huszadik\",\"hã¡ny\",\"hã¡nyszor\",\"hã¡rmat\",\"hã¡rom\",\"hã¡t\",\"hã¡tha\",\"hã¡tulsã³\",\"hã©t\",\"hãºsz\",\"ide-ð¾da\",\"idã©n\",\"igazã¡n\",\"igen\",\"illetve\",\"ilyen\",\"immã¡r\",\"inkã¡bb\",\"is\",\"ismã©t\",\"itt\",\"jelenleg\",\"jobban\",\"jobbra\",\"jã³\",\"jã³l\",\"jã³lesik\",\"jã³val\",\"jã¶vå‘re\",\"kell\",\"kellene\",\"kellett\",\"kelljen\",\"ketten\",\"kettå‘\",\"kettå‘t\",\"kevã©s\",\"ki\",\"kiben\",\"kibå‘l\",\"kicsit\",\"kicsoda\",\"kihez\",\"kik\",\"kikbe\",\"kikben\",\"kikbå‘l\",\"kiken\",\"kiket\",\"kikhez\",\"kikkel\",\"kikkã©\",\"kiknek\",\"kiknã©l\",\"kikre\",\"kikrå‘l\",\"kiktå‘l\",\"kikã©rt\",\"kilenc\",\"kilencedik\",\"kilencediket\",\"kilencet\",\"kilencven\",\"kin\",\"kinek\",\"kinã©l\",\"kire\",\"kirå‘l\",\"kit\",\"kitå‘l\",\"kivel\",\"kivã©\",\"kiã©\",\"kiã©rt\",\"korã¡bban\",\"kã©pest\",\"kã©rem\",\"kã©rlek\",\"kã©sz\",\"kã©så‘\",\"kã©så‘bb\",\"kã©så‘n\",\"kã©t\",\"kã©tszer\",\"kã¶rã¼l\",\"kã¶szã¶nhetå‘en\",\"kã¶szã¶nã¶m\",\"kã¶zben\",\"kã¶zel\",\"kã¶zepesen\",\"kã¶zepã©n\",\"kã¶zã©\",\"kã¶zã¶tt\",\"kã¶zã¼l\",\"kã¼lã¶n\",\"kã¼lã¶nben\",\"kã¼lã¶nbã¶zå‘\",\"kã¼lã¶nbã¶zå‘bb\",\"kã¼lã¶nbã¶zå‘ek\",\"lassan\",\"le\",\"legalã¡bb\",\"legyen\",\"lehet\",\"lehetetlen\",\"lehetå‘leg\",\"lehetå‘sã©g\",\"lenne\",\"lennã©k\",\"lennã©nek\",\"lesz\",\"leszek\",\"lesznek\",\"leszã¼nk\",\"lett\",\"lettek\",\"lettem\",\"lettã¼nk\",\"lã©vå‘\",\"ma\",\"maga\",\"magad\",\"magam\",\"magatokat\",\"magukat\",\"magunkat\",\"magã¡t\",\"mai\",\"majd\",\"majdnem\",\"manapsã¡g\",\"meg\",\"megcsinã¡l\",\"megcsinã¡lnak\",\"megint\",\"megvan\",\"mellett\",\"mellette\",\"melletted\",\"mellettem\",\"mellettetek\",\"mellettã¼k\",\"mellettã¼nk\",\"mellã©\",\"mellã©d\",\"mellã©jã¼k\",\"mellã©m\",\"mellã©nk\",\"mellã©tek\",\"mellå‘l\",\"mellå‘le\",\"mellå‘led\",\"mellå‘lem\",\"mellå‘letek\",\"mellå‘lã¼k\",\"mellå‘lã¼nk\",\"melyik\",\"mennyi\",\"mert\",\"mi\",\"miatt\",\"miatta\",\"miattad\",\"miattam\",\"miattatok\",\"miattuk\",\"miattunk\",\"mibe\",\"miben\",\"mibå‘l\",\"mihez\",\"mik\",\"mikbe\",\"mikben\",\"mikbå‘l\",\"miken\",\"miket\",\"mikhez\",\"mikkel\",\"mikkã©\",\"miknek\",\"miknã©l\",\"mikor\",\"mikre\",\"mikrå‘l\",\"miktå‘l\",\"mikã©rt\",\"milyen\",\"min\",\"mind\",\"mindegyik\",\"mindegyiket\",\"minden\",\"mindenesetre\",\"mindenki\",\"mindent\",\"mindenã¼tt\",\"mindig\",\"mindketten\",\"minek\",\"minket\",\"mint\",\"minã©l\",\"mire\",\"mirå‘l\",\"mit\",\"mitå‘l\",\"mivel\",\"mivã©\",\"miã©rt\",\"mondta\",\"most\",\"mostanã¡ig\",\"mã¡r\",\"mã¡s\",\"mã¡sik\",\"mã¡sikat\",\"mã¡snap\",\"mã¡sodik\",\"mã¡sodszor\",\"mã¡sok\",\"mã¡sokat\",\"mã¡st\",\"mã©g\",\"mã©gis\",\"mã­g\",\"mã¶gã©\",\"mã¶gã©d\",\"mã¶gã©jã¼k\",\"mã¶gã©m\",\"mã¶gã©nk\",\"mã¶gã©tek\",\"mã¶gã¶tt\",\"mã¶gã¶tte\",\"mã¶gã¶tted\",\"mã¶gã¶ttem\",\"mã¶gã¶ttetek\",\"mã¶gã¶ttã¼k\",\"mã¶gã¶ttã¼nk\",\"mã¶gã¼l\",\"mã¶gã¼le\",\"mã¶gã¼led\",\"mã¶gã¼lem\",\"mã¶gã¼letek\",\"mã¶gã¼lã¼k\",\"mã¶gã¼lã¼nk\",\"mãºltkor\",\"mãºlva\",\"na\",\"nagyon\",\"naponta\",\"napot\",\"ne\",\"negyedik\",\"negyediket\",\"negyven\",\"neked\",\"nekem\",\"neki\",\"nekik\",\"nektek\",\"nekã¼nk\",\"nem\",\"nemcsak\",\"nemrã©g\",\"nincs\",\"nyolc\",\"nyolcadik\",\"nyolcadikat\",\"nyolcat\",\"nyolcvan\",\"nã¡la\",\"nã¡lad\",\"nã¡lam\",\"nã¡latok\",\"nã¡luk\",\"nã¡lunk\",\"nã©gy\",\"nã©gyet\",\"nã©ha\",\"nã©hã¡ny\",\"nã©lkã¼l\",\"olyan\",\"onnan\",\"ott\",\"pedig\",\"persze\",\"pã¡r\",\"pã©ldã¡ul\",\"rajta\",\"rajtad\",\"rajtam\",\"rajtatok\",\"rajtuk\",\"rajtunk\",\"rendben\",\"rosszul\",\"rã¡\",\"rã¡d\",\"rã¡juk\",\"rã¡m\",\"rã¡nk\",\"rã¡tok\",\"rã©gen\",\"rã©gã³ta\",\"rã©szã©re\",\"rã³la\",\"rã³lad\",\"rã³lam\",\"rã³latok\",\"rã³luk\",\"rã³lunk\",\"rã¶gtã¶n\",\"se\",\"sem\",\"semmi\",\"semmilyen\",\"semmisã©g\",\"senki\",\"soha\",\"sok\",\"sokan\",\"sokszor\",\"sokã¡ig\",\"sorã¡n\",\"stb.\",\"szemben\",\"szerbusz\",\"szerint\",\"szerinte\",\"szerinted\",\"szerintem\",\"szerintetek\",\"szerintã¼k\",\"szerintã¼nk\",\"szervusz\",\"szinte\",\"szã¡mã¡ra\",\"szã¡z\",\"szã¡zadik\",\"szã¡zat\",\"szã©pen\",\"szã­ves\",\"szã­vesen\",\"szã­veskedjã©k\",\"så‘t\",\"talã¡n\",\"tavaly\",\"te\",\"tegnap\",\"tegnapelå‘tt\",\"tehã¡t\",\"tele\",\"tessã©k\",\"ti\",\"tied\",\"titeket\",\"tizedik\",\"tizediket\",\"tizenegy\",\"tizenegyedik\",\"tizenhat\",\"tizenhã¡rom\",\"tizenhã©t\",\"tizenkettedik\",\"tizenkettå‘\",\"tizenkilenc\",\"tizenkã©t\",\"tizennyolc\",\"tizennã©gy\",\"tizenã¶t\",\"tizet\",\"tovã¡bb\",\"tovã¡bbi\",\"tã¡vol\",\"tã©ged\",\"tã©nyleg\",\"tã­z\",\"tã¶bb\",\"tã¶bbi\",\"tã¶bbszã¶r\",\"tãºl\",\"tå‘le\",\"tå‘led\",\"tå‘lem\",\"tå‘letek\",\"tå‘lã¼k\",\"tå‘lã¼nk\",\"ugyanakkor\",\"ugyanez\",\"ugyanis\",\"ugye\",\"urak\",\"uram\",\"urat\",\"utoljã¡ra\",\"utolsã³\",\"utã¡n\",\"vagy\",\"vagyis\",\"vagyok\",\"vagytok\",\"vagyunk\",\"vajon\",\"valahol\",\"valaki\",\"valakit\",\"valamelyik\",\"valami\",\"valamint\",\"van\",\"vannak\",\"vele\",\"veled\",\"velem\",\"veletek\",\"velã¼k\",\"velã¼nk\",\"viszlã¡t\",\"viszont\",\"viszontlã¡tã¡sra\",\"volna\",\"volnã¡nak\",\"volnã©k\",\"volt\",\"voltak\",\"voltam\",\"voltunk\",\"vã©gre\",\"vã©gã©n\",\"vã©gã¼l\",\"ã¡ltal\",\"ã¡ltalã¡ban\",\"ã¡m\",\"ã¡t\",\"ã©ljen\",\"ã©n\",\"ã©rte\",\"ã©rted\",\"ã©rtem\",\"ã©rtetek\",\"ã©rtã¼k\",\"ã©rtã¼nk\",\"ã©s\",\"ã©v\",\"ã©vben\",\"ã©ve\",\"ã©vek\",\"ã©ves\",\"ã©vi\",\"ã©vvel\",\"ã­gy\",\"ã³ta\",\"ã¶n\",\"ã¶nbe\",\"ã¶nben\",\"ã¶nbå‘l\",\"ã¶nhã¶z\",\"ã¶nnek\",\"ã¶nnel\",\"ã¶nnã©l\",\"ã¶nre\",\"ã¶nrå‘l\",\"ã¶nt\",\"ã¶ntå‘l\",\"ã¶nã©rt\",\"ã¶nã¶k\",\"ã¶nã¶kbe\",\"ã¶nã¶kben\",\"ã¶nã¶kbå‘l\",\"ã¶nã¶ket\",\"ã¶nã¶khã¶z\",\"ã¶nã¶kkel\",\"ã¶nã¶knek\",\"ã¶nã¶knã©l\",\"ã¶nã¶kre\",\"ã¶nã¶krå‘l\",\"ã¶nã¶ktå‘l\",\"ã¶nã¶kã©rt\",\"ã¶nã¶kã¶n\",\"ã¶nã¶n\",\"ã¶t\",\"ã¶tven\",\"ã¶tã¶dik\",\"ã¶tã¶diket\",\"ã¶tã¶t\",\"ãºgy\",\"ãºgyis\",\"ãºgynevezett\",\"ãºjra\",\"ãºr\",\"å‘\",\"å‘k\",\"å‘ket\",\"å‘t\"],\"hy\":[\"այդ\",\"այլ\",\"այն\",\"այս\",\"դու\",\"դուք\",\"եմ\",\"են\",\"ենք\",\"ես\",\"եք\",\"է\",\"էի\",\"էին\",\"էինք\",\"էիր\",\"էիք\",\"էր\",\"ըստ\",\"թ\",\"ի\",\"ին\",\"իսկ\",\"իր\",\"կամ\",\"համար\",\"հետ\",\"հետո\",\"մենք\",\"մեջ\",\"մի\",\"ն\",\"նա\",\"նաև\",\"նրա\",\"նրանք\",\"որ\",\"որը\",\"որոնք\",\"որպես\",\"ու\",\"ում\",\"պիտի\",\"վրա\",\"և\"],\"id\":[\"#\",\"a\",\"ada\",\"adalah\",\"adanya\",\"adapun\",\"agak\",\"agaknya\",\"agar\",\"akan\",\"akankah\",\"akhirnya\",\"aku\",\"akulah\",\"amat\",\"amatlah\",\"anda\",\"andalah\",\"antar\",\"antara\",\"antaranya\",\"apa\",\"apaan\",\"apabila\",\"apakah\",\"apalagi\",\"apatah\",\"appendix\",\"atau\",\"ataukah\",\"ataupun\",\"bagai\",\"bagaikan\",\"bagaimana\",\"bagaimanakah\",\"bagaimanapun\",\"bagi\",\"bahasa\",\"bahkan\",\"bahwa\",\"bahwasanya\",\"banyak\",\"beberapa\",\"begini\",\"beginian\",\"beginikah\",\"beginilah\",\"begitu\",\"begitukah\",\"begitulah\",\"begitupun\",\"belum\",\"belumlah\",\"berapa\",\"berapakah\",\"berapalah\",\"berapapun\",\"bermacam\",\"bersama\",\"betulkah\",\"biasa\",\"biasanya\",\"bila\",\"bilakah\",\"bisa\",\"bisakah\",\"boleh\",\"bolehkah\",\"bolehlah\",\"buat\",\"bukan\",\"bukankah\",\"bukanlah\",\"bukannya\",\"cuma\",\"d\",\"dahulu\",\"dalam\",\"dan\",\"dapat\",\"dari\",\"daripada\",\"dekat\",\"demi\",\"demikian\",\"demikianlah\",\"dengan\",\"depan\",\"di\",\"dia\",\"dialah\",\"diantara\",\"diantaranya\",\"dikarenakan\",\"dini\",\"diri\",\"dirinya\",\"disini\",\"disinilah\",\"dong\",\"dulu\",\"effects\",\"enggak\",\"enggaknya\",\"entah\",\"entahlah\",\"from\",\"hal\",\"hampir\",\"hanya\",\"hanyalah\",\"harus\",\"haruslah\",\"harusnya\",\"hendak\",\"hendaklah\",\"hendaknya\",\"hingga\",\"ia\",\"ialah\",\"ibarat\",\"in\",\"indonesia\",\"information\",\"ingin\",\"inginkah\",\"inginkan\",\"ini\",\"inikah\",\"inilah\",\"itu\",\"itukah\",\"itulah\",\"jangan\",\"jangankan\",\"janganlah\",\"jika\",\"jikalau\",\"juga\",\"justru\",\"kala\",\"kalau\",\"kalaulah\",\"kalaupun\",\"kalian\",\"kami\",\"kamilah\",\"kamu\",\"kamulah\",\"kan\",\"kapan\",\"kapankah\",\"kapanpun\",\"karena\",\"karenanya\",\"ke\",\"kecil\",\"kemudian\",\"kenapa\",\"kepada\",\"kepadanya\",\"ketika\",\"khususnya\",\"kini\",\"kinilah\",\"kiranya\",\"kita\",\"kitalah\",\"kok\",\"lagi\",\"lagian\",\"lah\",\"lain\",\"lainnya\",\"lalu\",\"lama\",\"lamanya\",\"lebih\",\"macam\",\"maka\",\"makanya\",\"makin\",\"malah\",\"malahan\",\"mampu\",\"mampukah\",\"mana\",\"manakala\",\"manalagi\",\"masih\",\"masihkah\",\"masing\",\"mau\",\"maupun\",\"melainkan\",\"melalui\",\"memang\",\"mengapa\",\"mereka\",\"merekalah\",\"merupakan\",\"meski\",\"meskipun\",\"mungkin\",\"mungkinkah\",\"nah\",\"namun\",\"nanti\",\"nantinya\",\"nyaris\",\"of\",\"of:\",\"oleh\",\"olehnya\",\"on\",\"pada\",\"padahal\",\"padanya\",\"paling\",\"pantas\",\"para\",\"pasti\",\"pastilah\",\"per\",\"percuma\",\"pernah\",\"pula\",\"pun\",\"retrieval\",\"rupanya\",\"saat\",\"saatnya\",\"saja\",\"sajalah\",\"saling\",\"sama\",\"sambil\",\"sampai\",\"sana\",\"sangat\",\"sangatlah\",\"saya\",\"sayalah\",\"se\",\"sebab\",\"sebabnya\",\"sebagai\",\"sebagaimana\",\"sebagainya\",\"sebaliknya\",\"sebanyak\",\"sebegini\",\"sebegitu\",\"sebelum\",\"sebelumnya\",\"sebenarnya\",\"seberapa\",\"sebetulnya\",\"sebisanya\",\"sebuah\",\"sedang\",\"sedangkan\",\"sedemikian\",\"sedikit\",\"sedikitnya\",\"segala\",\"segalanya\",\"segera\",\"seharusnya\",\"sehingga\",\"sejak\",\"sejenak\",\"sekali\",\"sekalian\",\"sekaligus\",\"sekalipun\",\"sekarang\",\"seketika\",\"sekiranya\",\"sekitar\",\"sekitarnya\",\"sela\",\"selagi\",\"selain\",\"selaku\",\"selalu\",\"selama\",\"selamanya\",\"seluruh\",\"seluruhnya\",\"semacam\",\"semakin\",\"semasih\",\"semaunya\",\"sementara\",\"sempat\",\"semua\",\"semuanya\",\"semula\",\"sendiri\",\"sendirinya\",\"seolah\",\"seorang\",\"sepanjang\",\"sepantasnya\",\"sepantasnyalah\",\"seperti\",\"sepertinya\",\"sering\",\"seringnya\",\"serta\",\"serupa\",\"sesaat\",\"sesama\",\"sesegera\",\"sesekali\",\"seseorang\",\"sesuatu\",\"sesuatunya\",\"sesudah\",\"sesudahnya\",\"setelah\",\"seterusnya\",\"setiap\",\"setidaknya\",\"sewaktu\",\"siapa\",\"siapakah\",\"siapapun\",\"sini\",\"sinilah\",\"stemming\",\"study\",\"suatu\",\"sudah\",\"sudahkah\",\"sudahlah\",\"supaya\",\"tadi\",\"tadinya\",\"tak\",\"tanpa\",\"tapi\",\"telah\",\"tentang\",\"tentu\",\"tentulah\",\"tentunya\",\"terdiri\",\"terhadap\",\"terhadapnya\",\"terlalu\",\"terlebih\",\"tersebut\",\"tersebutlah\",\"tertentu\",\"tetapi\",\"tiap\",\"tidak\",\"tidakkah\",\"tidaklah\",\"toh\",\"waduh\",\"wah\",\"wahai\",\"walau\",\"walaupun\",\"wong\",\"yaitu\",\"yakni\",\"yang\"],\"it\":[\"abbastanza\",\"accidenti\",\"ad\",\"adesso\",\"affinche\",\"agli\",\"ahime\",\"ahimè\",\"ai\",\"al\",\"alcuna\",\"alcuni\",\"alcuno\",\"all\",\"alla\",\"alle\",\"allo\",\"altri\",\"altrimenti\",\"altro\",\"altrui\",\"anche\",\"ancora\",\"anni\",\"anno\",\"ansa\",\"assai\",\"attesa\",\"avanti\",\"avendo\",\"avente\",\"aver\",\"avere\",\"avete\",\"aveva\",\"avuta\",\"avute\",\"avuti\",\"avuto\",\"basta\",\"bene\",\"benissimo\",\"berlusconi\",\"brava\",\"bravo\",\"c\",\"casa\",\"caso\",\"cento\",\"certa\",\"certe\",\"certi\",\"certo\",\"che\",\"chi\",\"chicchessia\",\"chiunque\",\"ci\",\"ciascuna\",\"ciascuno\",\"cima\",\"cio\",\"cioe\",\"cioè\",\"circa\",\"citta\",\"città\",\"ciò\",\"codesta\",\"codesti\",\"codesto\",\"cogli\",\"coi\",\"col\",\"colei\",\"coll\",\"coloro\",\"colui\",\"come\",\"con\",\"concernente\",\"consiglio\",\"contro\",\"cortesia\",\"cos\",\"cosa\",\"cosi\",\"così\",\"cui\",\"d\",\"da\",\"dagli\",\"dai\",\"dal\",\"dall\",\"dalla\",\"dalle\",\"dallo\",\"davanti\",\"degli\",\"dei\",\"del\",\"dell\",\"della\",\"delle\",\"dello\",\"dentro\",\"detto\",\"deve\",\"di\",\"dice\",\"dietro\",\"dire\",\"dirimpetto\",\"dopo\",\"dove\",\"dovra\",\"dovrà\",\"due\",\"dunque\",\"durante\",\"e\",\"ecco\",\"ed\",\"egli\",\"ella\",\"eppure\",\"era\",\"erano\",\"esse\",\"essendo\",\"esser\",\"essere\",\"essi\",\"ex\",\"fa\",\"fare\",\"fatto\",\"favore\",\"fin\",\"finalmente\",\"finche\",\"fine\",\"fino\",\"forse\",\"fra\",\"fuori\",\"gia\",\"giacche\",\"giorni\",\"giorno\",\"già\",\"gli\",\"gliela\",\"gliele\",\"glieli\",\"glielo\",\"gliene\",\"governo\",\"grande\",\"grazie\",\"gruppo\",\"ha\",\"hai\",\"hanno\",\"ho\",\"i\",\"ieri\",\"il\",\"improvviso\",\"in\",\"infatti\",\"insieme\",\"intanto\",\"intorno\",\"invece\",\"io\",\"l\",\"la\",\"lavoro\",\"le\",\"lei\",\"li\",\"lo\",\"lontano\",\"loro\",\"lui\",\"lungo\",\"là\",\"ma\",\"macche\",\"magari\",\"mai\",\"male\",\"malgrado\",\"malissimo\",\"me\",\"medesimo\",\"mediante\",\"meglio\",\"meno\",\"mentre\",\"mesi\",\"mezzo\",\"mi\",\"mia\",\"mie\",\"miei\",\"mila\",\"miliardi\",\"milioni\",\"mio\",\"moltissimo\",\"molto\",\"mondo\",\"nazionale\",\"ne\",\"negli\",\"nei\",\"nel\",\"nell\",\"nella\",\"nelle\",\"nello\",\"nemmeno\",\"neppure\",\"nessuna\",\"nessuno\",\"niente\",\"no\",\"noi\",\"non\",\"nondimeno\",\"nostra\",\"nostre\",\"nostri\",\"nostro\",\"nulla\",\"nuovo\",\"o\",\"od\",\"oggi\",\"ogni\",\"ognuna\",\"ognuno\",\"oltre\",\"oppure\",\"ora\",\"ore\",\"osi\",\"ossia\",\"paese\",\"parecchi\",\"parecchie\",\"parecchio\",\"parte\",\"partendo\",\"peccato\",\"peggio\",\"per\",\"perche\",\"perchè\",\"percio\",\"perciò\",\"perfino\",\"pero\",\"persone\",\"però\",\"piedi\",\"pieno\",\"piglia\",\"piu\",\"più\",\"po\",\"pochissimo\",\"poco\",\"poi\",\"poiche\",\"press\",\"prima\",\"primo\",\"proprio\",\"puo\",\"pure\",\"purtroppo\",\"può\",\"qualche\",\"qualcuna\",\"qualcuno\",\"quale\",\"quali\",\"qualunque\",\"quando\",\"quanta\",\"quante\",\"quanti\",\"quanto\",\"quantunque\",\"quasi\",\"quattro\",\"quel\",\"quella\",\"quelli\",\"quello\",\"quest\",\"questa\",\"queste\",\"questi\",\"questo\",\"qui\",\"quindi\",\"riecco\",\"salvo\",\"sara\",\"sarebbe\",\"sarà\",\"scopo\",\"scorso\",\"se\",\"secondo\",\"seguente\",\"sei\",\"sempre\",\"senza\",\"si\",\"sia\",\"siamo\",\"siete\",\"solito\",\"solo\",\"sono\",\"sopra\",\"sotto\",\"sta\",\"staranno\",\"stata\",\"state\",\"stati\",\"stato\",\"stesso\",\"su\",\"sua\",\"successivo\",\"sue\",\"sugli\",\"sui\",\"sul\",\"sull\",\"sulla\",\"sulle\",\"sullo\",\"suo\",\"suoi\",\"tale\",\"talvolta\",\"tanto\",\"te\",\"tempo\",\"ti\",\"torino\",\"tra\",\"tranne\",\"tre\",\"troppo\",\"tu\",\"tua\",\"tue\",\"tuo\",\"tuoi\",\"tutta\",\"tuttavia\",\"tutte\",\"tutti\",\"tutto\",\"uguali\",\"un\",\"una\",\"uno\",\"uomo\",\"va\",\"vale\",\"varia\",\"varie\",\"vario\",\"verso\",\"vi\",\"via\",\"vicino\",\"visto\",\"vita\",\"voi\",\"volta\",\"vostra\",\"vostre\",\"vostri\",\"vostro\",\"è\",\"﻿a\"],\"ja\":[\"あそこ\",\"あの\",\"あのかた\",\"あの人\",\"あります\",\"あれ\",\"います\",\"え\",\"おります\",\"から\",\"が\",\"ここ\",\"こちら\",\"この\",\"これ\",\"し\",\"しかし\",\"そこ\",\"その\",\"それ\",\"それで\",\"だれ\",\"で\",\"です\",\"と\",\"どこ\",\"どの\",\"なに\",\"なん\",\"に\",\"の\",\"は\",\"まで\",\"も\",\"より\",\"を\",\"何\",\"彼\",\"彼女\",\"我々\",\"私\",\"私達\",\"貴方\",\"貴方方\"],\"lt\":[\"apie\",\"aèiû\",\"að\",\"bet\",\"dabar\",\"daryti\",\"daug\",\"daugiau\",\"daugiausia\",\"daþnai\",\"gali\",\"gauna\",\"gauti\",\"ieðkoti\",\"iki\",\"jam\",\"jo\",\"jos\",\"kada\",\"kaip\",\"kam\",\"kartà\",\"kas\",\"kiekvienas\",\"kitas\",\"klausimas\",\"klausti\",\"maþai\",\"maþas\",\"maþiau\",\"mûsø\",\"ne\",\"negali\",\"negu\",\"nei\",\"net\",\"niekada\",\"niekas\",\"nuo\",\"nëra\",\"pasakë\",\"pat\",\"per\",\"pireð\",\"po\",\"praðau\",\"sakyti\",\"sakë\",\"taip\",\"tarp\",\"tas\",\"tavo\",\"tik\",\"tikrai\",\"turi\",\"turëjo\",\"vienas\",\"visi\",\"yra\",\"á\",\"èia\",\"ðalia\"],\"lv\":[\"#\",\"aiz\",\"ap\",\"apakš\",\"apakšpus\",\"ar\",\"arī\",\"augšpus\",\"bet\",\"bez\",\"bija\",\"biji\",\"biju\",\"bijām\",\"bijāt\",\"būs\",\"būsi\",\"būsiet\",\"būsim\",\"būt\",\"būšu\",\"caur\",\"conjunctions\",\"diemžēl\",\"diezin\",\"droši\",\"dēļ\",\"esam\",\"esat\",\"esi\",\"esmu\",\"gan\",\"gar\",\"iekam\",\"iekams\",\"iekām\",\"iekāms\",\"iekš\",\"iekšpus\",\"ik\",\"ir\",\"it\",\"itin\",\"iz\",\"ja\",\"jau\",\"jeb\",\"jebšu\",\"jel\",\"jo\",\"jā\",\"ka\",\"kamēr\",\"kaut\",\"kolīdz\",\"kopš\",\"kā\",\"kļuva\",\"kļuvi\",\"kļuvu\",\"kļuvām\",\"kļuvāt\",\"kļūs\",\"kļūsi\",\"kļūsiet\",\"kļūsim\",\"kļūst\",\"kļūstam\",\"kļūstat\",\"kļūsti\",\"kļūstu\",\"kļūt\",\"kļūšu\",\"labad\",\"lai\",\"lejpus\",\"līdz\",\"līdzko\",\"modal\",\"ne\",\"nebūt\",\"nedz\",\"nekā\",\"nevis\",\"nezin\",\"no\",\"nu\",\"nē\",\"otrpus\",\"pa\",\"par\",\"particles\",\"pat\",\"pie\",\"pirms\",\"pret\",\"priekš\",\"pār\",\"pēc\",\"starp\",\"tad\",\"tak\",\"tapi\",\"taps\",\"tapsi\",\"tapsiet\",\"tapsim\",\"tapt\",\"tapāt\",\"tapšu\",\"taču\",\"te\",\"tiec\",\"tiek\",\"tiekam\",\"tiekat\",\"tieku\",\"tik\",\"tika\",\"tikai\",\"tiki\",\"tikko\",\"tiklab\",\"tiklīdz\",\"tiks\",\"tiksiet\",\"tiksim\",\"tikt\",\"tiku\",\"tikvien\",\"tikām\",\"tikāt\",\"tikšu\",\"tomēr\",\"topat\",\"turpretim\",\"turpretī\",\"tā\",\"tādēļ\",\"tālab\",\"tāpēc\",\"un\",\"uz\",\"vai\",\"var\",\"varat\",\"varēja\",\"varēji\",\"varēju\",\"varējām\",\"varējāt\",\"varēs\",\"varēsi\",\"varēsiet\",\"varēsim\",\"varēt\",\"varēšu\",\"verbs\",\"vien\",\"virs\",\"virspus\",\"vis\",\"viņpus\",\"zem\",\"ārpus\",\"šaipus\"],\"nl\":[\"a\",\"aan\",\"aangaande\",\"aangezien\",\"achter\",\"achterna\",\"aen\",\"af\",\"afd\",\"afgelopen\",\"agter\",\"al\",\"aldaar\",\"aldus\",\"alhoewel\",\"alias\",\"alle\",\"allebei\",\"alleen\",\"alleenlyk\",\"allen\",\"alles\",\"als\",\"alsnog\",\"altijd\",\"altoos\",\"altyd\",\"ander\",\"andere\",\"anderen\",\"anders\",\"anderszins\",\"anm\",\"b\",\"behalve\",\"behoudens\",\"beide\",\"beiden\",\"ben\",\"beneden\",\"bent\",\"bepaald\",\"beter\",\"betere\",\"betreffende\",\"bij\",\"bijna\",\"bijv\",\"bijvoorbeeld\",\"binnen\",\"binnenin\",\"bizonder\",\"bizondere\",\"bl\",\"blz\",\"boven\",\"bovenal\",\"bovendien\",\"bovengenoemd\",\"bovenstaand\",\"bovenvermeld\",\"buiten\",\"by\",\"daar\",\"daarheen\",\"daarin\",\"daarna\",\"daarnet\",\"daarom\",\"daarop\",\"daarvanlangs\",\"daer\",\"dan\",\"dat\",\"de\",\"deeze\",\"den\",\"der\",\"ders\",\"derzelver\",\"des\",\"deszelfs\",\"deszelvs\",\"deze\",\"dezelfde\",\"dezelve\",\"dezelven\",\"dezen\",\"dezer\",\"dezulke\",\"die\",\"dien\",\"dikwijls\",\"dikwyls\",\"dit\",\"dl\",\"doch\",\"doen\",\"doet\",\"dog\",\"door\",\"doorgaand\",\"doorgaans\",\"dr\",\"dra\",\"ds\",\"dus\",\"echter\",\"ed\",\"een\",\"eene\",\"eenen\",\"eener\",\"eenig\",\"eenige\",\"eens\",\"eer\",\"eerdat\",\"eerder\",\"eerlang\",\"eerst\",\"eerste\",\"eersten\",\"effe\",\"egter\",\"eigen\",\"eigene\",\"elk\",\"elkanderen\",\"elkanderens\",\"elke\",\"en\",\"enig\",\"enige\",\"enigerlei\",\"enigszins\",\"enkel\",\"enkele\",\"enz\",\"er\",\"erdoor\",\"et\",\"etc\",\"even\",\"eveneens\",\"evenwel\",\"ff\",\"gauw\",\"ge\",\"gebragt\",\"gedurende\",\"geen\",\"geene\",\"geenen\",\"gegeven\",\"gehad\",\"geheel\",\"geheele\",\"gekund\",\"geleden\",\"gelijk\",\"gelyk\",\"gemoeten\",\"gemogen\",\"geven\",\"geweest\",\"gewoon\",\"gewoonweg\",\"geworden\",\"gezegt\",\"gij\",\"gt\",\"gy\",\"haar\",\"had\",\"hadden\",\"hadt\",\"haer\",\"haere\",\"haeren\",\"haerer\",\"hans\",\"hare\",\"heb\",\"hebben\",\"hebt\",\"heeft\",\"hele\",\"hem\",\"hen\",\"het\",\"hier\",\"hierbeneden\",\"hierboven\",\"hierin\",\"hij\",\"hoe\",\"hoewel\",\"hun\",\"hunne\",\"hunner\",\"hy\",\"ibid\",\"idd\",\"ieder\",\"iemand\",\"iet\",\"iets\",\"ii\",\"iig\",\"ik\",\"ikke\",\"ikzelf\",\"in\",\"indien\",\"inmiddels\",\"inz\",\"inzake\",\"is\",\"ja\",\"je\",\"jezelf\",\"jij\",\"jijzelf\",\"jou\",\"jouw\",\"jouwe\",\"juist\",\"jullie\",\"kan\",\"klaar\",\"kon\",\"konden\",\"krachtens\",\"kunnen\",\"kunt\",\"laetste\",\"lang\",\"later\",\"liet\",\"liever\",\"like\",\"m\",\"maar\",\"maeken\",\"maer\",\"mag\",\"martin\",\"me\",\"mede\",\"meer\",\"meesten\",\"men\",\"menigwerf\",\"met\",\"mezelf\",\"mij\",\"mijn\",\"mijnent\",\"mijner\",\"mijzelf\",\"min\",\"minder\",\"misschien\",\"mocht\",\"mochten\",\"moest\",\"moesten\",\"moet\",\"moeten\",\"mogelijk\",\"mogelyk\",\"mogen\",\"my\",\"myn\",\"myne\",\"mynen\",\"myner\",\"myzelf\",\"na\",\"naar\",\"nabij\",\"nadat\",\"naer\",\"net\",\"niet\",\"niets\",\"nimmer\",\"nit\",\"no\",\"noch\",\"nog\",\"nogal\",\"nooit\",\"nr\",\"nu\",\"o\",\"of\",\"ofschoon\",\"om\",\"omdat\",\"omhoog\",\"omlaag\",\"omstreeks\",\"omtrent\",\"omver\",\"onder\",\"ondertussen\",\"ongeveer\",\"ons\",\"onszelf\",\"onze\",\"onzen\",\"onzer\",\"ooit\",\"ook\",\"oorspr\",\"op\",\"opdat\",\"opnieuw\",\"opzij\",\"opzy\",\"over\",\"overeind\",\"overigens\",\"p\",\"pas\",\"pp\",\"precies\",\"pres\",\"prof\",\"publ\",\"reeds\",\"rond\",\"rondom\",\"rug\",\"s\",\"sedert\",\"sinds\",\"sindsdien\",\"sl\",\"slechts\",\"sommige\",\"spoedig\",\"st\",\"steeds\",\"sy\",\"t\",\"tamelijk\",\"tamelyk\",\"te\",\"tegen\",\"tegens\",\"ten\",\"tenzij\",\"ter\",\"terwijl\",\"terwyl\",\"thans\",\"tijdens\",\"toch\",\"toe\",\"toen\",\"toenmaals\",\"toenmalig\",\"tot\",\"totdat\",\"tusschen\",\"tussen\",\"tydens\",\"u\",\"uit\",\"uitg\",\"uitgezonderd\",\"uw\",\"uwe\",\"uwen\",\"uwer\",\"vaak\",\"vaakwat\",\"vakgr\",\"van\",\"vanaf\",\"vandaan\",\"vanuit\",\"vanwege\",\"veel\",\"veeleer\",\"veelen\",\"verder\",\"verre\",\"vert\",\"vervolgens\",\"vgl\",\"vol\",\"volgens\",\"voor\",\"vooraf\",\"vooral\",\"vooralsnog\",\"voorbij\",\"voorby\",\"voordat\",\"voordezen\",\"voordien\",\"voorheen\",\"voorop\",\"voort\",\"voortgez\",\"voorts\",\"voortz\",\"vooruit\",\"vrij\",\"vroeg\",\"vry\",\"waar\",\"waarom\",\"wanneer\",\"want\",\"waren\",\"was\",\"wat\",\"we\",\"weer\",\"weg\",\"wege\",\"wegens\",\"weinig\",\"weinige\",\"wel\",\"weldra\",\"welk\",\"welke\",\"welken\",\"welker\",\"werd\",\"werden\",\"werdt\",\"wezen\",\"wie\",\"wiens\",\"wier\",\"wierd\",\"wierden\",\"wij\",\"wijzelf\",\"wil\",\"wilde\",\"worden\",\"wordt\",\"wy\",\"wyze\",\"wyzelf\",\"zal\",\"ze\",\"zeer\",\"zei\",\"zeker\",\"zekere\",\"zelf\",\"zelfde\",\"zelfs\",\"zelve\",\"zelven\",\"zelvs\",\"zich\",\"zichzelf\",\"zichzelve\",\"zichzelven\",\"zie\",\"zig\",\"zij\",\"zijn\",\"zijnde\",\"zijne\",\"zijner\",\"zo\",\"zo'n\",\"zoals\",\"zodra\",\"zommige\",\"zommigen\",\"zonder\",\"zoo\",\"zou\",\"zoude\",\"zouden\",\"zoveel\",\"zowat\",\"zulk\",\"zulke\",\"zulks\",\"zullen\",\"zult\",\"zy\",\"zyn\",\"zynde\",\"zyne\",\"zynen\",\"zyner\",\"zyns\"],\"no\":[\"alle\",\"andre\",\"arbeid\",\"av\",\"begge\",\"bort\",\"bra\",\"bruke\",\"da\",\"denne\",\"der\",\"deres\",\"det\",\"din\",\"disse\",\"du\",\"eller\",\"en\",\"ene\",\"eneste\",\"enhver\",\"enn\",\"er\",\"et\",\"folk\",\"for\",\"fordi\",\"forsûke\",\"fra\",\"få\",\"fûr\",\"fûrst\",\"gjorde\",\"gjûre\",\"god\",\"gå\",\"ha\",\"hadde\",\"han\",\"hans\",\"hennes\",\"her\",\"hva\",\"hvem\",\"hver\",\"hvilken\",\"hvis\",\"hvor\",\"hvordan\",\"hvorfor\",\"i\",\"ikke\",\"inn\",\"innen\",\"kan\",\"kunne\",\"lage\",\"lang\",\"lik\",\"like\",\"makt\",\"mange\",\"med\",\"meg\",\"meget\",\"men\",\"mens\",\"mer\",\"mest\",\"min\",\"mye\",\"må\",\"måte\",\"navn\",\"nei\",\"ny\",\"nå\",\"når\",\"og\",\"også\",\"om\",\"opp\",\"oss\",\"over\",\"part\",\"punkt\",\"på\",\"rett\",\"riktig\",\"samme\",\"sant\",\"si\",\"siden\",\"sist\",\"skulle\",\"slik\",\"slutt\",\"som\",\"start\",\"stille\",\"så\",\"tid\",\"til\",\"tilbake\",\"tilstand\",\"under\",\"ut\",\"uten\",\"var\",\"ved\",\"verdi\",\"vi\",\"vil\",\"ville\",\"vite\",\"vår\",\"vöre\",\"vört\",\"å\"],\"pl\":[\"ach\",\"aj\",\"albo\",\"bardzo\",\"bez\",\"bo\",\"być\",\"ci\",\"ciebie\",\"cię\",\"co\",\"czy\",\"daleko\",\"dla\",\"dlaczego\",\"dlatego\",\"do\",\"dobrze\",\"dokąd\",\"dość\",\"dużo\",\"dwa\",\"dwaj\",\"dwie\",\"dwoje\",\"dzisiaj\",\"dziś\",\"gdyby\",\"gdzie\",\"go\",\"ich\",\"ile\",\"im\",\"inny\",\"ja\",\"jak\",\"jakby\",\"jaki\",\"je\",\"jeden\",\"jedna\",\"jedno\",\"jego\",\"jej\",\"jemu\",\"jest\",\"jestem\",\"jeśli\",\"jeżeli\",\"już\",\"ją\",\"każdy\",\"kiedy\",\"kierunku\",\"kto\",\"ku\",\"lub\",\"ma\",\"mają\",\"mam\",\"mi\",\"mnie\",\"mną\",\"moi\",\"moja\",\"moje\",\"może\",\"mu\",\"my\",\"mój\",\"na\",\"nam\",\"nami\",\"nas\",\"nasi\",\"nasz\",\"nasza\",\"nasze\",\"natychmiast\",\"nic\",\"nich\",\"nie\",\"niego\",\"niej\",\"niemu\",\"nigdy\",\"nim\",\"nimi\",\"nią\",\"niż\",\"obok\",\"od\",\"około\",\"on\",\"ona\",\"one\",\"oni\",\"ono\",\"owszem\",\"po\",\"pod\",\"ponieważ\",\"przed\",\"przedtem\",\"sam\",\"sama\",\"się\",\"skąd\",\"są\",\"tak\",\"taki\",\"tam\",\"ten\",\"to\",\"tobie\",\"tobą\",\"tu\",\"tutaj\",\"twoi\",\"twoja\",\"twoje\",\"twój\",\"ty\",\"wam\",\"wami\",\"was\",\"wasi\",\"wasz\",\"wasza\",\"wasze\",\"we\",\"więc\",\"wszystko\",\"wtedy\",\"wy\",\"zawsze\",\"żaden\",\"że\"],\"pt\":[\"a\",\"adeus\",\"agora\",\"ainda\",\"algo\",\"algumas\",\"alguns\",\"ali\",\"além\",\"ano\",\"anos\",\"antes\",\"ao\",\"aos\",\"apenas\",\"apoio\",\"após\",\"aquela\",\"aquelas\",\"aquele\",\"aqueles\",\"aqui\",\"aquilo\",\"as\",\"assim\",\"através\",\"atrás\",\"até\",\"aí\",\"baixo\",\"bastante\",\"bem\",\"boa\",\"boas\",\"bom\",\"bons\",\"breve\",\"cada\",\"catorze\",\"cedo\",\"cento\",\"certamente\",\"certeza\",\"cima\",\"cinco\",\"coisa\",\"com\",\"como\",\"conselho\",\"contra\",\"custa\",\"cá\",\"da\",\"daquela\",\"daquelas\",\"daquele\",\"daqueles\",\"dar\",\"das\",\"de\",\"debaixo\",\"demais\",\"dentro\",\"depois\",\"desde\",\"dessa\",\"dessas\",\"desse\",\"desses\",\"desta\",\"destas\",\"deste\",\"destes\",\"deve\",\"deverá\",\"dez\",\"dezanove\",\"dezasseis\",\"dezassete\",\"dezoito\",\"dia\",\"diante\",\"diz\",\"dizem\",\"dizer\",\"do\",\"dois\",\"dos\",\"doze\",\"dra\",\"duas\",\"dá\",\"dão\",\"dúvida\",\"e\",\"ela\",\"elas\",\"ele\",\"eles\",\"em\",\"embora\",\"entre\",\"era\",\"essa\",\"essas\",\"esse\",\"esses\",\"esta\",\"estar\",\"estas\",\"estava\",\"este\",\"estes\",\"esteve\",\"estive\",\"estivemos\",\"estiveram\",\"estiveste\",\"estivestes\",\"estou\",\"está\",\"estás\",\"estão\",\"eu\",\"exemplo\",\"falta\",\"favor\",\"faz\",\"fazeis\",\"fazem\",\"fazemos\",\"fazer\",\"fazes\",\"faço\",\"fez\",\"fim\",\"final\",\"foi\",\"fomos\",\"for\",\"foram\",\"forma\",\"foste\",\"fostes\",\"fui\",\"geral\",\"grande\",\"grandes\",\"grupo\",\"hoje\",\"hora\",\"horas\",\"há\",\"isso\",\"isto\",\"já\",\"lado\",\"local\",\"logo\",\"longe\",\"lugar\",\"lá\",\"maior\",\"maioria\",\"mais\",\"mal\",\"mas\",\"me\",\"meio\",\"menor\",\"menos\",\"meses\",\"meu\",\"meus\",\"mil\",\"minha\",\"minhas\",\"momento\",\"muito\",\"muitos\",\"máximo\",\"mês\",\"na\",\"nada\",\"naquela\",\"naquelas\",\"naquele\",\"naqueles\",\"nas\",\"nem\",\"nenhuma\",\"nessa\",\"nessas\",\"nesse\",\"nesses\",\"nesta\",\"nestas\",\"neste\",\"nestes\",\"no\",\"noite\",\"nome\",\"nos\",\"nossa\",\"nossas\",\"nosso\",\"nossos\",\"nova\",\"novas\",\"nove\",\"novo\",\"novos\",\"num\",\"numa\",\"nunca\",\"não\",\"nível\",\"nós\",\"número\",\"o\",\"obra\",\"obrigada\",\"obrigado\",\"oitava\",\"oitavo\",\"oito\",\"onde\",\"ontem\",\"onze\",\"os\",\"ou\",\"outra\",\"outras\",\"outro\",\"outros\",\"para\",\"parece\",\"parte\",\"partir\",\"paucas\",\"pela\",\"pelas\",\"pelo\",\"pelos\",\"perto\",\"pode\",\"podem\",\"poder\",\"ponto\",\"pontos\",\"por\",\"porque\",\"porquê\",\"posição\",\"possivelmente\",\"posso\",\"possível\",\"pouca\",\"pouco\",\"poucos\",\"primeira\",\"primeiras\",\"primeiro\",\"primeiros\",\"própria\",\"próprias\",\"próprio\",\"próprios\",\"próxima\",\"próximas\",\"próximo\",\"próximos\",\"puderam\",\"pôde\",\"põe\",\"põem\",\"qual\",\"quando\",\"quanto\",\"quarta\",\"quarto\",\"quatro\",\"que\",\"quem\",\"quer\",\"quereis\",\"querem\",\"queremas\",\"queres\",\"quero\",\"questão\",\"quinta\",\"quinto\",\"quinze\",\"quáis\",\"quê\",\"relação\",\"sabe\",\"sabem\",\"se\",\"segunda\",\"segundo\",\"sei\",\"seis\",\"sem\",\"sempre\",\"ser\",\"seria\",\"sete\",\"seu\",\"seus\",\"sexta\",\"sexto\",\"sim\",\"sistema\",\"sob\",\"sobre\",\"sois\",\"somos\",\"sou\",\"sr\",\"sra\",\"sua\",\"suas\",\"são\",\"sétima\",\"sétimo\",\"tal\",\"talvez\",\"também\",\"tanta\",\"tantas\",\"tanto\",\"tarde\",\"te\",\"tem\",\"temos\",\"tendes\",\"tenho\",\"tens\",\"ter\",\"terceira\",\"terceiro\",\"teu\",\"teus\",\"teve\",\"tive\",\"tivemos\",\"tiveram\",\"tiveste\",\"tivestes\",\"toda\",\"todas\",\"todo\",\"todos\",\"trabalho\",\"treze\",\"três\",\"tu\",\"tua\",\"tuas\",\"tudo\",\"tão\",\"têm\",\"um\",\"uma\",\"umas\",\"uns\",\"vai\",\"vais\",\"vem\",\"vens\",\"ver\",\"vez\",\"vezes\",\"viagem\",\"vindo\",\"vinte\",\"você\",\"vocês\",\"vos\",\"vossa\",\"vossas\",\"vosso\",\"vossos\",\"vários\",\"vão\",\"vêm\",\"vós\",\"zero\",\"à\",\"às\",\"área\",\"é\",\"és\",\"﻿dr\"],\"ro\":[\"acea\",\"aceasta\",\"această\",\"aceea\",\"acei\",\"aceia\",\"acel\",\"acela\",\"acele\",\"acelea\",\"acest\",\"acesta\",\"aceste\",\"acestea\",\"aceşti\",\"aceştia\",\"acolo\",\"acord\",\"acum\",\"ai\",\"aia\",\"aibă\",\"aici\",\"al\",\"ale\",\"alea\",\"altceva\",\"altcineva\",\"am\",\"ar\",\"are\",\"asemenea\",\"asta\",\"astea\",\"astăzi\",\"asupra\",\"au\",\"avea\",\"avem\",\"aveţi\",\"azi\",\"aş\",\"aşadar\",\"aţi\",\"bine\",\"bucur\",\"bună\",\"ca\",\"care\",\"caut\",\"ce\",\"cel\",\"ceva\",\"chiar\",\"cinci\",\"cine\",\"cineva\",\"contra\",\"cu\",\"cum\",\"cumva\",\"curând\",\"curînd\",\"când\",\"cât\",\"câte\",\"câtva\",\"câţi\",\"cînd\",\"cît\",\"cîte\",\"cîtva\",\"cîţi\",\"că\",\"căci\",\"cărei\",\"căror\",\"cărui\",\"către\",\"da\",\"dacă\",\"dar\",\"datorită\",\"dată\",\"dau\",\"de\",\"deci\",\"deja\",\"deoarece\",\"departe\",\"deşi\",\"din\",\"dinaintea\",\"dintr-\",\"dintre\",\"doi\",\"doilea\",\"două\",\"drept\",\"după\",\"dă\",\"ea\",\"ei\",\"el\",\"ele\",\"eram\",\"este\",\"eu\",\"eşti\",\"face\",\"fata\",\"fi\",\"fie\",\"fiecare\",\"fii\",\"fim\",\"fiu\",\"fiţi\",\"frumos\",\"fără\",\"graţie\",\"halbă\",\"iar\",\"ieri\",\"la\",\"le\",\"li\",\"lor\",\"lui\",\"lângă\",\"lîngă\",\"mai\",\"mea\",\"mei\",\"mele\",\"mereu\",\"meu\",\"mi\",\"mie\",\"mine\",\"mult\",\"multă\",\"mulţi\",\"mulţumesc\",\"mâine\",\"mîine\",\"mă\",\"ne\",\"nevoie\",\"nici\",\"nicăieri\",\"nimeni\",\"nimeri\",\"nimic\",\"nişte\",\"noastre\",\"noastră\",\"noi\",\"noroc\",\"nostru\",\"nouă\",\"noştri\",\"nu\",\"opt\",\"ori\",\"oricare\",\"orice\",\"oricine\",\"oricum\",\"oricând\",\"oricât\",\"oricînd\",\"oricît\",\"oriunde\",\"patra\",\"patru\",\"patrulea\",\"pe\",\"pentru\",\"peste\",\"pic\",\"poate\",\"pot\",\"prea\",\"prima\",\"primul\",\"prin\",\"puţin\",\"puţina\",\"puţină\",\"până\",\"pînă\",\"rog\",\"sa\",\"sale\",\"sau\",\"se\",\"spate\",\"spre\",\"sub\",\"sunt\",\"suntem\",\"sunteţi\",\"sută\",\"sînt\",\"sîntem\",\"sînteţi\",\"să\",\"săi\",\"său\",\"ta\",\"tale\",\"te\",\"timp\",\"tine\",\"toate\",\"toată\",\"tot\",\"totuşi\",\"toţi\",\"trei\",\"treia\",\"treilea\",\"tu\",\"tăi\",\"tău\",\"un\",\"una\",\"unde\",\"undeva\",\"unei\",\"uneia\",\"unele\",\"uneori\",\"unii\",\"unor\",\"unora\",\"unu\",\"unui\",\"unuia\",\"unul\",\"vi\",\"voastre\",\"voastră\",\"voi\",\"vostru\",\"vouă\",\"voştri\",\"vreme\",\"vreo\",\"vreun\",\"vă\",\"zece\",\"zero\",\"zi\",\"zice\",\"îi\",\"îl\",\"îmi\",\"împotriva\",\"în\",\"înainte\",\"înaintea\",\"încotro\",\"încât\",\"încît\",\"între\",\"întrucât\",\"întrucît\",\"îţi\",\"ăla\",\"ălea\",\"ăsta\",\"ăstea\",\"ăştia\",\"şapte\",\"şase\",\"şi\",\"ştiu\",\"ţi\",\"ţie\"],\"ru\":[\"а\",\"алло\",\"без\",\"близко\",\"более\",\"больше\",\"будем\",\"будет\",\"будете\",\"будешь\",\"будто\",\"буду\",\"будут\",\"будь\",\"бы\",\"бывает\",\"бывь\",\"был\",\"была\",\"были\",\"было\",\"быть\",\"в\",\"важная\",\"важное\",\"важные\",\"важный\",\"вам\",\"вами\",\"вас\",\"ваш\",\"ваша\",\"ваше\",\"ваши\",\"вверх\",\"вдали\",\"вдруг\",\"ведь\",\"везде\",\"весь\",\"вниз\",\"внизу\",\"во\",\"вокруг\",\"вон\",\"восемнадцатый\",\"восемнадцать\",\"восемь\",\"восьмой\",\"вот\",\"впрочем\",\"времени\",\"время\",\"все\",\"всегда\",\"всего\",\"всем\",\"всеми\",\"всему\",\"всех\",\"всею\",\"всю\",\"всюду\",\"вся\",\"всё\",\"второй\",\"вы\",\"г\",\"где\",\"говорил\",\"говорит\",\"год\",\"года\",\"году\",\"да\",\"давно\",\"даже\",\"далеко\",\"дальше\",\"даром\",\"два\",\"двадцатый\",\"двадцать\",\"две\",\"двенадцатый\",\"двенадцать\",\"двух\",\"девятнадцатый\",\"девятнадцать\",\"девятый\",\"девять\",\"действительно\",\"дел\",\"день\",\"десятый\",\"десять\",\"для\",\"до\",\"довольно\",\"долго\",\"должно\",\"другая\",\"другие\",\"других\",\"друго\",\"другое\",\"другой\",\"е\",\"его\",\"ее\",\"ей\",\"ему\",\"если\",\"есть\",\"еще\",\"ещё\",\"ею\",\"её\",\"ж\",\"же\",\"жизнь\",\"за\",\"занят\",\"занята\",\"занято\",\"заняты\",\"затем\",\"зато\",\"зачем\",\"здесь\",\"значит\",\"и\",\"из\",\"или\",\"им\",\"именно\",\"иметь\",\"ими\",\"имя\",\"иногда\",\"их\",\"к\",\"каждая\",\"каждое\",\"каждые\",\"каждый\",\"кажется\",\"как\",\"какая\",\"какой\",\"кем\",\"когда\",\"кого\",\"ком\",\"кому\",\"конечно\",\"которая\",\"которого\",\"которой\",\"которые\",\"который\",\"которых\",\"кроме\",\"кругом\",\"кто\",\"куда\",\"лет\",\"ли\",\"лишь\",\"лучше\",\"люди\",\"м\",\"мало\",\"между\",\"меля\",\"менее\",\"меньше\",\"меня\",\"миллионов\",\"мимо\",\"мира\",\"мне\",\"много\",\"многочисленная\",\"многочисленное\",\"многочисленные\",\"многочисленный\",\"мной\",\"мною\",\"мог\",\"могут\",\"мож\",\"может\",\"можно\",\"можхо\",\"мои\",\"мой\",\"мор\",\"мочь\",\"моя\",\"моё\",\"мы\",\"на\",\"наверху\",\"над\",\"надо\",\"назад\",\"наиболее\",\"наконец\",\"нам\",\"нами\",\"нас\",\"начала\",\"наш\",\"наша\",\"наше\",\"наши\",\"не\",\"него\",\"недавно\",\"недалеко\",\"нее\",\"ней\",\"нельзя\",\"нем\",\"немного\",\"нему\",\"непрерывно\",\"нередко\",\"несколько\",\"нет\",\"нею\",\"неё\",\"ни\",\"нибудь\",\"ниже\",\"низко\",\"никогда\",\"никуда\",\"ними\",\"них\",\"ничего\",\"но\",\"ну\",\"нужно\",\"нх\",\"о\",\"об\",\"оба\",\"обычно\",\"один\",\"одиннадцатый\",\"одиннадцать\",\"однажды\",\"однако\",\"одного\",\"одной\",\"около\",\"он\",\"она\",\"они\",\"оно\",\"опять\",\"особенно\",\"от\",\"отовсюду\",\"отсюда\",\"очень\",\"первый\",\"перед\",\"по\",\"под\",\"пожалуйста\",\"позже\",\"пока\",\"пор\",\"пора\",\"после\",\"посреди\",\"потом\",\"потому\",\"почему\",\"почти\",\"прекрасно\",\"при\",\"про\",\"просто\",\"против\",\"процентов\",\"пятнадцатый\",\"пятнадцать\",\"пятый\",\"пять\",\"раз\",\"разве\",\"рано\",\"раньше\",\"рядом\",\"с\",\"сам\",\"сама\",\"сами\",\"самим\",\"самими\",\"самих\",\"само\",\"самого\",\"самой\",\"самом\",\"самому\",\"саму\",\"свое\",\"своего\",\"своей\",\"свои\",\"своих\",\"свою\",\"сеаой\",\"себе\",\"себя\",\"сегодня\",\"седьмой\",\"сейчас\",\"семнадцатый\",\"семнадцать\",\"семь\",\"сих\",\"сказал\",\"сказала\",\"сказать\",\"сколько\",\"слишком\",\"сначала\",\"снова\",\"со\",\"собой\",\"собою\",\"совсем\",\"спасибо\",\"стал\",\"суть\",\"т\",\"та\",\"так\",\"такая\",\"также\",\"такие\",\"такое\",\"такой\",\"там\",\"твой\",\"твоя\",\"твоё\",\"те\",\"тебе\",\"тебя\",\"тем\",\"теми\",\"теперь\",\"тех\",\"то\",\"тобой\",\"тобою\",\"тогда\",\"того\",\"тоже\",\"только\",\"том\",\"тому\",\"тот\",\"тою\",\"третий\",\"три\",\"тринадцатый\",\"тринадцать\",\"ту\",\"туда\",\"тут\",\"ты\",\"тысяч\",\"у\",\"уж\",\"уже\",\"уметь\",\"хорошо\",\"хотеть\",\"хоть\",\"хотя\",\"хочешь\",\"часто\",\"чаще\",\"чего\",\"человек\",\"чем\",\"чему\",\"через\",\"четвертый\",\"четыре\",\"четырнадцатый\",\"четырнадцать\",\"что\",\"чтоб\",\"чтобы\",\"чуть\",\"шестнадцатый\",\"шестнадцать\",\"шестой\",\"шесть\",\"эта\",\"эти\",\"этим\",\"этими\",\"этих\",\"это\",\"этого\",\"этой\",\"этом\",\"этому\",\"этот\",\"эту\",\"я\"],\"sk\":[\"a\",\"aby\",\"aj\",\"ako\",\"aký\",\"ale\",\"alebo\",\"ani\",\"avak\",\"ba\",\"bez\",\"buï\",\"cez\",\"do\",\"ho\",\"hoci\",\"i\",\"ich\",\"im\",\"ja\",\"jeho\",\"jej\",\"jemu\",\"ju\",\"k\",\"kam\",\"kde\",\"kede\",\"keï\",\"kto\",\"ktorý\",\"ku\",\"lebo\",\"ma\",\"mi\",\"mne\",\"mnou\",\"mu\",\"my\",\"mòa\",\"môj\",\"na\",\"nad\",\"nami\",\"neho\",\"nej\",\"nemu\",\"nich\",\"nielen\",\"nim\",\"no\",\"nám\",\"nás\",\"ná\",\"ním\",\"o\",\"od\",\"on\",\"ona\",\"oni\",\"ono\",\"ony\",\"po\",\"pod\",\"pre\",\"pred\",\"pri\",\"s\",\"sa\",\"seba\",\"sem\",\"so\",\"svoj\",\"taký\",\"tam\",\"teba\",\"tebe\",\"tebou\",\"tej\",\"ten\",\"ti\",\"tie\",\"to\",\"toho\",\"tomu\",\"tou\",\"tvoj\",\"ty\",\"tá\",\"tým\",\"v\",\"vami\",\"veï\",\"vo\",\"vy\",\"vak\",\"vám\",\"vás\",\"vá\",\"z\",\"za\",\"zo\",\"a\",\"e\",\"èi\",\"èo\",\"èí\",\"òom\",\"òou\",\"òu\"],\"sl\":[\"ali\",\"april\",\"avgust\",\"b\",\"bi\",\"bil\",\"bila\",\"bile\",\"bili\",\"bilo\",\"biti\",\"blizu\",\"bo\",\"bodo\",\"bojo\",\"bolj\",\"bom\",\"bomo\",\"boste\",\"bova\",\"boš\",\"brez\",\"c\",\"cel\",\"cela\",\"celi\",\"celo\",\"d\",\"da\",\"daleč\",\"dan\",\"danes\",\"datum\",\"december\",\"deset\",\"deseta\",\"deseti\",\"deseto\",\"devet\",\"deveta\",\"deveti\",\"deveto\",\"do\",\"dober\",\"dobra\",\"dobri\",\"dobro\",\"dokler\",\"dol\",\"dolg\",\"dolga\",\"dolgi\",\"dovolj\",\"drug\",\"druga\",\"drugi\",\"drugo\",\"dva\",\"dve\",\"e\",\"eden\",\"en\",\"ena\",\"ene\",\"eni\",\"enkrat\",\"eno\",\"etc.\",\"f\",\"februar\",\"g\",\"g.\",\"ga\",\"ga.\",\"gor\",\"gospa\",\"gospod\",\"h\",\"halo\",\"i\",\"idr.\",\"ii\",\"iii\",\"in\",\"iv\",\"ix\",\"iz\",\"j\",\"januar\",\"jaz\",\"je\",\"ji\",\"jih\",\"jim\",\"jo\",\"julij\",\"junij\",\"jutri\",\"k\",\"kadarkoli\",\"kaj\",\"kajti\",\"kako\",\"kakor\",\"kamor\",\"kamorkoli\",\"kar\",\"karkoli\",\"katerikoli\",\"kdaj\",\"kdo\",\"kdorkoli\",\"ker\",\"ki\",\"kje\",\"kjer\",\"kjerkoli\",\"ko\",\"koder\",\"koderkoli\",\"koga\",\"komu\",\"kot\",\"kratek\",\"kratka\",\"kratke\",\"kratki\",\"l\",\"lahka\",\"lahke\",\"lahki\",\"lahko\",\"le\",\"lep\",\"lepa\",\"lepe\",\"lepi\",\"lepo\",\"leto\",\"m\",\"maj\",\"majhen\",\"majhna\",\"majhni\",\"malce\",\"malo\",\"manj\",\"marec\",\"me\",\"med\",\"medtem\",\"mene\",\"mesec\",\"mi\",\"midva\",\"midve\",\"mnogo\",\"moj\",\"moja\",\"moje\",\"mora\",\"morajo\",\"moram\",\"moramo\",\"morate\",\"moraš\",\"morem\",\"mu\",\"n\",\"na\",\"nad\",\"naj\",\"najina\",\"najino\",\"najmanj\",\"naju\",\"največ\",\"nam\",\"narobe\",\"nas\",\"nato\",\"nazaj\",\"naš\",\"naša\",\"naše\",\"ne\",\"nedavno\",\"nedelja\",\"nek\",\"neka\",\"nekaj\",\"nekatere\",\"nekateri\",\"nekatero\",\"nekdo\",\"neke\",\"nekega\",\"neki\",\"nekje\",\"neko\",\"nekoga\",\"nekoč\",\"ni\",\"nikamor\",\"nikdar\",\"nikjer\",\"nikoli\",\"nič\",\"nje\",\"njega\",\"njegov\",\"njegova\",\"njegovo\",\"njej\",\"njemu\",\"njen\",\"njena\",\"njeno\",\"nji\",\"njih\",\"njihov\",\"njihova\",\"njihovo\",\"njiju\",\"njim\",\"njo\",\"njun\",\"njuna\",\"njuno\",\"no\",\"nocoj\",\"november\",\"npr.\",\"o\",\"ob\",\"oba\",\"obe\",\"oboje\",\"od\",\"odprt\",\"odprta\",\"odprti\",\"okoli\",\"oktober\",\"on\",\"onadva\",\"one\",\"oni\",\"onidve\",\"osem\",\"osma\",\"osmi\",\"osmo\",\"oz.\",\"p\",\"pa\",\"pet\",\"peta\",\"petek\",\"peti\",\"peto\",\"po\",\"pod\",\"pogosto\",\"poleg\",\"poln\",\"polna\",\"polni\",\"polno\",\"ponavadi\",\"ponedeljek\",\"ponovno\",\"potem\",\"povsod\",\"pozdravljen\",\"pozdravljeni\",\"prav\",\"prava\",\"prave\",\"pravi\",\"pravo\",\"prazen\",\"prazna\",\"prazno\",\"prbl.\",\"precej\",\"pred\",\"prej\",\"preko\",\"pri\",\"pribl.\",\"približno\",\"primer\",\"pripravljen\",\"pripravljena\",\"pripravljeni\",\"proti\",\"prva\",\"prvi\",\"prvo\",\"r\",\"ravno\",\"redko\",\"res\",\"reč\",\"s\",\"saj\",\"sam\",\"sama\",\"same\",\"sami\",\"samo\",\"se\",\"sebe\",\"sebi\",\"sedaj\",\"sedem\",\"sedma\",\"sedmi\",\"sedmo\",\"sem\",\"september\",\"seveda\",\"si\",\"sicer\",\"skoraj\",\"skozi\",\"slab\",\"smo\",\"so\",\"sobota\",\"spet\",\"sreda\",\"srednja\",\"srednji\",\"sta\",\"ste\",\"stran\",\"stvar\",\"sva\",\"t\",\"ta\",\"tak\",\"taka\",\"take\",\"taki\",\"tako\",\"takoj\",\"tam\",\"te\",\"tebe\",\"tebi\",\"tega\",\"težak\",\"težka\",\"težki\",\"težko\",\"ti\",\"tista\",\"tiste\",\"tisti\",\"tisto\",\"tj.\",\"tja\",\"to\",\"toda\",\"torek\",\"tretja\",\"tretje\",\"tretji\",\"tri\",\"tu\",\"tudi\",\"tukaj\",\"tvoj\",\"tvoja\",\"tvoje\",\"u\",\"v\",\"vaju\",\"vam\",\"vas\",\"vaš\",\"vaša\",\"vaše\",\"ve\",\"vedno\",\"velik\",\"velika\",\"veliki\",\"veliko\",\"vendar\",\"ves\",\"več\",\"vi\",\"vidva\",\"vii\",\"viii\",\"visok\",\"visoka\",\"visoke\",\"visoki\",\"vsa\",\"vsaj\",\"vsak\",\"vsaka\",\"vsakdo\",\"vsake\",\"vsaki\",\"vsakomur\",\"vse\",\"vsega\",\"vsi\",\"vso\",\"včasih\",\"včeraj\",\"x\",\"z\",\"za\",\"zadaj\",\"zadnji\",\"zakaj\",\"zaprta\",\"zaprti\",\"zaprto\",\"zdaj\",\"zelo\",\"zunaj\",\"č\",\"če\",\"često\",\"četrta\",\"četrtek\",\"četrti\",\"četrto\",\"čez\",\"čigav\",\"š\",\"šest\",\"šesta\",\"šesti\",\"šesto\",\"štiri\",\"ž\",\"že\",\"﻿a\"],\"sv\":[\"aderton\",\"adertonde\",\"adjö\",\"aldrig\",\"alla\",\"allas\",\"allt\",\"alltid\",\"alltså\",\"andra\",\"andras\",\"annan\",\"annat\",\"artonde\",\"artonn\",\"att\",\"av\",\"bakom\",\"bara\",\"behöva\",\"behövas\",\"behövde\",\"behövt\",\"beslut\",\"beslutat\",\"beslutit\",\"bland\",\"blev\",\"bli\",\"blir\",\"blivit\",\"bort\",\"borta\",\"bra\",\"bäst\",\"bättre\",\"båda\",\"bådas\",\"dag\",\"dagar\",\"dagarna\",\"dagen\",\"de\",\"del\",\"delen\",\"dem\",\"den\",\"deras\",\"dess\",\"det\",\"detta\",\"dig\",\"din\",\"dina\",\"dit\",\"ditt\",\"dock\",\"du\",\"där\",\"därför\",\"då\",\"efter\",\"eftersom\",\"elfte\",\"eller\",\"elva\",\"en\",\"enkel\",\"enkelt\",\"enkla\",\"enligt\",\"er\",\"era\",\"ert\",\"ett\",\"ettusen\",\"fanns\",\"fem\",\"femte\",\"femtio\",\"femtionde\",\"femton\",\"femtonde\",\"fick\",\"fin\",\"finnas\",\"finns\",\"fjorton\",\"fjortonde\",\"fjärde\",\"fler\",\"flera\",\"flesta\",\"fram\",\"framför\",\"från\",\"fyra\",\"fyrtio\",\"fyrtionde\",\"få\",\"får\",\"fått\",\"följande\",\"för\",\"före\",\"förlåt\",\"förra\",\"första\",\"genast\",\"genom\",\"gick\",\"gjorde\",\"gjort\",\"god\",\"goda\",\"godare\",\"godast\",\"gott\",\"gälla\",\"gäller\",\"gällt\",\"gärna\",\"gå\",\"går\",\"gått\",\"gör\",\"göra\",\"ha\",\"hade\",\"haft\",\"han\",\"hans\",\"har\",\"heller\",\"hellre\",\"helst\",\"helt\",\"henne\",\"hennes\",\"hit\",\"hon\",\"honom\",\"hundra\",\"hundraen\",\"hundraett\",\"hur\",\"här\",\"hög\",\"höger\",\"högre\",\"högst\",\"i\",\"ibland\",\"idag\",\"igen\",\"igår\",\"imorgon\",\"in\",\"inför\",\"inga\",\"ingen\",\"ingenting\",\"inget\",\"innan\",\"inne\",\"inom\",\"inte\",\"inuti\",\"ja\",\"jag\",\"jämfört\",\"kan\",\"kanske\",\"knappast\",\"kom\",\"komma\",\"kommer\",\"kommit\",\"kr\",\"kunde\",\"kunna\",\"kunnat\",\"kvar\",\"legat\",\"ligga\",\"ligger\",\"lika\",\"likställd\",\"likställda\",\"lilla\",\"lite\",\"liten\",\"litet\",\"länge\",\"längre\",\"längst\",\"lätt\",\"lättare\",\"lättast\",\"långsam\",\"långsammare\",\"långsammast\",\"långsamt\",\"långt\",\"man\",\"med\",\"mellan\",\"men\",\"mer\",\"mera\",\"mest\",\"mig\",\"min\",\"mina\",\"mindre\",\"minst\",\"mitt\",\"mittemot\",\"mot\",\"mycket\",\"många\",\"måste\",\"möjlig\",\"möjligen\",\"möjligt\",\"möjligtvis\",\"ned\",\"nederst\",\"nedersta\",\"nedre\",\"nej\",\"ner\",\"ni\",\"nio\",\"nionde\",\"nittio\",\"nittionde\",\"nitton\",\"nittonde\",\"nog\",\"noll\",\"nr\",\"nu\",\"nummer\",\"när\",\"nästa\",\"någon\",\"någonting\",\"något\",\"några\",\"nödvändig\",\"nödvändiga\",\"nödvändigt\",\"nödvändigtvis\",\"och\",\"också\",\"ofta\",\"oftast\",\"olika\",\"olikt\",\"om\",\"oss\",\"på\",\"rakt\",\"redan\",\"rätt\",\"sade\",\"sagt\",\"samma\",\"sedan\",\"senare\",\"senast\",\"sent\",\"sex\",\"sextio\",\"sextionde\",\"sexton\",\"sextonde\",\"sig\",\"sin\",\"sina\",\"sist\",\"sista\",\"siste\",\"sitt\",\"sju\",\"sjunde\",\"sjuttio\",\"sjuttionde\",\"sjutton\",\"sjuttonde\",\"sjätte\",\"ska\",\"skall\",\"skulle\",\"slutligen\",\"små\",\"smått\",\"snart\",\"som\",\"stor\",\"stora\",\"stort\",\"större\",\"störst\",\"säga\",\"säger\",\"sämre\",\"sämst\",\"så\",\"tack\",\"tidig\",\"tidigare\",\"tidigast\",\"tidigt\",\"till\",\"tills\",\"tillsammans\",\"tio\",\"tionde\",\"tjugo\",\"tjugoen\",\"tjugoett\",\"tjugonde\",\"tjugotre\",\"tjugotvå\",\"tjungo\",\"tolfte\",\"tolv\",\"tre\",\"tredje\",\"trettio\",\"trettionde\",\"tretton\",\"trettonde\",\"två\",\"tvåhundra\",\"under\",\"upp\",\"ur\",\"ursäkt\",\"ut\",\"utan\",\"utanför\",\"ute\",\"vad\",\"var\",\"vara\",\"varför\",\"varifrån\",\"varit\",\"varken\",\"varsågod\",\"vart\",\"vem\",\"vems\",\"verkligen\",\"vi\",\"vid\",\"vidare\",\"viktig\",\"viktigare\",\"viktigast\",\"viktigt\",\"vilka\",\"vilken\",\"vilket\",\"vill\",\"vänster\",\"vänstra\",\"värre\",\"vår\",\"våra\",\"vårt\",\"än\",\"ännu\",\"även\",\"åtminstone\",\"åtta\",\"åttio\",\"åttionde\",\"åttonde\",\"över\",\"övermorgon\",\"överst\",\"övre\"],\"tr\":[\"\\\"information\",\"#\",\"(http://www.users.muohio.edu/canf/papers/jasist2008offprint.pdf)\",\"acaba\",\"altmış\",\"altı\",\"ama\",\"ancak\",\"arada\",\"aslında\",\"ayrıca\",\"bana\",\"bazı\",\"belki\",\"ben\",\"benden\",\"beni\",\"benim\",\"beri\",\"beş\",\"bile\",\"bin\",\"bir\",\"biri\",\"birkaç\",\"birkez\",\"birçok\",\"birşey\",\"birşeyi\",\"biz\",\"bizden\",\"bize\",\"bizi\",\"bizim\",\"bu\",\"buna\",\"bunda\",\"bundan\",\"bunlar\",\"bunları\",\"bunların\",\"bunu\",\"bunun\",\"burada\",\"böyle\",\"böylece\",\"da\",\"daha\",\"dahi\",\"de\",\"defa\",\"değil\",\"diye\",\"diğer\",\"doksan\",\"dokuz\",\"dolayı\",\"dolayısıyla\",\"dört\",\"edecek\",\"eden\",\"ederek\",\"edilecek\",\"ediliyor\",\"edilmesi\",\"ediyor\",\"elli\",\"en\",\"etmesi\",\"etti\",\"ettiği\",\"ettiğini\",\"eğer\",\"from\",\"gibi\",\"göre\",\"halen\",\"hangi\",\"hatta\",\"hem\",\"henüz\",\"hep\",\"hepsi\",\"her\",\"herhangi\",\"herkesin\",\"hiç\",\"hiçbir\",\"iki\",\"ile\",\"ilgili\",\"ise\",\"itibaren\",\"itibariyle\",\"için\",\"işte\",\"kadar\",\"karşın\",\"katrilyon\",\"kendi\",\"kendilerine\",\"kendini\",\"kendisi\",\"kendisine\",\"kendisini\",\"kez\",\"ki\",\"kim\",\"kimden\",\"kime\",\"kimi\",\"kimse\",\"kırk\",\"list\",\"lucene-559\",\"merged\",\"milyar\",\"milyon\",\"mu\",\"mü\",\"mı\",\"nasıl\",\"ne\",\"neden\",\"nedenle\",\"nerde\",\"nerede\",\"nereye\",\"niye\",\"niçin\",\"o\",\"olan\",\"olarak\",\"oldu\",\"olduklarını\",\"olduğu\",\"olduğunu\",\"olmadı\",\"olmadığı\",\"olmak\",\"olması\",\"olmayan\",\"olmaz\",\"olsa\",\"olsun\",\"olup\",\"olur\",\"olursa\",\"oluyor\",\"on\",\"ona\",\"ondan\",\"onlar\",\"onlardan\",\"onları\",\"onların\",\"onu\",\"onun\",\"otuz\",\"oysa\",\"pek\",\"rağmen\",\"retrieval\",\"sadece\",\"sanki\",\"sekiz\",\"seksen\",\"sen\",\"senden\",\"seni\",\"senin\",\"siz\",\"sizden\",\"sizi\",\"sizin\",\"stopwords\",\"tarafından\",\"texts\\\"\",\"the\",\"trilyon\",\"turkish\",\"tüm\",\"var\",\"vardı\",\"ve\",\"veya\",\"with\",\"ya\",\"yani\",\"yapacak\",\"yapmak\",\"yaptı\",\"yaptıkları\",\"yaptığı\",\"yaptığını\",\"yapılan\",\"yapılması\",\"yapıyor\",\"yedi\",\"yerine\",\"yetmiş\",\"yine\",\"yirmi\",\"yoksa\",\"yüz\",\"zaten\",\"çok\",\"çünkü\",\"öyle\",\"üzere\",\"üç\",\"şey\",\"şeyden\",\"şeyi\",\"şeyler\",\"şu\",\"şuna\",\"şunda\",\"şundan\",\"şunları\",\"şunu\",\"şöyle\"],\"uk\":[\"або\",\"адже\",\"аж\",\"але\",\"ало\",\"б\",\"багато\",\"без\",\"безперервно\",\"близько\",\"був\",\"буває\",\"буде\",\"будемо\",\"будете\",\"будеш\",\"буду\",\"будуть\",\"будь\",\"була\",\"були\",\"було\",\"бути\",\"більш\",\"більше\",\"в\",\"важлива\",\"важливе\",\"важливий\",\"важливі\",\"вам\",\"вами\",\"вас\",\"ваш\",\"ваша\",\"ваше\",\"ваші\",\"вгору\",\"вдалині\",\"весь\",\"вже\",\"ви\",\"вміти\",\"вниз\",\"внизу\",\"вона\",\"вони\",\"воно\",\"восьмий\",\"все\",\"всею\",\"всього\",\"всьому\",\"всю\",\"вся\",\"всім\",\"всіх\",\"втім\",\"від\",\"відсотків\",\"він\",\"вісім\",\"вісімнадцятий\",\"вісімнадцять\",\"г\",\"геть\",\"говорив\",\"давно\",\"далеко\",\"далі\",\"даром\",\"два\",\"двадцятий\",\"двадцять\",\"дванадцятий\",\"дванадцять\",\"двох\",\"дві\",\"де\",\"дев'ятий\",\"дев'ятнадцятий\",\"дев'ятнадцять\",\"дев'ять\",\"день\",\"десятий\",\"десять\",\"для\",\"до\",\"добре\",\"довго\",\"досить\",\"другий\",\"друго\",\"дуже\",\"дякую\",\"дійсно\",\"е\",\"ж\",\"життя\",\"з\",\"за\",\"завжди\",\"зазвичай\",\"зайнята\",\"зайнятий\",\"зайнято\",\"зайняті\",\"занадто\",\"зараз\",\"зате\",\"звичайно\",\"звідси\",\"звідусіль\",\"здається\",\"значить\",\"знову\",\"зовсім\",\"зі\",\"його\",\"йому\",\"каже\",\"какая\",\"ким\",\"кого\",\"кожен\",\"кожна\",\"кожне\",\"кожні\",\"коли\",\"кому\",\"краще\",\"кругом\",\"крім\",\"куди\",\"кілька\",\"ласка\",\"ледве\",\"лише\",\"люди\",\"людина\",\"м\",\"майже\",\"мало\",\"мати\",\"мене\",\"менше\",\"мені\",\"ми\",\"миру\",\"мною\",\"могти\",\"мож\",\"може\",\"можна\",\"можуть\",\"моя\",\"моє\",\"мої\",\"міг\",\"між\",\"мій\",\"мільйонів\",\"на\",\"навколо\",\"навіть\",\"навіщо\",\"нагорі\",\"над\",\"назад\",\"найбільш\",\"нам\",\"нами\",\"нарешті\",\"нас\",\"наш\",\"наша\",\"наше\",\"наші\",\"не\",\"небудь\",\"недалеко\",\"немає\",\"нерідко\",\"нещодавно\",\"нею\",\"неї\",\"нижче\",\"низько\",\"ними\",\"них\",\"ну\",\"нх\",\"нього\",\"ні\",\"ніби\",\"ніж\",\"ній\",\"ніколи\",\"нікуди\",\"нічого\",\"обидва\",\"один\",\"одинадцятий\",\"одинадцять\",\"однак\",\"одного\",\"однієї\",\"особливо\",\"ось\",\"п'ятий\",\"п'ятнадцятий\",\"п'ятнадцять\",\"п'ять\",\"перед\",\"перший\",\"по\",\"повинно\",\"поки\",\"пора\",\"поруч\",\"посеред\",\"потрібно\",\"потім\",\"початку\",\"прекрасно\",\"при\",\"про\",\"просто\",\"проти\",\"під\",\"пізніше\",\"пір\",\"після\",\"раз\",\"разу\",\"рано\",\"раніше\",\"раптом\",\"року\",\"років\",\"році\",\"рік\",\"сам\",\"сама\",\"саме\",\"самим\",\"самими\",\"самих\",\"самого\",\"самому\",\"саму\",\"самі\",\"самій\",\"свого\",\"свою\",\"своє\",\"своєї\",\"свої\",\"своїх\",\"себе\",\"сих\",\"сказав\",\"сказала\",\"сказати\",\"скрізь\",\"скільки\",\"собою\",\"собі\",\"спасибі\",\"спочатку\",\"справ\",\"став\",\"суть\",\"сьогодні\",\"сьомий\",\"сім\",\"сімнадцятий\",\"сімнадцять\",\"т\",\"та\",\"так\",\"така\",\"таке\",\"такий\",\"також\",\"такі\",\"там\",\"твоя\",\"твоє\",\"твій\",\"тебе\",\"теж\",\"тепер\",\"ти\",\"тим\",\"тими\",\"тисяч\",\"тих\",\"то\",\"тобою\",\"тобі\",\"того\",\"тоді\",\"той\",\"тому\",\"тою\",\"треба\",\"третій\",\"три\",\"тринадцятий\",\"тринадцять\",\"трохи\",\"ту\",\"туди\",\"тут\",\"ті\",\"тільки\",\"у\",\"усюди\",\"усіма\",\"хотіти\",\"хоч\",\"хоча\",\"хочеш\",\"хто\",\"хіба\",\"це\",\"цей\",\"цим\",\"цими\",\"цих\",\"цього\",\"цьому\",\"цю\",\"ця\",\"ці\",\"цієї\",\"час\",\"часто\",\"частіше\",\"часу\",\"через\",\"четвертий\",\"чи\",\"численна\",\"численне\",\"численний\",\"численні\",\"чого\",\"чому\",\"чотири\",\"чотирнадцятий\",\"чотирнадцять\",\"чудово\",\"шостий\",\"шістнадцятий\",\"шістнадцять\",\"шість\",\"ще\",\"що\",\"щоб\",\"я\",\"як\",\"яка\",\"який\",\"яких\",\"якого\",\"якої\",\"якщо\",\"які\",\"є\",\"і\",\"ім'я\",\"іноді\",\"інша\",\"інше\",\"інший\",\"інших\",\"інші\",\"їй\",\"їм\",\"їх\",\"її\",\"﻿a\"],\"zh\":[\"一\",\"上\",\"下\",\"不\",\"与\",\"且\",\"个\",\"为\",\"乃\",\"么\",\"之\",\"也\",\"了\",\"于\",\"些\",\"亦\",\"人\",\"今\",\"仍\",\"从\",\"他\",\"以\",\"们\",\"但\",\"何\",\"你\",\"使\",\"儿\",\"其\",\"再\",\"几\",\"凡\",\"凭\",\"则\",\"别\",\"到\",\"即\",\"却\",\"去\",\"又\",\"及\",\"另\",\"只\",\"可\",\"各\",\"同\",\"后\",\"向\",\"吧\",\"和\",\"咱\",\"哇\",\"哟\",\"哪\",\"啥\",\"啦\",\"嗡\",\"嘛\",\"因\",\"在\",\"她\",\"好\",\"如\",\"它\",\"小\",\"尔\",\"已\",\"并\",\"当\",\"往\",\"很\",\"得\",\"怎\",\"您\",\"我\",\"或\",\"所\",\"打\",\"把\",\"拿\",\"据\",\"无\",\"既\",\"是\",\"曾\",\"最\",\"有\",\"来\",\"某\",\"此\",\"每\",\"比\",\"沿\",\"用\",\"由\",\"的\",\"看\",\"着\",\"给\",\"而\",\"自\",\"至\",\"致\",\"若\",\"虽\",\"被\",\"让\",\"该\",\"诸\",\"谁\",\"起\",\"趁\",\"距\",\"跟\",\"还\",\"这\",\"那\",\"随\",\"靠\"]};\n\n// --- EDITABLE: extra boundary words ---------------------------------------\n// YAKE's general-purpose lists don't include these, but they rarely belong in\n// a technical glossary. Add your own as you see what comes out.\nconst EXTRA_STOPWORDS = {\n  en: ['ten', 'previous', 'make', 'makes', 'made', 'shown', 'based', 'ensure', 'ensuring',\n       'provide', 'provided', 'require', 'required', 'requires', 'refer', 'referring',\n       'including', 'include', 'includes', 'fitted', 'complete', 'confirm'],\n};\n\n// --- EDITABLE: connector words --------------------------------------------\n// Stopwords that may appear INSIDE a term but never at its start or end.\n// Essential for Romance languages, where multi-word terms are built with\n// prepositions. Without 'di', \"valvola di sicurezza\" splits into \"valvola\" +\n// \"sicurezza\", and \"messa in servizio\" is lost entirely.\n//\n// Keep these SHORT. Every word added lets candidates grow longer and noisier.\nconst CONNECTORS = {\n  en: ['of', 'for'],\n  it: ['di', 'del', 'della', 'dello', 'dei', 'delle', 'in', 'nel', 'nella',\n       'da', 'a', 'al', 'alla', 'per', 'con', 'su', 'sul'],\n  es: ['de', 'del', 'en', 'para', 'por', 'con', 'a', 'al'],\n  fr: ['de', 'du', 'des', 'en', 'au', 'aux', 'pour', 'par', 'sur', 'avec'],\n  pt: ['de', 'do', 'da', 'dos', 'das', 'em', 'para', 'por', 'com', 'ao'],\n  de: ['von', 'im', 'zur', 'zum'],\n  nl: ['van', 'voor', 'in', 'op', 'met'],\n  ro: ['de', 'la', 'cu', 'pentru', 'din'],\n  pl: ['do', 'na', 'w', 'z', 'dla'],\n};\n\n// ---------------------------------------------------------------------------\nconst settings = $('Settings').first().json;\nconst lang = String(settings.source_lang || 'en').toLowerCase().split(/[-_]/)[0];\n\nconst base = STOPWORD_LISTS[lang];\nif (!base) {\n  throw new Error(\n    `No stopword list for language \"${lang}\". Available: ${Object.keys(STOPWORD_LISTS).sort().join(', ')}`\n  );\n}\n\nconst extra = EXTRA_STOPWORDS[lang] || [];\nconst connectors = (CONNECTORS[lang] || []).map((w) => w.toLowerCase());\n\nreturn [\n  {\n    json: {\n      language: lang,\n      stopwords: base,\n      extra_stopwords: extra,\n      connectors,\n      counts: {\n        yake: base.length,\n        extra: extra.length,\n        connectors: connectors.length,\n        total: new Set([...base, ...extra]).size,\n      },\n      languages_available: Object.keys(STOPWORD_LISTS).sort(),\n    },\n  },\n];\n"
+      },
+      "id": "af21fc2b-5054-4dd5-b58f-a8acfba84ca2",
+      "name": "Stopword lists",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -12096,
+        2640
+      ],
+      "notesInFlow": true,
+      "notes": "YAKE's lists, 34 languages"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===========================================================================\n// Turns Google Drive downloads into the shape stage 1 expects.\n//\n// Expects each incoming item to carry the downloaded file as binary property\n// 'data'. If your Drive node names it differently, change BINARY_PROPERTY.\n// ===========================================================================\n\nconst BINARY_PROPERTY = 'data';\n\nconst EXT_TO_TYPE = { tmx: 'tmx', xml: 'tmx', txt: 'text', md: 'text' };\n\n// TMX exports (MemoQ, Trados) are often UTF-16, not UTF-8. Reading UTF-16 as\n// UTF-8 interleaves NUL characters through the text and every regex in\n// stage 1 then finds nothing. Detect by byte-order mark first, then by the\n// pattern of zero bytes for files saved without one.\nfunction detectEncoding(buf) {\n  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) return 'utf8-bom';\n  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return 'utf16le';\n  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) return 'utf16be';\n  const sample = Math.min(buf.length, 4096);\n  let evenZeros = 0;\n  let oddZeros = 0;\n  for (let i = 0; i < sample; i += 1) {\n    if (buf[i] === 0) { if (i % 2 === 0) evenZeros += 1; else oddZeros += 1; }\n  }\n  const half = sample / 2 || 1;\n  if (oddZeros / half > 0.3 && evenZeros / half < 0.05) return 'utf16le';\n  if (evenZeros / half > 0.3 && oddZeros / half < 0.05) return 'utf16be';\n  return 'utf8';\n}\n\nfunction decodeText(buf) {\n  const enc = detectEncoding(buf);\n  if (enc === 'utf8-bom') return buf.subarray(3).toString('utf8');\n  if (enc === 'utf16le') return buf.toString('utf16le').replace(/^\\uFEFF/, '');\n  if (enc === 'utf16be') {\n    const even = buf.length - (buf.length % 2);\n    const swapped = Buffer.from(buf.subarray(0, even));\n    swapped.swap16();\n    return swapped.toString('utf16le').replace(/^\\uFEFF/, '');\n  }\n  return buf.toString('utf8');\n}\n\nconst items = $input.all();\nconst out = [];\n\nfor (let i = 0; i < items.length; i += 1) {\n  const item = items[i];\n  const binary = (item.binary || {})[BINARY_PROPERTY];\n\n  const name = (binary && binary.fileName) || item.json.name || `file_${i + 1}`;\n  const ext = (name.split('.').pop() || '').toLowerCase();\n  const sourceType = EXT_TO_TYPE[ext];\n\n  if (!sourceType) {\n    // PDF and DOCX need an Extract from File node first; skipped, not failed.\n    out.push({ json: { file_name: name, source_type: 'unsupported', content: '', skipped: `unsupported_extension:${ext}` } });\n    continue;\n  }\n\n  if (!binary) {\n    throw new Error(\n      `Item ${i + 1} (\"${name}\") has no binary property \"${BINARY_PROPERTY}\". ` +\n      `Check the Drive node is set to download the file, not just list it.`\n    );\n  }\n\n  const buffer = await this.helpers.getBinaryDataBuffer(i, BINARY_PROPERTY);\n  out.push({ json: { file_name: name, source_type: sourceType, content: decodeText(buffer), encoding: detectEncoding(buffer) } });\n}\n\nreturn out;\n"
+      },
+      "id": "29cf1ed1-70dd-4a27-a36f-28b11b0e283e",
+      "name": "Normalise Drive files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -11200,
+        2640
+      ],
+      "notesInFlow": true,
+      "notes": "Decodes Drive downloads into the handoff shape"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===========================================================================\n// The handoff point. Everything upstream of here just has to produce items\n// shaped like:\n//\n//   { file_name: 'acme.tmx', source_type: 'tmx' | 'text', content: '<string>' }\n//\n// If you rebuild the Drive nodes by hand, connect them into this node and\n// nothing downstream needs changing.\n// ===========================================================================\n\nconst items = $input.all();\nif (!items.length) {\n  throw new Error('No documents arrived. Check Settings.input_mode and the branch it selects.');\n}\n\nconst usable = items.filter((i) => i.json.source_type !== 'unsupported' && (i.json.content || '').length > 0);\n\nif (!usable.length) {\n  const reasons = items.map((i) => i.json.skipped || 'empty content').join(', ');\n  throw new Error(`No usable documents. Reasons: ${reasons}`);\n}\n\nreturn usable.map((i) => ({ json: i.json }));\n"
+      },
+      "id": "e361b204-b7d4-454a-8d4d-7820c7599832",
+      "name": "Documents in",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -10976,
+        2640
+      ],
+      "notesInFlow": true,
+      "notes": "The handoff contract"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Stage 1 extraction logic, written to be testable outside n8n.\n// No dependencies.\n\n// Stopwords are supplied at runtime (see the \"Stopword lists\" node), so the\n// list can be the official YAKE one for the chosen language rather than\n// anything hand-written here.\nlet ACTIVE_STOPWORDS = new Set();\nlet ACTIVE_CONNECTORS = new Set();\n\n// Abbreviations that must not end a sentence.\nconst ABBREV = new Set(['fig', 'figs', 'no', 'nos', 'approx', 'etc', 'eg', 'ie', 'vs', 'cf', 'al',\n  'dr', 'mr', 'mrs', 'ms', 'prof', 'st', 'vol', 'ch', 'sec', 'para', 'ref', 'max', 'min',\n  'temp', 'dia', 'qty', 'incl', 'excl', 'ext', 'int', 'avg', 'std', 'mm', 'cm', 'kg', 'hr', 'rev']);\n\nfunction decodeEntities(s) {\n  return s\n    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"').replace(/&apos;/g, \"'\")\n    .replace(/&#(\\d+);/g, (_, d) => String.fromCharCode(+d))\n    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))\n    .replace(/&amp;/g, '&');\n}\n\n// --- TMX ------------------------------------------------------------------\n// Pulls the source-language segment out of each translation unit.\nfunction parseTmx(xml, sourceLang) {\n  const segments = [];\n  // Comma-separated prefixes, e.g. 'nb,no,nn' for Norwegian.\n  const wants = sourceLang.toLowerCase().split(',').map((w) => w.trim()).filter(Boolean);\n  const tuRe = /<tu\\b[^>]*>([\\s\\S]*?)<\\/tu>/gi;\n  const tuvRe = /<tuv\\b([^>]*)>([\\s\\S]*?)<\\/tuv>/gi;\n  const segRe = /<seg\\b[^>]*>([\\s\\S]*?)<\\/seg>/i;\n  const langRe = /(?:xml:)?lang\\s*=\\s*[\"']([^\"']+)[\"']/i;\n\n  let tu;\n  while ((tu = tuRe.exec(xml)) !== null) {\n    tuvRe.lastIndex = 0;\n    let tuv;\n    while ((tuv = tuvRe.exec(tu[1])) !== null) {\n      const lang = (tuv[1].match(langRe) || [, ''])[1].toLowerCase();\n      if (!wants.some((w) => lang.startsWith(w))) continue;\n      const seg = tuv[2].match(segRe);\n      if (!seg) continue;\n      // Inline tags (<bpt>, <ph>, <it>) carry formatting, not text.\n      const text = decodeEntities(seg[1].replace(/<[^>]+>/g, ' ')).replace(/\\s+/g, ' ').trim();\n      if (text) segments.push(text);\n      break;\n    }\n  }\n  return segments;\n}\n\n// --- sentence splitting ---------------------------------------------------\nfunction splitSentences(text) {\n  const cleaned = text.replace(/\\s+/g, ' ').trim();\n  if (!cleaned) return [];\n  const out = [];\n  let buf = '';\n  const parts = cleaned.split(/([.!?]+)(\\s+)/);\n  for (let i = 0; i < parts.length; i += 3) {\n    const chunk = parts[i] || '';\n    const punct = parts[i + 1] || '';\n    const space = parts[i + 2] || '';\n    buf += chunk + punct;\n    const lastWord = (chunk.match(/([A-Za-z]+)$/) || [, ''])[1].toLowerCase();\n    const isAbbrev = ABBREV.has(lastWord);\n    const isInitial = /\\b[A-Z]$/.test(chunk);\n    const isDecimal = /\\d$/.test(chunk) && /^\\s*\\d/.test(parts[i + 3] || '');\n    if (punct && !isAbbrev && !isInitial && !isDecimal) {\n      out.push(buf.trim());\n      buf = '';\n    } else {\n      buf += space;\n    }\n  }\n  if (buf.trim()) out.push(buf.trim());\n  return out.filter((s) => s.length > 0);\n}\n\n// --- tokenising -----------------------------------------------------------\nfunction tokenise(sentence) {\n  const raw = sentence.match(/[A-Za-z\\u00C0-\\u024F][A-Za-z\\u00C0-\\u024F'’\\-]*|\\d+(?:[.,]\\d+)?/g) || [];\n  return raw.map((t) => t.replace(/^['’\\-]+|['’\\-]+$/g, '')).filter(Boolean);\n}\n\nfunction isStop(token) {\n  const t = token.toLowerCase();\n  return ACTIVE_STOPWORDS.has(t) || ABBREV.has(t) || /^\\d/.test(t) || t.length < 2;\n}\n\n// --- YAKE word-level features --------------------------------------------\nfunction wordFeatures(sentences, tokensBySentence) {\n  const stats = new Map();\n  const totalSentences = sentences.length;\n\n  tokensBySentence.forEach((tokens, sIdx) => {\n    tokens.forEach((tok, pos) => {\n      const key = tok.toLowerCase();\n      let s = stats.get(key);\n      if (!s) {\n        s = { tf: 0, upper: 0, acronym: 0, sentences: new Set(), offsets: [], left: new Map(), right: new Map() };\n        stats.set(key, s);\n      }\n      s.tf += 1;\n      s.sentences.add(sIdx);\n      s.offsets.push(sIdx);\n      if (/^[A-Z][a-z]/.test(tok) && pos > 0) s.upper += 1;\n      if (/^[A-Z]{2,}$/.test(tok)) s.acronym += 1;\n      const prev = tokens[pos - 1];\n      const next = tokens[pos + 1];\n      if (prev && !isStop(prev)) s.left.set(prev.toLowerCase(), (s.left.get(prev.toLowerCase()) || 0) + 1);\n      if (next && !isStop(next)) s.right.set(next.toLowerCase(), (s.right.get(next.toLowerCase()) || 0) + 1);\n    });\n  });\n\n  const contentTf = [...stats.entries()].filter(([k]) => !isStop(k)).map(([, v]) => v.tf);\n  const meanTf = contentTf.length ? contentTf.reduce((a, b) => a + b, 0) / contentTf.length : 1;\n  const sd = contentTf.length\n    ? Math.sqrt(contentTf.reduce((a, b) => a + (b - meanTf) ** 2, 0) / contentTf.length)\n    : 0;\n  const maxTf = contentTf.length ? Math.max(...contentTf) : 1;\n\n  const scores = new Map();\n  for (const [key, s] of stats) {\n    // Casing: capitalised or acronym usage signals importance.\n    const casing = Math.max(s.upper, s.acronym) / (1 + Math.log(1 + s.tf));\n\n    // Position: terms appearing early are weighted higher.\n    const sorted = [...s.offsets].sort((a, b) => a - b);\n    const median = sorted[Math.floor(sorted.length / 2)];\n    const position = Math.log(Math.log(3 + median));\n\n    // Frequency, normalised against the spread of the whole corpus.\n    const frequency = s.tf / (meanTf + sd || 1);\n\n    // Relatedness: a word with many different neighbours behaves like a\n    // stopword. Few, consistent neighbours suggest a real term.\n    const leftTotal = [...s.left.values()].reduce((a, b) => a + b, 0);\n    const rightTotal = [...s.right.values()].reduce((a, b) => a + b, 0);\n    const dl = leftTotal ? s.left.size / leftTotal : 0;\n    const dr = rightTotal ? s.right.size / rightTotal : 0;\n    const relatedness = 1 + (dl + dr) * (s.tf / maxTf);\n\n    // Dispersion: spread across many sentences beats clustering in one.\n    const different = s.sentences.size / (totalSentences || 1);\n\n    const score =\n      (relatedness * position) /\n      (casing + frequency / relatedness + different / relatedness || 1e-9);\n\n    scores.set(key, { score, tf: s.tf, sentences: s.sentences.size });\n  }\n  return scores;\n}\n\n// --- candidate phrases ----------------------------------------------------\n// Phrases are the runs of content words between stopwords and punctuation.\nfunction candidatesFrom(tokens, ngramMax) {\n  // Connectors are stopwords that may sit INSIDE a term but never at its edge.\n  // Needed for Romance and other languages where multi-word terms are built\n  // with prepositions: \"valvola di sicurezza\", \"messa in servizio\",\n  // \"chiffre d'affaires\". Without this the boundary rule splits them apart.\n  const runs = [];\n  let current = [];\n  for (const tok of tokens) {\n    const t = tok.toLowerCase();\n    if (ACTIVE_CONNECTORS.has(t)) {\n      // Only continues a run that has already started.\n      if (current.length) current.push(tok);\n      continue;\n    }\n    if (isStop(tok)) {\n      if (current.length) runs.push(current);\n      current = [];\n    } else {\n      current.push(tok);\n    }\n  }\n  if (current.length) runs.push(current);\n\n  const isConnector = (tok) => ACTIVE_CONNECTORS.has(tok.toLowerCase());\n\n  const out = [];\n  for (const run of runs) {\n    for (let n = 1; n <= Math.min(ngramMax, run.length); n += 1) {\n      for (let i = 0; i + n <= run.length; i += 1) {\n        const phrase = run.slice(i, i + n);\n        // A term cannot begin or end with a connector.\n        if (isConnector(phrase[0]) || isConnector(phrase[phrase.length - 1])) continue;\n        // Two connectors in a row is a clause, not a term.\n        let consecutive = 0;\n        let bad = false;\n        for (const tok of phrase) {\n          consecutive = isConnector(tok) ? consecutive + 1 : 0;\n          if (consecutive > 1) { bad = true; break; }\n        }\n        if (bad) continue;\n        out.push(phrase);\n      }\n    }\n  }\n  return out;\n}\n\n// --- similarity for dedup -------------------------------------------------\nfunction similarity(a, b) {\n  if (a === b) return 1;\n  const m = a.length;\n  const n = b.length;\n  if (!m || !n) return 0;\n  if (Math.abs(m - n) / Math.max(m, n) > 0.5) return 0;\n  let prev = Array.from({ length: n + 1 }, (_, i) => i);\n  for (let i = 1; i <= m; i += 1) {\n    const cur = [i];\n    for (let j = 1; j <= n; j += 1) {\n      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));\n    }\n    prev = cur;\n  }\n  return 1 - prev[n] / Math.max(m, n);\n}\n\n// --- main -----------------------------------------------------------------\nfunction extract(documents, opts = {}) {\n  const {\n    ngramMax = 4,\n    minChars = 15,\n    dedupeThreshold = 0.85,\n    minSegments = 1,\n    topN = 500,\n    includeExamples = 3,\n    dedupeSegments = true,\n    independenceRatio = 1.25,\n    stopwords = [],\n    extraStopwords = [],\n    connectors = [],\n  } = opts;\n\n  ACTIVE_STOPWORDS = new Set([...stopwords, ...extraStopwords].map((w) => String(w).toLowerCase()));\n  ACTIVE_CONNECTORS = new Set(connectors.map((w) => String(w).toLowerCase()));\n  if (ACTIVE_STOPWORDS.size < 20) {\n    throw new Error(\n      `Only ${ACTIVE_STOPWORDS.size} stopwords supplied. Check the \"Stopword lists\" node has an entry for this language.`\n    );\n  }\n\n  const log = { stopwords_used: ACTIVE_STOPWORDS.size, connectors_used: ACTIVE_CONNECTORS.size, files_seen: documents.length, files_parsed: 0, skipped: [], by_source_type: {} };\n  const skip = (reason) => {\n    const row = log.skipped.find((r) => r.reason === reason);\n    if (row) row.count += 1;\n    else log.skipped.push({ reason, count: 1 });\n  };\n\n  // ---- normalise into segments\n  const segments = [];\n  const seen = new Set();\n  for (const doc of documents) {\n    let raw = [];\n    try {\n      if (doc.source_type === 'tmx') {\n        raw = parseTmx(doc.content, doc.source_lang || 'en');\n        if (!raw.length) { skip('tmx_no_source_language_segments'); continue; }\n      } else {\n        raw = splitSentences(doc.content);\n        if (!raw.length) { skip('no_extractable_text'); continue; }\n      }\n    } catch (e) {\n      skip(`parse_error:${doc.source_type}`);\n      continue;\n    }\n    log.files_parsed += 1;\n    log.by_source_type[doc.source_type] = (log.by_source_type[doc.source_type] || 0) + 1;\n\n    for (const text of raw) {\n      if (text.length < minChars) { skip('below_min_chars'); continue; }\n      const key = text.toLowerCase();\n      if (dedupeSegments && seen.has(key)) { skip('duplicate_segment'); continue; }\n      seen.add(key);\n      segments.push({ text, source: doc.name, source_type: doc.source_type });\n    }\n  }\n\n  log.segments_total = segments.length;\n  if (!segments.length) return { terms: [], rows: [], log };\n\n  // ---- sentence-level tokens, for the word scores\n  const sentences = segments.map((s) => s.text);\n  const tokensBySentence = sentences.map(tokenise);\n  const wordScores = wordFeatures(sentences, tokensBySentence);\n\n  // ---- candidate accumulation\n  const cands = new Map();\n  tokensBySentence.forEach((tokens, sIdx) => {\n    const seg = segments[sIdx];\n    for (const phrase of candidatesFrom(tokens, ngramMax)) {\n      const surface = phrase.join(' ');\n      const key = surface.toLowerCase();\n      let c = cands.get(key);\n      if (!c) {\n        c = {\n          term: surface,\n          words: phrase.map((w) => w.toLowerCase()),\n          n: phrase.length,\n          occurrences: 0,\n          segments: new Set(),\n          sourceTypes: new Set(),\n          sources: new Set(),\n          examples: [],\n          surfaces: new Map(),\n        };\n        cands.set(key, c);\n      }\n      c.occurrences += 1;\n      c.segments.add(sIdx);\n      c.sourceTypes.add(seg.source_type);\n      c.sources.add(seg.source);\n      c.surfaces.set(surface, (c.surfaces.get(surface) || 0) + 1);\n      if (c.examples.length < includeExamples && !c.examples.includes(seg.text)) {\n        c.examples.push(seg.text);\n      }\n    }\n  });\n\n  log.candidates_before_filter = cands.size;\n\n  // ---- score each candidate (YAKE phrase formula; lower is better)\n  const scored = [];\n  for (const c of cands.values()) {\n    if (c.segments.size < minSegments) continue;\n    let product = 1;\n    let sum = 0;\n    let missing = false;\n    for (const w of c.words) {\n      const ws = wordScores.get(w);\n      if (!ws) { missing = true; break; }\n      product *= ws.score;\n      sum += ws.score;\n    }\n    if (missing) continue;\n    const yake = product / (c.occurrences * (1 + sum));\n    // Most frequent surface form becomes the display term.\n    const best = [...c.surfaces.entries()].sort((a, b) => b[1] - a[1])[0][0];\n    scored.push({\n      term: best,\n      words: c.words,\n      n: c.n,\n      yake_score: yake,\n      occurrences: c.occurrences,\n      segments: c.segments.size,\n      source_types: [...c.sourceTypes].sort(),\n      sources: [...c.sources].sort(),\n      examples: c.examples,\n      merged_variants: [],\n    });\n  }\n\n  log.dropped_below_min_segments = log.candidates_before_filter - scored.length;\n  scored.sort((a, b) => a.yake_score - b.yake_score);\n\n  // ---- collapse near-duplicates into the better-scoring candidate\n  const kept = [];\n  let merges = 0;\n  for (const cand of scored) {\n    const host = kept.find((k) => {\n      if (k.n !== cand.n) return false;\n      return similarity(k.term.toLowerCase(), cand.term.toLowerCase()) >= dedupeThreshold;\n    });\n    if (host) {\n      host.occurrences += cand.occurrences;\n      host.segments += cand.segments;\n      host.source_types = [...new Set([...host.source_types, ...cand.source_types])].sort();\n      host.merged_variants.push(cand.term);\n      for (const ex of cand.examples) {\n        if (host.examples.length < includeExamples && !host.examples.includes(ex)) host.examples.push(ex);\n      }\n      merges += 1;\n    } else {\n      kept.push(cand);\n    }\n  }\n\n  log.merges = merges;\n  log.candidates_after_dedupe = kept.length;\n\n  // ---- suppress sub-phrases that add nothing\n  // \"relief valve\" inside \"pressure relief valve\" is only worth keeping if it\n  // also occurs independently. If nearly all its occurrences come from the\n  // longer term, it is noise.\n  const survivors = [];\n  let suppressed = 0;\n  for (const cand of kept) {\n    const parent = survivors.find((s) => {\n      if (s.n <= cand.n) return false;\n      const hay = ` ${s.words.join(' ')} `;\n      const needle = ` ${cand.words.join(' ')} `;\n      if (!hay.includes(needle)) return false;\n      // Independent use allowed for: occurrences beyond the parent's count.\n      return cand.occurrences <= s.occurrences * independenceRatio;\n    });\n    if (parent) {\n      parent.merged_variants.push(`(sub) ${cand.term}`);\n      suppressed += 1;\n    } else {\n      survivors.push(cand);\n    }\n  }\n\n  log.suppressed_subphrases = suppressed;\n  log.candidates_final = survivors.length;\n  kept.length = 0;\n  kept.push(...survivors);\n\n  const terms = kept.slice(0, topN).map((t, i) => ({\n    rank: i + 1,\n    term: t.term,\n    word_count: t.n,\n    yake_score: Number(t.yake_score.toPrecision(4)),\n    occurrences: t.occurrences,\n    segments: t.segments,\n    source_types: t.source_types,\n    sources: t.sources,\n    merged_variants: t.merged_variants,\n    examples: t.examples,\n    lemma: null,\n    pos_filtered: null,\n    definition: null,\n    translation: null,\n  }));\n\n  log.terms_returned = terms.length;\n\n  const rows = terms.map((t) => ({\n    rank: t.rank,\n    term: t.term,\n    word_count: t.word_count,\n    yake_score: t.yake_score,\n    occurrences: t.occurrences,\n    segments: t.segments,\n    source_types: t.source_types.join(' | '),\n    merged_variants: t.merged_variants.join(' | '),\n    examples: t.examples.join(' | '),\n    definition: '',\n    translation: '',\n  }));\n\n  return { terms, rows, log };\n}\n\n// ===========================================================================\n// n8n glue. Run mode must be \"Run Once for All Items\".\n// ===========================================================================\n\nconst settings = $('Settings').first().json;\nconst sw = $('Stopword lists').first().json;\n\nconst documents = $input.all().map((item) => ({\n  name: item.json.file_name || 'unknown',\n  source_type: item.json.source_type || 'text',\n  source_lang: settings.tmx_lang || settings.source_lang,\n  content: item.json.content || '',\n}));\n\nconst result = extract(documents, {\n  ngramMax: settings.ngram_max,\n  minChars: settings.min_chars,\n  dedupeThreshold: settings.dedupe_threshold,\n  minSegments: settings.min_segments,\n  topN: settings.top_n,\n  includeExamples: settings.include_examples,\n  dedupeSegments: settings.dedupe_segments,\n  independenceRatio: settings.independence_ratio,\n  stopwords: sw.stopwords,\n  extraStopwords: sw.extra_stopwords,\n  connectors: sw.connectors,\n});\n\nreturn [\n  {\n    json: {\n      stage: 'stage_1_statistical',\n      settings_used: settings,\n      language: sw.language,\n      stopwords: sw.counts,\n      log: result.log,\n      terms: result.terms,\n      rows: result.rows,\n    },\n  },\n];\n"
+      },
+      "id": "64e48473-c5b2-4012-9553-0cff37fb9c49",
+      "name": "Stage 1 statistical extraction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -10752,
+        2640
+      ],
+      "notesInFlow": true,
+      "notes": "Stopword boundaries + YAKE scoring + dedup. No dependencies."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Flatten to one item per term for the spreadsheet node.\n// Fails loudly on zero terms: otherwise the run would stop here silently and\n// the job would sit in 'running' until it went stale.\nconst input = $input.first().json;\nconst rows = input.rows || [];\nif (!rows.length) {\n  const log = input.log || {};\n  const skipped = (log.skipped || []).map((s) => `${s.reason} x${s.count}`).join(', ') || 'none';\n  throw new Error(\n    `No candidate terms found. Segments read: ${log.segments_total || 0}; skipped: ${skipped}. ` +\n    'Check the source language matches the files, or lower \"minimum segments\".'\n  );\n}\nreturn rows.map((row) => ({ json: row }));\n"
+      },
+      "id": "46d85c2c-bc77-4b75-b2cd-6116802afe8e",
+      "name": "Stage 1 rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -10528,
+        2640
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {
+          "fileName": "stage1_candidates.xlsx",
+          "sheetName": "candidates"
+        }
+      },
+      "id": "a1b77956-7310-4da6-811d-26b283a4e470",
+      "name": "Stage 1 spreadsheet",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        -10304,
+        2640
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===========================================================================\n// STAGE 2 — lemmatisation and part-of-speech filtering.  *** STUB ***\n//\n// Passes stage 1's output straight through so the workflow runs end to end.\n//\n// The real version must:\n//   1. Group inflected forms (\"valve\" / \"valves\") and SUM their occurrences\n//      and segment counts, so the metrics stay correct.\n//   2. Drop verb phrases (\"inspected annually\" is the classic example).\n//   3. Set `lemma` and `pos_filtered` on each term.\n//\n// It must return the same shape: { stage, log, terms, rows }.\n// ===========================================================================\n\n// Reads stage 1 by name: its direct input is now the stage 1 spreadsheet.\nconst input = $('Stage 1 statistical extraction').first().json;\n\nconst terms = input.terms.map((t) => ({ ...t, lemma: null, pos_filtered: false }));\n\nreturn [\n  {\n    json: {\n      ...input,\n      stage: 'stage_2_nlp_stub',\n      log: {\n        ...input.log,\n        stage_2: {\n          status: 'stub — no lemmatisation or POS filtering applied',\n          terms_in: input.terms.length,\n          terms_out: terms.length,\n          merged_by_lemma: 0,\n          dropped_by_pos: 0,\n        },\n      },\n      terms,\n    },\n  },\n];\n"
+      },
+      "id": "64c85828-05cc-44e6-a0a6-63dc33566ed5",
+      "name": "Stage 2 NLP stub",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -10080,
+        2640
+      ],
+      "notesInFlow": true,
+      "notes": "STUB — replace when NLP exists"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Whether the AI stage may run.\n//\n// The restricted list is deliberately NOT a setting: whether a client's\n// content may reach a third-party model is a compliance decision, not a\n// tuning knob.\nconst RESTRICTED_CLIENTS = [\n  'example-restricted-client',\n];\n\nconst input = $input.first().json;\nconst settings = $('Settings').first().json;\nconst client = (settings.client || '').trim().toLowerCase();\n\nconst restricted = RESTRICTED_CLIENTS.includes(client);\nconst requested = settings.run_ai_review === true;\nconst approved = settings.ai_review_approved === true;\n\nreturn [\n  {\n    json: {\n      ...input,\n      gate: {\n        client,\n        requested,\n        approved,\n        restricted,\n        may_run_ai: requested && approved && !restricted,\n        reason: restricted\n          ? 'Client is on the restricted list; AI stage blocked.'\n          : !requested\n            ? 'run_ai_review is false in Settings.'\n            : !approved\n              ? 'ai_review_approved is false in Settings.'\n              : 'Approved.',\n      },\n    },\n  },\n];\n"
+      },
+      "id": "edf93bff-608c-40fe-bd86-9a229e7a8508",
+      "name": "Check restricted list",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -9856,
+        2640
+      ],
+      "notesInFlow": true,
+      "notes": "Compliance check, not a setting"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "aireviewappr",
+              "leftValue": "={{ $json.gate.may_run_ai }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5f39ac8a-e9f6-4190-a8d0-72eed47acfb5",
+      "name": "AI review approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -9632,
+        2640
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const stage = $('Stage 2 NLP stub').first().json;\nconst terms = stage.terms || [];\nif (!terms.length) throw new Error('Stage 2 returned no terms.');\nreturn terms.map((t) => ({ json: t }));\n"
+      },
+      "id": "5333242f-0b74-4198-a6a9-0b554a0ad912",
+      "name": "Terms to items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -9408,
+        2512
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 25,
+        "options": {}
+      },
+      "id": "5b4e704b-ffa3-4d3b-85ea-0ba6f71db618",
+      "name": "Batch terms",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -9184,
+        2512
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One request body per batch. Only terms, metrics and examples are sent —\n// never whole files.\nconst batch = $input.all().map((i) => i.json);\n\nconst terms = batch.map((t) => ({\n  term: t.term,\n  occurrences: t.occurrences,\n  segments: t.segments,\n  examples: (t.examples || []).slice(0, 2),\n}));\n\nconst instruction = [\n  'You are reviewing candidate glossary terms extracted from a client corpus.',\n  'For each term, decide whether it belongs in a terminology glossary and write a one-sentence definition grounded in the examples given.',\n  'Reply with JSON only — no preamble, no code fences.',\n  'Shape: {\"results\":[{\"term\":\"...\",\"keep\":true,\"reason\":\"...\",\"definition\":\"...\"}]}',\n  'Set keep to false for verb phrases, generic language, and sentence fragments.',\n].join(' ');\n\nconst body = {\n  model: 'claude-sonnet-4-5',\n  max_tokens: 2000,\n  messages: [{ role: 'user', content: `${instruction}\\n\\nTerms:\\n${JSON.stringify(terms, null, 2)}` }],\n};\n\nreturn [{ json: { llm_body: JSON.stringify(body), batch_size: batch.length, terms: batch } }];\n"
+      },
+      "id": "c81f0be8-0eba-41da-9fdc-afbe98d0e051",
+      "name": "Build AI request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -8960,
+        2352
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.llm_body }}",
+        "options": {}
+      },
+      "id": "5a24f530-c664-4d17-96ed-d67f098ad8e9",
+      "name": "AI review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -8736,
+        2352
+      ],
+      "notesInFlow": true,
+      "notes": "Needs a Header Auth credential: name x-api-key"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge the model's verdicts back onto the terms.\nconst response = $input.first().json;\nconst sent = $('Build AI request').first().json.terms || [];\n\nlet parsed = { results: [] };\ntry {\n  const text = (response.content || [])\n    .filter((b) => b.type === 'text')\n    .map((b) => b.text)\n    .join('\\n')\n    .replace(/```json|```/g, '')\n    .trim();\n  parsed = JSON.parse(text);\n} catch (e) {\n  return sent.map((t) => ({ json: { ...t, ai_error: `Could not parse model response: ${e.message}` } }));\n}\n\nconst byTerm = new Map((parsed.results || []).map((r) => [String(r.term).toLowerCase(), r]));\n\nreturn sent.map((t) => {\n  const v = byTerm.get(String(t.term).toLowerCase());\n  return {\n    json: {\n      ...t,\n      ai_keep: v ? v.keep !== false : null,\n      ai_reason: v ? v.reason || '' : 'no verdict returned',\n      definition: v && v.definition ? v.definition : t.definition || '',\n    },\n  };\n});\n"
+      },
+      "id": "c8823290-b126-425f-b2d5-1eb70f4f61ec",
+      "name": "Parse AI response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -8512,
+        2352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map((item) => {\n  const t = item.json;\n  const join = (v) => (Array.isArray(v) ? v.join(' | ') : v || '');\n  return {\n    json: {\n      rank: t.rank,\n      term: t.term,\n      word_count: t.word_count,\n      yake_score: t.yake_score,\n      occurrences: t.occurrences,\n      segments: t.segments,\n      source_types: join(t.source_types),\n      merged_variants: join(t.merged_variants),\n      lemma: t.lemma || '',\n      ai_keep: t.ai_keep === null || t.ai_keep === undefined ? '' : String(t.ai_keep),\n      ai_reason: t.ai_reason || '',\n      definition: t.definition || '',\n      translation: t.translation || '',\n      examples: join(t.examples),\n      ai_error: t.ai_error || '',\n    },\n  };\n});\n"
+      },
+      "id": "02f7673d-5bea-4876-afed-4cde282c175c",
+      "name": "Final rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -8960,
+        2768
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {
+          "fileName": "glossary.xlsx",
+          "sheetName": "glossary"
+        }
+      },
+      "id": "3bbfa0c9-cc63-4881-8b8a-eaacc5907b5d",
+      "name": "Final spreadsheet",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        -8736,
+        2768
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// The run record, plus the three output files ready for upload: one item per\n// file, each with its binary in 'data'. Keep the manifest with the glossary:\n// it is what lets someone reproduce or question a result later.\nconst stage = $('Stage 2 NLP stub').first().json;\nconst gate = $('Check restricted list').first().json.gate || {};\nconst settings = $('Settings').first().json;\nconst finalRows = $('Final rows').all().map((i) => i.json);\n\nconst manifest = {\n  run_at: new Date().toISOString(),\n  job_id: settings.job_id,\n  submitted_by: settings.submitted_by,\n  client: settings.client || '',\n  source_lang: settings.source_lang,\n  tmx_lang: settings.tmx_lang,\n  language_used: stage.language,\n  stopwords: stage.stopwords,\n  settings_used: settings,\n  input_files: $('Documents in').all().map((i) => i.json.file_name),\n  coverage: {\n    files_seen: stage.log.files_seen,\n    files_parsed: stage.log.files_parsed,\n    by_source_type: stage.log.by_source_type,\n    segments: stage.log.segments_total,\n    skipped: stage.log.skipped,\n    unsupported_in_folder: ($('Check job files').first().json.skipped_in_folder || 0),\n  },\n  extraction: {\n    candidates_before_filter: stage.log.candidates_before_filter,\n    merges: stage.log.merges,\n    suppressed_subphrases: stage.log.suppressed_subphrases,\n    dropped_below_min_segments: stage.log.dropped_below_min_segments,\n    terms_returned: stage.log.terms_returned,\n  },\n  stage_2: stage.log.stage_2,\n  ai_stage: {\n    requested: gate.requested || false,\n    approved: gate.approved || false,\n    restricted: gate.restricted || false,\n    ran: gate.may_run_ai || false,\n    note: gate.reason || '',\n    terms_with_parse_errors: finalRows.filter((r) => r.ai_error).length,\n  },\n};\n\nconst safe = (s) => String(s || '').replace(/[^\\w.\\-]+/g, '_').slice(0, 60);\nconst base = `${safe(settings.client)}_${settings.source_lang}_${settings.job_id}`;\n\nconst glossary = ($('Final spreadsheet').first().binary || {}).data;\nconst stage1 = ($('Stage 1 spreadsheet').first().binary || {}).data;\nif (!glossary || !stage1) throw new Error('A spreadsheet node produced no file.');\n\nconst manifestFile = await this.helpers.prepareBinaryData(\n  Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'),\n  `run_manifest_${base}.json`,\n  'application/json',\n);\n\nreturn [\n  { json: { kind: 'glossary', fileName: `glossary_${base}.xlsx`, manifest }, binary: { data: glossary } },\n  { json: { kind: 'stage1', fileName: `stage1_candidates_${base}.xlsx` }, binary: { data: stage1 } },\n  { json: { kind: 'manifest', fileName: `run_manifest_${base}.json` }, binary: { data: manifestFile } },\n];\n"
+      },
+      "id": "4bae6e1e-b4d5-4cc8-a6be-8e1073568b7c",
+      "name": "Run manifest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -8512,
+        2768
+      ],
+      "notesInFlow": true,
+      "notes": "The audit record"
+    },
+    {
+      "parameters": {
+        "jsCode": "// AI stage did not run (the gate reason goes into the run manifest and the\n// Jobs sheet). Same items as \"Terms to items\", without AI columns.\nconst stage = $('Stage 2 NLP stub').first().json;\nconst terms = stage.terms || [];\nif (!terms.length) throw new Error('Stage 2 returned no terms.');\nreturn terms.map((t) => ({ json: t }));\n"
+      },
+      "id": "e36ba8b6-f908-41c9-93f6-035a89e8b3d9",
+      "name": "Terms to items (no AI)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -9408,
+        2768
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "name": "Every minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -13440,
+        2528
+      ],
+      "id": "006ef87a-b50a-4065-ad59-face88cde506"
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_JOBS_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Jobs",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "name": "Read jobs sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -13216,
+        2640
+      ],
+      "id": "6d6f4920-5298-40b7-8418-ecee89456858"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===========================================================================\n// THE QUEUE. Jobs come from the Apps Script web page via the \"Jobs\" sheet.\n//\n// One job at a time: if a job is already running (and not stale), do nothing\n// this tick. Otherwise take the oldest 'queued' job. Returning no items ends\n// the run quietly, which is the normal outcome most minutes.\n// ===========================================================================\n\nconst STALE_MINUTES = 45;   // keep in step with \"Find stale jobs\"\n\nconst rows = $input.all().map((i) => i.json).filter((r) => r.job_id);\nconst now = Date.now();\nconst isStale = (r) => {\n  const t = Date.parse(r.started_at || '');\n  return !t || now - t > STALE_MINUTES * 60000;\n};\n\nif (rows.some((r) => r.status === 'running' && !isStale(r))) return [];\n\nconst next = rows\n  .filter((r) => r.status === 'queued')\n  .sort((a, b) => String(a.submitted_at).localeCompare(String(b.submitted_at)))[0];\n\nreturn next ? [{ json: next }] : [];\n"
+      },
+      "name": "Pick next job",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -12992,
+        2640
+      ],
+      "id": "1e2efe06-55e1-472f-8a05-53d9763811f7"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Marks the job as running before any real work starts, so the next tick\n// (and the web page) can see it has been picked up.\nconst job = $input.first().json;\nreturn [{ json: { job_id: job.job_id, status: 'running', started_at: new Date().toISOString(), message: '' } }];\n"
+      },
+      "name": "Claim job",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -12768,
+        2640
+      ],
+      "id": "e0276b40-83c0-41dc-82df-1a8895869043"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_JOBS_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Jobs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "job_id"
+          ],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "handlingExtraData": "ignoreIt"
+        }
+      },
+      "name": "Mark job running",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -12544,
+        2640
+      ],
+      "id": "b55dbb9b-3024-4868-a0ba-8828be665e5c"
+    },
+    {
+      "parameters": {
+        "jsCode": "// A job left 'running' for too long means the run died without reporting\n// (n8n restarted, the error workflow isn't set up, etc.). Mark it failed so\n// the queue moves on and the submitter sees what happened.\nconst STALE_MINUTES = 45;   // keep in step with \"Pick next job\"\n\nconst now = Date.now();\nreturn $input.all()\n  .map((i) => i.json)\n  .filter((r) => r.job_id && r.status === 'running')\n  .filter((r) => {\n    const t = Date.parse(r.started_at || '');\n    return !t || now - t > STALE_MINUTES * 60000;\n  })\n  .map((r) => ({\n    json: {\n      job_id: r.job_id,\n      status: 'failed',\n      finished_at: new Date().toISOString(),\n      message: `Stopped without reporting a result (running for more than ${STALE_MINUTES} min). Check the n8n executions list, then resubmit.`,\n    },\n  }));\n"
+      },
+      "name": "Find stale jobs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -12992,
+        2864
+      ],
+      "id": "a3f2cf45-344c-4de5-90c8-eb8dd9a0701f"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_JOBS_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Jobs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "job_id"
+          ],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "handlingExtraData": "ignoreIt"
+        }
+      },
+      "name": "Mark stale jobs failed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -12768,
+        2864
+      ],
+      "id": "2943fdea-b058-454d-bf8f-08f04b9c52b9"
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "searchMethod": "query",
+        "queryString": "={{ \"'\" + $('Settings').first().json.input_folder_id + \"' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'\" }}",
+        "returnAll": true,
+        "filter": {},
+        "options": {
+          "fields": [
+            "id",
+            "name",
+            "mimeType"
+          ]
+        }
+      },
+      "name": "List job files",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -11872,
+        2640
+      ],
+      "alwaysOutputData": true,
+      "id": "456e02be-d9fc-4254-9f49-d212b89db97c"
+    },
+    {
+      "parameters": {
+        "jsCode": "// \"List job files\" always outputs at least one item, so an empty folder\n// reaches here and fails with a clear message instead of stopping silently.\n//\n// The input may be a folder the user chose, holding PDFs, Word files or\n// Google Docs. Only supported files are downloaded; the rest are listed in\n// the run manifest as skipped.\nconst SUPPORTED = ['tmx', 'xml', 'txt', 'md'];\n\nconst all = $input.all().map((i) => i.json).filter((f) => f && f.id);\nconst isSupported = (f) => {\n  const ext = String(f.name || '').split('.').pop().toLowerCase();\n  return SUPPORTED.includes(ext) && !String(f.mimeType || '').startsWith('application/vnd.google-apps');\n};\nconst keep = all.filter(isSupported);\n\nif (!keep.length) {\n  throw new Error(\n    all.length\n      ? `None of the ${all.length} files in the input folder can be used (needs .tmx, .xml, .txt or .md).`\n      : \"No files found in the job's input folder. Resubmit the job from the web page.\"\n  );\n}\nreturn keep.map((f) => ({ json: { id: f.id, name: f.name, skipped_in_folder: all.length - keep.length } }));\n"
+      },
+      "name": "Check job files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -11648,
+        2640
+      ],
+      "id": "8368384b-b7cd-4cb6-98e2-d7cd020fd55e"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "name": "Download job files",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -11424,
+        2640
+      ],
+      "id": "a16def58-129d-4e87-be5a-eb9dd469f816"
+    },
+    {
+      "parameters": {
+        "name": "={{ $json.fileName }}",
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "list",
+          "cachedResultName": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $('Settings').first().json.output_folder_id }}",
+          "mode": "id"
+        },
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "name": "Upload to job folder",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -8288,
+        2768
+      ],
+      "id": "f4eff4e4-bf24-43e7-b02c-92cfaadf80fb"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Write the result back to the job's row: links, counts and a short note.\nconst uploads = $input.all();\nconst sent = $('Run manifest').all();\nconst urls = {};\nuploads.forEach((u, i) => {\n  const kind = sent[i].json.kind;\n  urls[kind] = u.json.webViewLink || `https://drive.google.com/file/d/${u.json.id}/view`;\n});\n\nconst manifest = sent[0].json.manifest;\nconst notes = [];\nif (manifest.ai_stage.ran) {\n  notes.push('AI review ran.');\n  if (manifest.ai_stage.terms_with_parse_errors) {\n    notes.push(`${manifest.ai_stage.terms_with_parse_errors} terms have no AI verdict (response could not be parsed).`);\n  }\n} else if (manifest.ai_stage.requested) {\n  notes.push(`AI review skipped: ${manifest.ai_stage.note}`);\n}\nconst skipped = (manifest.coverage.skipped || []).filter((s) => !['below_min_chars', 'duplicate_segment'].includes(s.reason));\nif (skipped.length) notes.push('Skipped: ' + skipped.map((s) => `${s.reason} x${s.count}`).join(', '));\nif (manifest.coverage.unsupported_in_folder) notes.push(`${manifest.coverage.unsupported_in_folder} other files in the folder were ignored.`);\nif (manifest.coverage.files_parsed < manifest.coverage.files_seen) {\n  notes.push(`${manifest.coverage.files_seen - manifest.coverage.files_parsed} of ${manifest.coverage.files_seen} files produced no text.`);\n}\n\nreturn [{\n  json: {\n    job_id: manifest.job_id,\n    status: 'done',\n    finished_at: new Date().toISOString(),\n    terms_returned: manifest.extraction.terms_returned,\n    glossary_url: urls.glossary || '',\n    stage1_url: urls.stage1 || '',\n    manifest_url: urls.manifest || '',\n    message: notes.join(' '),\n  },\n}];\n"
+      },
+      "name": "Job done",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -8064,
+        2768
+      ],
+      "id": "2f2e9b8e-2f1d-4cf3-89c5-7f42c7e41700"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_JOBS_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Jobs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "job_id"
+          ],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "handlingExtraData": "ignoreIt"
+        }
+      },
+      "name": "Mark job done",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -7840,
+        2768
+      ],
+      "id": "dc9e3aa5-2878-434a-989e-f717f4762cdf"
+    },
+    {
+      "parameters": {
+        "content": "## Terminology extraction: job queue (v3)\n\nJobs come from the Apps Script web page through the **Jobs** sheet. Every minute this workflow takes the oldest `queued` job, runs it and writes the results back to the job's row and Drive folder.\n\n**Setup**\n1. Replace `PASTE_JOBS_SHEET_ID_HERE` in the 4 Google Sheets nodes with the ID printed by `setup()` in Apps Script.\n2. Attach a Google Sheets credential and a Google Drive credential, both signed in as **the same Google account the Apps Script runs as**. The page only accepts folders that account can use, so n8n can always reach them.\n3. Attach the Anthropic header credential to **AI review** (`x-api-key`).\n4. Import *Terminology job errors*, then set it as this workflow's **Error workflow** (Workflow settings).\n5. Activate (publish) the workflow.",
+        "height": 380,
+        "width": 520,
+        "color": 4
+      },
+      "name": "Setup notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -13472,
+        2080
+      ],
+      "id": "7e1b485e-036a-4129-ae9f-4b6d0a32d3a9"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every minute": {
+      "main": [
+        [
+          {
+            "node": "Read jobs sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run now (manual)": {
+      "main": [
+        [
+          {
+            "node": "Read jobs sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read jobs sheet": {
+      "main": [
+        [
+          {
+            "node": "Pick next job",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Find stale jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find stale jobs": {
+      "main": [
+        [
+          {
+            "node": "Mark stale jobs failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick next job": {
+      "main": [
+        [
+          {
+            "node": "Claim job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim job": {
+      "main": [
+        [
+          {
+            "node": "Mark job running",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark job running": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settings": {
+      "main": [
+        [
+          {
+            "node": "Stopword lists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stopword lists": {
+      "main": [
+        [
+          {
+            "node": "List job files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List job files": {
+      "main": [
+        [
+          {
+            "node": "Check job files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check job files": {
+      "main": [
+        [
+          {
+            "node": "Download job files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download job files": {
+      "main": [
+        [
+          {
+            "node": "Normalise Drive files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalise Drive files": {
+      "main": [
+        [
+          {
+            "node": "Documents in",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Documents in": {
+      "main": [
+        [
+          {
+            "node": "Stage 1 statistical extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage 1 statistical extraction": {
+      "main": [
+        [
+          {
+            "node": "Stage 1 rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage 1 rows": {
+      "main": [
+        [
+          {
+            "node": "Stage 1 spreadsheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage 1 spreadsheet": {
+      "main": [
+        [
+          {
+            "node": "Stage 2 NLP stub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage 2 NLP stub": {
+      "main": [
+        [
+          {
+            "node": "Check restricted list",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check restricted list": {
+      "main": [
+        [
+          {
+            "node": "AI review approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI review approved?": {
+      "main": [
+        [
+          {
+            "node": "Terms to items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Terms to items (no AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Terms to items": {
+      "main": [
+        [
+          {
+            "node": "Batch terms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch terms": {
+      "main": [
+        [
+          {
+            "node": "Final rows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build AI request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI request": {
+      "main": [
+        [
+          {
+            "node": "AI review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI review": {
+      "main": [
+        [
+          {
+            "node": "Parse AI response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI response": {
+      "main": [
+        [
+          {
+            "node": "Batch terms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Terms to items (no AI)": {
+      "main": [
+        [
+          {
+            "node": "Final rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final rows": {
+      "main": [
+        [
+          {
+            "node": "Final spreadsheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final spreadsheet": {
+      "main": [
+        [
+          {
+            "node": "Run manifest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run manifest": {
+      "main": [
+        [
+          {
+            "node": "Upload to job folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to job folder": {
+      "main": [
+        [
+          {
+            "node": "Job done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job done": {
+      "main": [
+        [
+          {
+            "node": "Mark job done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "80d875dd-e5be-4352-a78c-ab99dfd01863",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "83bba6b0405a4f53586e05a4c9a999c7a5ab4dd5e12699b9a9db01754679b393"
+  },
+  "nodeGroups": [],
+  "id": "",
+  "tags": []
+}

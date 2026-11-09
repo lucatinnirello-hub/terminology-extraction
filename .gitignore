@@ -1,0 +1,7 @@
+# Local clasp / editor files
+.clasp.json
+.clasprc.json
+.DS_Store
+*.log
+node_modules/
+preview.png

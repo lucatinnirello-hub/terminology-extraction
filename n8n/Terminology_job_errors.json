@@ -1,0 +1,127 @@
+{
+  "name": "Terminology job errors",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "6f19cc02-f3ff-4dd5-8ed1-b5053ca690a3"
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_LOG_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Jobs",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "name": "Read jobs sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        224,
+        0
+      ],
+      "id": "5ef786c0-8363-447e-bb08-1113f12877cc"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Marks the failed job's row in the log sheet, matched by the n8n\n// execution ID recorded when the job was accepted. Several jobs can run at\n// once, so the execution ID (not the status) identifies the right row.\n// Errors before a job was accepted have no row; the web page already got an\n// error reply for those.\nconst e = $('Error Trigger').first().json;\nconst exec = e.execution || {};\nconst err = exec.error || (e.trigger && e.trigger.error) || {};\n\nconst parts = [err.message || 'Unknown error'];\nif (err.description) parts.push(String(err.description));\nif (exec.lastNodeExecuted) parts.push(`(at node \"${exec.lastNodeExecuted}\")`);\nif (exec.url) parts.push(`Execution: ${exec.url}`);\nconst message = parts.join(' ').slice(0, 2000);\n\nreturn $input.all()\n  .map((i) => i.json)\n  .filter((r) => r.job_id && String(r.execution_id) === String(exec.id) && r.status === 'running')\n  .map((r) => ({ json: { job_id: r.job_id, status: 'failed', finished_at: new Date().toISOString(), message } }));\n"
+      },
+      "name": "Failed job",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "896bb787-c957-40d6-a2d4-33d3dd78364a"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_LOG_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Jobs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "job_id"
+          ],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "handlingExtraData": "ignoreIt"
+        }
+      },
+      "name": "Mark job failed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        672,
+        0
+      ],
+      "id": "629a4055-3ff1-4678-99a0-c616b63f4bf4"
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read jobs sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read jobs sheet": {
+      "main": [
+        [
+          {
+            "node": "Failed job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Failed job": {
+      "main": [
+        [
+          {
+            "node": "Mark job failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #f0f2f5;
+    --border: #dde1e6;
+    --text: #1b1f24;
+    --muted: #5d6670;
+    --accent: #1f5fbf;
+    --accent-text: #ffffff;
+    --accent-soft: #e6eefb;
+    --danger: #b3261e;
+    --danger-soft: #fbe9e7;
+    --ok: #1e7a3c;
+    --ok-soft: #e5f4ea;
+    --warn: #8a5a00;
+    --warn-soft: #fdf3dc;
+    --radius: 10px;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121417;
+      --surface: #1b1e22;
+      --surface-2: #23272c;
+      --border: #343a41;
+      --text: #e7eaee;
+      --muted: #9aa3ad;
+      --accent: #7aa7ff;
+      --accent-text: #0d1b33;
+      --accent-soft: #1d2a40;
+      --danger: #ff8a80;
+      --danger-soft: #3a1f1d;
+      --ok: #6fd28f;
+      --ok-soft: #173123;
+      --warn: #f2c35b;
+      --warn-soft: #3a3016;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  a { color: var(--accent); }
+  header {
+    display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; justify-content: space-between;
+    padding: 18px 24px; border-bottom: 1px solid var(--border); background: var(--surface);
+  }
+  header h1 { font-size: 18px; margin: 0; font-weight: 650; }
+  header .meta { color: var(--muted); font-size: 13px; display: flex; gap: 16px; flex-wrap: wrap; }
+  main {
+    display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 20px;
+    padding: 20px 24px 40px; max-width: 1400px; margin: 0 auto;
+  }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 16px; } header { padding: 14px 16px; } }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+  .card > h2 { font-size: 15px; margin: 0; padding: 14px 16px; border-bottom: 1px solid var(--border); font-weight: 620; }
+  .card-body { padding: 16px; }
+  label { display: block; font-weight: 560; margin-bottom: 4px; }
+  .hint { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
+  .field { margin-bottom: 14px; }
+  input[type=text], input[type=number], select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px;
+    background: var(--surface); color: var(--text); font: inherit;
+  }
+  input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible, .drop:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  .drop {
+    border: 1.5px dashed var(--border); border-radius: var(--radius); padding: 18px; text-align: center;
+    background: var(--surface-2); cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .drop strong { color: var(--accent); }
+  .files { list-style: none; padding: 0; margin: 8px 0 0; }
+  .files li {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 13px;
+  }
+  .files li:nth-child(odd) { background: var(--surface-2); }
+  .files .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .files .size { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .files .state { font-size: 12px; color: var(--muted); min-width: 64px; text-align: right; }
+  .files .state.ok { color: var(--ok); }
+  .files .state.err { color: var(--danger); }
+  details { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 14px; }
+  details summary { padding: 9px 12px; cursor: pointer; font-weight: 560; }
+  details .inner { padding: 4px 12px 2px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+  .grid2 .field label { font-weight: 500; font-size: 13px; }
+  .check { display: flex; gap: 8px; align-items: flex-start; font-weight: 500; }
+  .check input { margin-top: 3px; }
+  .ai-box { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 14px; }
+  .ai-approve { margin-top: 10px; padding: 10px; border-radius: 7px; background: var(--warn-soft); }
+  .ai-approve[hidden] { display: none; }
+  button {
+    font: inherit; border-radius: 7px; border: 1px solid var(--border); background: var(--surface);
+    color: var(--text); padding: 7px 12px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; width: 100%; padding: 10px; }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  button.link { border: none; background: none; color: var(--muted); padding: 2px 4px; }
+  button.small { padding: 4px 9px; font-size: 12.5px; }
+  .progress { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin-top: 10px; }
+  .progress > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .notice { padding: 10px 12px; border-radius: 8px; margin-bottom: 14px; font-size: 13.5px; }
+  .notice.err { background: var(--danger-soft); color: var(--danger); }
+  .notice.ok { background: var(--ok-soft); color: var(--ok); }
+  .notice[hidden] { display: none; }
+  .jobs-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .jobs-head h2 { font-size: 15px; margin: 0; font-weight: 620; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+  .seg button { border: none; border-radius: 0; padding: 5px 12px; font-size: 13px; }
+  .seg button[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .refresh { color: var(--muted); font-size: 12.5px; display: flex; gap: 8px; align-items: center; }
+  .job { padding: 14px 16px; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; }
+  .job:last-child { border-bottom: none; }
+  .job .title { font-weight: 600; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .job .sub { color: var(--muted); font-size: 12.5px; }
+  .job .files-line { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .job .links { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; grid-column: 1 / -1; }
+  .job .msg { grid-column: 1 / -1; font-size: 13px; padding: 8px 10px; border-radius: 7px; background: var(--surface-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .job .msg.err { background: var(--danger-soft); color: var(--danger); }
+  .job .actions { display: flex; gap: 6px; align-items: flex-start; }
+  .pill { font-size: 11.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+  .pill.queued, .pill.uploading { background: var(--accent-soft); color: var(--accent); }
+  .pill.running { background: var(--warn-soft); color: var(--warn); }
+  .pill.done { background: var(--ok-soft); color: var(--ok); }
+  .pill.failed { background: var(--danger-soft); color: var(--danger); }
+  fieldset.group { border: none; padding: 0; margin: 0 0 14px; min-width: 0; }
+  fieldset.group legend { font-weight: 560; margin-bottom: 6px; padding: 0; }
+  .choice { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 10px; }
+  .choice label { display: inline-flex; gap: 6px; align-items: center; font-weight: 450; margin: 0; cursor: pointer; }
+  .sub-label { font-weight: 500; font-size: 13px; }
+  .folder-row { display: flex; gap: 8px; }
+  .folder-row input { flex: 1; min-width: 0; }
+  .check-result { margin-top: 8px; padding: 9px 11px; border-radius: 7px; font-size: 13px; background: var(--surface-2); overflow-wrap: anywhere; }
+  .check-result.ok { background: var(--ok-soft); color: var(--ok); }
+  .check-result.err { background: var(--danger-soft); color: var(--danger); }
+  .check-result ul { margin: 6px 0 0; padding-left: 18px; color: var(--text); }
+  .check-result .more { color: var(--muted); }
+  .empty { padding: 28px 16px; text-align: center; color: var(--muted); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .spinner { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; }
+  .spinner[hidden] { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="app-title">Terminology extraction</h1>
+  <div class="meta">
+    <span id="user">Loading…</span>
+    <a id="folder-link" href="#" target="_blank" rel="noopener" hidden>Working folder</a>
+    <a id="sheet-link" href="#" target="_blank" rel="noopener" hidden>Job log</a>
+  </div>
+</header>
+
+<main>
+  <section class="card" aria-labelledby="new-job-h">
+    <h2 id="new-job-h">New extraction</h2>
+    <div class="card-body">
+      <div id="form-notice" class="notice" role="status" hidden></div>
+      <form id="job-form" novalidate>
+        <div class="field">
+          <label for="client">Client</label>
+          <input id="client" name="client" type="text" autocomplete="off" required maxlength="80" placeholder="e.g. Acme Ltd">
+          <div class="hint">Used for file names and to check whether AI review is allowed for this client.</div>
+        </div>
+
+        <div class="field">
+          <label for="source_lang">Source language</label>
+          <select id="source_lang" name="source_lang" required></select>
+          <div class="hint">For TMX files, the source-language side of each unit is extracted. Only Latin-script languages are supported for now.</div>
+        </div>
+
+        <fieldset class="field group">
+          <legend>Source files</legend>
+          <div class="choice">
+            <label><input type="radio" name="input_mode" id="input_mode_upload" value="upload" checked> Upload files</label>
+            <label><input type="radio" name="input_mode" id="input_mode_folder" value="folder"> Use a Drive folder</label>
+          </div>
+          <div id="upload-panel">
+            <div id="drop" class="drop" tabindex="0" role="button" aria-label="Choose files to upload" aria-describedby="files-hint">
+              <div><strong>Choose files</strong> or drop them here</div>
+              <div class="hint" id="files-hint"></div>
+            </div>
+            <input id="file-input" type="file" multiple class="sr-only" tabindex="-1" aria-hidden="true">
+            <ul id="file-list" class="files" aria-live="polite"></ul>
+          </div>
+          <div id="input-folder-panel" hidden>
+            <label for="input_folder" class="sub-label">Folder link</label>
+            <div class="folder-row">
+              <input id="input_folder" type="text" autocomplete="off" spellcheck="false" placeholder="https://drive.google.com/drive/folders/…">
+              <button type="button" class="small" id="input_folder_check">Check</button>
+            </div>
+            <div class="hint">Uses the .tmx, .xml, .txt and .md files directly inside the folder (not subfolders). No size limit.</div>
+            <div id="input_folder_result" class="check-result" aria-live="polite" hidden></div>
+          </div>
+        </fieldset>
+
+        <fieldset class="field group">
+          <legend>Save results to</legend>
+          <div class="choice">
+            <label><input type="radio" name="output_mode" id="output_mode_job" value="job" checked> A new folder for this job</label>
+            <label><input type="radio" name="output_mode" id="output_mode_folder" value="folder"> A Drive folder I choose</label>
+          </div>
+          <div id="output-folder-panel" hidden>
+            <label for="output_folder" class="sub-label">Folder link</label>
+            <div class="folder-row">
+              <input id="output_folder" type="text" autocomplete="off" spellcheck="false" placeholder="https://drive.google.com/drive/folders/…">
+              <button type="button" class="small" id="output_folder_check">Check</button>
+            </div>
+            <div class="hint">The glossary, stage 1 candidates and run manifest are added here. File names include the job ID, so nothing is overwritten.</div>
+            <div id="output_folder_result" class="check-result" aria-live="polite" hidden></div>
+          </div>
+        </fieldset>
+
+        <details>
+          <summary>Extraction settings</summary>
+          <div class="inner">
+            <div class="grid2" id="tuning"></div>
+            <div class="field">
+              <label class="check"><input type="checkbox" id="dedupe_segments" checked> Collapse identical segments before counting</label>
+            </div>
+          </div>
+        </details>
+
+        <div class="ai-box">
+          <label class="check"><input type="checkbox" id="run_ai_review"> Run AI review of candidate terms (Claude)</label>
+          <div class="hint">Adds a keep/drop verdict and a one-line definition to each term.</div>
+          <div class="ai-approve" id="ai-approve" hidden>
+            <label class="check"><input type="checkbox" id="ai_review_approved"> The client has approved sending term excerpts to Anthropic's API</label>
+            <div class="hint">What is sent: each term, its counts and up to 2 example segments. Whole files are never sent. Clients on the restricted list are blocked in n8n regardless of this setting.</div>
+          </div>
+        </div>
+
+        <button type="submit" class="primary" id="submit-btn">Submit job</button>
+        <div class="progress" id="progress" hidden><div></div></div>
+      </form>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="jobs-h">
+    <div class="jobs-head">
+      <h2 id="jobs-h">Jobs</h2>
+      <div class="seg" role="group" aria-label="Show jobs">
+        <button type="button" data-scope="mine" aria-pressed="true">Mine</button>
+        <button type="button" data-scope="all" aria-pressed="false">Everyone's</button>
+      </div>
+      <div class="refresh">
+        <span class="spinner" id="jobs-spinner" hidden></span>
+        <span id="refreshed">—</span>
+        <button type="button" class="small" id="refresh-btn">Refresh</button>
+      </div>
+    </div>
+    <div id="jobs" aria-live="polite"><div class="empty">Loading jobs…</div></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  var config = null;
+  var files = [];            // { file, state, error }
+  var scope = 'mine';
+  var refreshTimer = null;
+  var busy = false;
+  var REFRESH_MS = 15000;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  // google.script.run as a promise.
+  function call(fn) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return new Promise(function (resolve, reject) {
+      var runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+      runner[fn].apply(runner, args);
+    });
+  }
+
+  function errText(e) {
+    var m = (e && e.message) || String(e);
+    return m.replace(/^Exception:\s*/, '').replace(/^Error:\s*/, '');
+  }
+
+  function notice(kind, text) {
+    var n = $('form-notice');
+    if (!text) { n.hidden = true; return; }
+    n.className = 'notice ' + kind;
+    n.textContent = text;
+    n.hidden = false;
+  }
+
+  function fmtBytes(b) {
+    if (b < 1024) return b + ' B';
+    if (b < 1024 * 1024) return (b / 1024).toFixed(0) + ' KB';
+    return (b / 1024 / 1024).toFixed(1) + ' MB';
+  }
+
+  function ago(iso, now) {
+    var t = Date.parse(iso);
+    if (!t) return '';
+    var s = Math.max(0, Math.round(((now || Date.now()) - t) / 1000));
+    if (s < 60) return 'just now';
+    var m = Math.round(s / 60);
+    if (m < 60) return m + ' min ago';
+    var h = Math.round(m / 60);
+    if (h < 24) return h + ' h ago';
+    return new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function duration(fromIso, toIso) {
+    var a = Date.parse(fromIso), b = toIso ? Date.parse(toIso) : Date.now();
+    if (!a || !b) return '';
+    var s = Math.max(0, Math.round((b - a) / 1000));
+    if (s < 60) return s + ' s';
+    return Math.floor(s / 60) + ' min ' + (s % 60) + ' s';
+  }
+
+  function el(tag, attrs, children) {
+    var e = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === 'text') e.textContent = attrs[k];
+      else if (k === 'class') e.className = attrs[k];
+      else e.setAttribute(k, attrs[k]);
+    });
+    (children || []).forEach(function (c) { if (c) e.appendChild(c); });
+    return e;
+  }
+
+  // ---------------------------------------------------------------- setup
+  function init() {
+    call('getAppConfig').then(function (cfg) {
+      config = cfg;
+      $('app-title').textContent = cfg.title;
+      $('user').textContent = cfg.user;
+      $('folder-link').href = cfg.workFolderUrl; $('folder-link').hidden = false;
+      $('sheet-link').href = cfg.logSheetUrl; $('sheet-link').hidden = false;
+
+      var sel = $('source_lang');
+      cfg.languages.forEach(function (l) {
+        sel.appendChild(el('option', { value: l.code, text: l.label }));
+      });
+
+      var tuning = $('tuning');
+      Object.keys(cfg.tuning).forEach(function (key) {
+        var t = cfg.tuning[key];
+        var input = el('input', { type: 'number', id: key, name: key, min: t.min, max: t.max, step: t.step, value: t.def });
+        // Snap to the allowed range so what's shown is what gets used.
+        input.addEventListener('change', function () {
+          var n = Number(input.value);
+          if (input.value === '' || isNaN(n)) { input.value = t.def; return; }
+          var c = Math.min(t.max, Math.max(t.min, n));
+          input.value = t.step >= 1 ? Math.round(c) : Math.round(c * 100) / 100;
+        });
+        tuning.appendChild(el('div', { class: 'field' }, [el('label', { for: key, text: t.label }), input]));
+      });
+
+      $('files-hint').textContent = cfg.limits.extensions.map(function (e) { return '.' + e; }).join(', ') +
+        ' · up to ' + cfg.limits.maxFileMb + ' MB each · max ' + cfg.limits.maxFiles + ' files';
+      $('file-input').accept = cfg.limits.extensions.map(function (e) { return '.' + e; }).join(',');
+
+      loadJobs();
+    }).catch(function (e) {
+      notice('err', errText(e));
+      $('submit-btn').disabled = true;
+      $('jobs').innerHTML = '';
+      $('jobs').appendChild(el('div', { class: 'empty', text: errText(e) }));
+    });
+  }
+
+  // ---------------------------------------------------------------- files
+  function addFiles(list) {
+    if (busy || !config) return;
+    var errors = [];
+    Array.prototype.forEach.call(list, function (f) {
+      var ext = (f.name.split('.').pop() || '').toLowerCase();
+      if (config.limits.extensions.indexOf(ext) === -1) { errors.push(f.name + ': unsupported type'); return; }
+      if (f.size > config.limits.maxFileMb * 1024 * 1024) { errors.push(f.name + ': larger than ' + config.limits.maxFileMb + ' MB'); return; }
+      if (f.size === 0) { errors.push(f.name + ': empty file'); return; }
+      if (files.some(function (x) { return x.file.name === f.name && x.file.size === f.size; })) return;
+      if (files.length >= config.limits.maxFiles) { errors.push(f.name + ': too many files'); return; }
+      files.push({ file: f, state: '' });
+    });
+    renderFiles();
+    notice(errors.length ? 'err' : '', errors.join('\n'));
+  }
+
+  function renderFiles() {
+    var ul = $('file-list');
+    ul.innerHTML = '';
+    files.forEach(function (x, i) {
+      var remove = el('button', { type: 'button', class: 'link', 'aria-label': 'Remove ' + x.file.name, text: '✕' });
+      remove.disabled = busy;
+      remove.addEventListener('click', function () { files.splice(i, 1); renderFiles(); });
+      var stateCls = 'state' + (x.state === 'uploaded' ? ' ok' : x.state === 'failed' ? ' err' : '');
+      ul.appendChild(el('li', {}, [
+        el('span', { class: 'name', title: x.file.name, text: x.file.name }),
+        el('span', { class: 'size', text: fmtBytes(x.file.size) }),
+        el('span', { class: stateCls, text: x.state }),
+        busy ? null : remove,
+      ]));
+    });
+  }
+
+  function readBase64(file) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { var s = String(r.result); resolve(s.slice(s.indexOf(',') + 1)); };
+      r.onerror = function () { reject(new Error('Could not read ' + file.name)); };
+      r.readAsDataURL(file);
+    });
+  }
+
+  var drop = $('drop');
+  drop.addEventListener('click', function () { if (!busy) $('file-input').click(); });
+  drop.addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.key === ' ') && !busy) { e.preventDefault(); $('file-input').click(); } });
+  drop.addEventListener('dragover', function (e) { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', function () { drop.classList.remove('over'); });
+  drop.addEventListener('drop', function (e) { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); });
+  $('file-input').addEventListener('change', function (e) { addFiles(e.target.files); e.target.value = ''; });
+
+  // ---------------------------------------------------------------- AI toggle
+  $('run_ai_review').addEventListener('change', function (e) {
+    $('ai-approve').hidden = !e.target.checked;
+    if (!e.target.checked) $('ai_review_approved').checked = false;
+  });
+
+  // ---------------------------------------------------------------- Drive folders
+  function radio(name) {
+    var r = document.querySelector('input[name="' + name + '"]:checked');
+    return r ? r.value : '';
+  }
+
+  function syncModes() {
+    var inFolder = radio('input_mode') === 'folder';
+    $('upload-panel').hidden = inFolder;
+    $('input-folder-panel').hidden = !inFolder;
+    $('output-folder-panel').hidden = radio('output_mode') !== 'folder';
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="input_mode"], input[name="output_mode"]'), function (r) {
+    r.addEventListener('change', syncModes);
+  });
+
+  function showCheck(purpose, kind, build) {
+    var box = $(purpose + '_folder_result');
+    box.innerHTML = '';
+    if (!kind) { box.hidden = true; return; }
+    box.className = 'check-result' + (kind === 'busy' ? '' : ' ' + kind);
+    build(box);
+    box.hidden = false;
+  }
+
+  var lastChecked = { input: '', output: '' };
+  function checkFolderUI(purpose) {
+    var value = $(purpose + '_folder').value.trim();
+    if (!value) { lastChecked[purpose] = ''; showCheck(purpose, null); return; }
+    if (value === lastChecked[purpose]) return;
+    lastChecked[purpose] = value;
+    showCheck(purpose, 'busy', function (b) { b.textContent = 'Checking access…'; });
+    call('checkFolder', value, purpose).then(function (r) {
+      if ($(purpose + '_folder').value.trim() !== value) return;   // changed meanwhile
+      var link = el('a', { href: r.url, target: '_blank', rel: 'noopener', text: r.name });
+      // You can use the folder, but n8n's Google account can't (or n8n is unreachable).
+      if (!r.n8n.ok) {
+        showCheck(purpose, 'err', function (b) {
+          b.appendChild(document.createTextNode('You can use '));
+          b.appendChild(link);
+          b.appendChild(document.createTextNode(', but n8n can\'t yet. '));
+          b.appendChild(document.createTextNode(r.n8n.problems.join(' ')));
+        });
+        lastChecked[purpose] = '';   // let the next Check button press ask again
+        return;
+      }
+      if (purpose === 'output') {
+        showCheck('output', 'ok', function (b) {
+          b.appendChild(document.createTextNode('✓ Results will be saved in '));
+          b.appendChild(link);
+        });
+        return;
+      }
+      if (!r.usable.length) {
+        showCheck('input', 'err', function (b) {
+          b.appendChild(link);
+          b.appendChild(document.createTextNode(' has no ' + config.limits.extensions.map(function (e) { return '.' + e; }).join(' ') +
+            ' files directly inside it' + (r.skipped.length ? ' (' + r.skipped.length + ' other files).' : '.')));
+        });
+        return;
+      }
+      showCheck('input', 'ok', function (b) {
+        b.appendChild(document.createTextNode('✓ '));
+        b.appendChild(link);
+        b.appendChild(document.createTextNode(': ' + r.usable.length + ' file' + (r.usable.length === 1 ? '' : 's') + ' to use, ' + fmtBytes(r.totalBytes)));
+        var ul = el('ul');
+        r.usable.slice(0, 5).forEach(function (f) { ul.appendChild(el('li', { text: f.name })); });
+        if (r.usable.length > 5) ul.appendChild(el('li', { class: 'more', text: 'and ' + (r.usable.length - 5) + ' more' }));
+        b.appendChild(ul);
+        if (r.skipped.length || r.truncated) {
+          b.appendChild(el('div', { class: 'more', text: (r.skipped.length ? r.skipped.length + ' other files will be ignored. ' : '') +
+            (r.truncated ? 'Only the first 500 files were looked at.' : '') }));
+        }
+      });
+    }).catch(function (e) {
+      if ($(purpose + '_folder').value.trim() !== value) return;
+      lastChecked[purpose] = '';
+      showCheck(purpose, 'err', function (b) { b.textContent = errText(e); });
+    });
+  }
+  ['input', 'output'].forEach(function (purpose) {
+    var input = $(purpose + '_folder');
+    $(purpose + '_folder_check').addEventListener('click', function () { lastChecked[purpose] = ''; checkFolderUI(purpose); });
+    // Check shortly after typing stops, or straight after a paste. Not on
+    // blur: the result box would appear mid-click and push the Submit button
+    // out from under the pointer.
+    var typingTimer = null;
+    input.addEventListener('input', function () {
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(function () { checkFolderUI(purpose); }, 700);
+    });
+    input.addEventListener('paste', function () {
+      clearTimeout(typingTimer);
+      setTimeout(function () { checkFolderUI(purpose); }, 0);
+    });
+  });
+
+  // ---------------------------------------------------------------- submit
+  function setBusy(b) {
+    busy = b;
+    $('submit-btn').disabled = b;
+    Array.prototype.forEach.call($('job-form').elements, function (x) { if (x.id !== 'submit-btn') x.disabled = b; });
+    $('progress').hidden = !b;
+    renderFiles();
+  }
+
+  function setProgress(done, total) {
+    $('progress').firstElementChild.style.width = Math.round((done / Math.max(total, 1)) * 100) + '%';
+  }
+
+  $('job-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (busy || !config) return;
+    notice('', '');
+
+    var client = $('client').value.trim();
+    var inputMode = radio('input_mode');
+    var outputMode = radio('output_mode');
+    if (!client) { notice('err', 'Enter the client name.'); $('client').focus(); return; }
+    if (inputMode === 'upload' && !files.length) { notice('err', 'Add at least one file.'); drop.focus(); return; }
+    if (inputMode === 'folder' && !$('input_folder').value.trim()) { notice('err', 'Paste the link to the folder with the source files.'); $('input_folder').focus(); return; }
+    if (outputMode === 'folder' && !$('output_folder').value.trim()) { notice('err', 'Paste the link to the folder for the results.'); $('output_folder').focus(); return; }
+    if ($('run_ai_review').checked && !$('ai_review_approved').checked) {
+      if (!confirm('AI review is ticked but client approval is not, so the AI stage will be skipped. Submit anyway?')) return;
+    }
+
+    var form = {
+      client: client,
+      source_lang: $('source_lang').value,
+      input_mode: inputMode,
+      input_folder: inputMode === 'folder' ? $('input_folder').value.trim() : '',
+      output_mode: outputMode,
+      output_folder: outputMode === 'folder' ? $('output_folder').value.trim() : '',
+      file_count: inputMode === 'upload' ? files.length : 0,
+      dedupe_segments: $('dedupe_segments').checked,
+      run_ai_review: $('run_ai_review').checked,
+      ai_review_approved: $('ai_review_approved').checked,
+    };
+    Object.keys(config.tuning).forEach(function (k) { form[k] = $(k).value; });
+
+    var uploading = inputMode === 'upload';
+    var steps = uploading ? files.length + 2 : 1;
+    if (uploading) files.forEach(function (x) { x.state = 'waiting'; });
+    setBusy(true);
+    setProgress(0, steps);
+    $('submit-btn').textContent = uploading ? 'Creating job…' : 'Starting…';
+
+    var jobId = null;
+    // Upload path: prepare folders, upload each file, then start.
+    // Folder path: start straight away. Folders are checked again on the
+    // server, and n8n checks its own access before accepting.
+    (uploading ? call('prepareUpload', form) : Promise.resolve(null)).then(function (res) {
+      if (!res) return;
+      jobId = res.jobId;
+      setProgress(1, steps);
+      // Sequential uploads: keeps each request well under the payload limit.
+      return files.reduce(function (p, x, i) {
+        return p.then(function () {
+          x.state = 'uploading…';
+          renderFiles();
+          $('submit-btn').textContent = 'Uploading ' + (i + 1) + ' of ' + files.length + '…';
+          return readBase64(x.file)
+            .then(function (b64) { return call('uploadFile', jobId, x.file.name, b64); })
+            .then(function () { x.state = 'uploaded'; setProgress(i + 2, files.length + 2); renderFiles(); })
+            .catch(function (err) { x.state = 'failed'; renderFiles(); throw err; });
+        });
+      }, Promise.resolve());
+    }).then(function () {
+      $('submit-btn').textContent = 'Starting…';
+      return call('submitJob', form, jobId || '');
+    }).then(function (res) {
+      setProgress(1, 1);
+      notice('ok', 'Job ' + res.jobId + ' has started with ' + res.files + ' file' + (res.files === 1 ? '' : 's') +
+        '. Links to the results appear in the list when it finishes, usually within a few minutes.');
+      files = [];
+      $('client').value = '';
+      $('input_folder').value = '';
+      lastChecked.input = '';
+      showCheck('input', null);
+      $('run_ai_review').checked = false;
+      $('ai_review_approved').checked = false;
+      $('ai-approve').hidden = true;
+      scope = 'mine'; syncScope();
+      loadJobs();
+    }).catch(function (err) {
+      notice('err', errText(err) + ' The job did not start; fix the problem and submit again.');
+    }).then(function () {
+      setBusy(false);
+      $('submit-btn').textContent = 'Submit job';
+    });
+  });
+
+  // ---------------------------------------------------------------- jobs
+  function syncScope() {
+    Array.prototype.forEach.call(document.querySelectorAll('.seg button'), function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.scope === scope));
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.seg button'), function (b) {
+    b.addEventListener('click', function () { scope = b.dataset.scope; syncScope(); loadJobs(); });
+  });
+  $('refresh-btn').addEventListener('click', function () { loadJobs(); });
+
+  function loadJobs() {
+    clearTimeout(refreshTimer);
+    $('jobs-spinner').hidden = false;
+    call('listJobs', scope).then(function (res) {
+      renderJobs(res);
+      $('refreshed').textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }).catch(function (e) {
+      $('refreshed').textContent = 'Refresh failed: ' + errText(e);
+    }).then(function () {
+      $('jobs-spinner').hidden = true;
+      // Pause polling while the tab is hidden.
+      refreshTimer = setTimeout(function tick() {
+        if (document.hidden) { refreshTimer = setTimeout(tick, REFRESH_MS); return; }
+        loadJobs();
+      }, REFRESH_MS);
+    });
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) loadJobs(); });
+
+  function statusLine(j) {
+    switch (j.status) {
+      case 'running':
+        return j.stale
+          ? 'No result after ' + duration(j.started_at) + '. It has probably stopped; check the Job log or submit again'
+          : 'Running for ' + duration(j.started_at);
+      case 'done': return 'Finished ' + ago(j.finished_at) + (j.started_at ? ' · took ' + duration(j.started_at, j.finished_at) : '');
+      case 'failed': return 'Failed ' + ago(j.finished_at);
+      default: return j.status;
+    }
+  }
+
+  function renderJobs(res) {
+    var box = $('jobs');
+    box.innerHTML = '';
+    if (!res.jobs.length) {
+      box.appendChild(el('div', { class: 'empty', text: scope === 'mine' ? 'You have no jobs yet.' : 'No jobs yet.' }));
+      return;
+    }
+    res.jobs.forEach(function (j) {
+      var langLabel = (config.languages.filter(function (l) { return l.code === j.source_lang; })[0] || {}).label || j.source_lang;
+      var subBits = [langLabel, j.file_count + ' file' + (j.file_count === '1' ? '' : 's')];
+      if (j.terms_returned !== '' && j.terms_returned !== undefined) subBits.push(j.terms_returned + ' terms');
+      if (j.ai && j.ai !== 'off') subBits.push('AI review ' + j.ai);
+      if (scope === 'all') subBits.push(j.submitted_by);
+
+      var links = [];
+      if (j.glossary_url) links.push(el('a', { href: j.glossary_url, target: '_blank', rel: 'noopener', text: 'Glossary (.xlsx)' }));
+      if (j.stage1_url) links.push(el('a', { href: j.stage1_url, target: '_blank', rel: 'noopener', text: 'Stage 1 candidates' }));
+      if (j.manifest_url) links.push(el('a', { href: j.manifest_url, target: '_blank', rel: 'noopener', text: 'Run manifest' }));
+      if (j.input_url) links.push(el('a', { href: j.input_url, target: '_blank', rel: 'noopener', text: 'Source folder' }));
+      if (j.output_url) links.push(el('a', { href: j.output_url, target: '_blank', rel: 'noopener', text: 'Results folder' }));
+      if (j.folder_url) links.push(el('a', { href: j.folder_url, target: '_blank', rel: 'noopener', text: 'Job folder' }));
+
+      var showMsg = j.message && (j.status === 'failed' || j.status === 'done');
+      box.appendChild(el('article', { class: 'job' }, [
+        el('div', {}, [
+          el('div', { class: 'title' }, [
+            el('span', { text: j.client }),
+            el('span', { class: 'pill ' + j.status, text: j.status }),
+            el('span', { class: 'mono sub', text: j.job_id }),
+          ]),
+          el('div', { class: 'sub', text: statusLine(j) + ' · ' + subBits.join(' · ') }),
+          j.file_names ? el('div', { class: 'files-line', title: j.file_names, text: j.file_names }) : null,
+        ]),
+        links.length ? el('div', { class: 'links' }, links) : null,
+        showMsg ? el('div', { class: 'msg' + (j.status === 'failed' ? ' err' : ''), text: j.message }) : null,
+      ]));
+    });
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

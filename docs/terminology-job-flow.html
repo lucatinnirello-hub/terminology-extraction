@@ -1,0 +1,254 @@
+<title>Terminology Job Flow</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Schibsted+Grotesk:wght@600;700&display=swap">
+<style>
+  /* Layout: one reading column; each figure is a full-width plate with its
+     claim in the caption. Colour encodes the actor (browser, Google, n8n,
+     Anthropic) and is reused identically in every figure. */
+  :root {
+    --bg: #f2f4f3;
+    --surface: #ffffff;
+    --ink: #17201c;
+    --ink-2: #3c4843;
+    --muted: #5d6a64;
+    --line: #c8d1cd;
+    --band: #f7f9f8;
+    --band-alt: #eef2f0;
+
+    --c-browser: #3646a6;  --t-browser: #eef0fb;
+    --c-google: #9c6200;   --t-google: #fbf2e1;
+    --c-n8n: #0d6f65;      --t-n8n: #e2f2ef;
+    --c-ai: #8a3779;       --t-ai: #f7e9f3;
+    --c-ok: #1d7639;       --t-ok: #e5f3e9;
+    --c-bad: #b1271e;      --t-bad: #fbe9e7;
+    --t-muted: #f0f2f1;
+
+    --font-display: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+    --font-body: "IBM Plex Sans", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101513; --surface: #18201c; --ink: #e4ebe8; --ink-2: #b5c1bc; --muted: #93a19a; --line: #34413b;
+      --band: #141b18; --band-alt: #18201c;
+      --c-browser: #93a1ff; --t-browser: #1d2242;
+      --c-google: #e6aa45; --t-google: #2d2412;
+      --c-n8n: #52c6b7; --t-n8n: #0f2f2b;
+      --c-ai: #e48bd2; --t-ai: #33182e;
+      --c-ok: #6fd28f; --t-ok: #14301e;
+      --c-bad: #ff8a80; --t-bad: #3a1b19;
+      --t-muted: #1f2824;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101513; --surface: #18201c; --ink: #e4ebe8; --ink-2: #b5c1bc; --muted: #93a19a; --line: #34413b;
+    --band: #141b18; --band-alt: #18201c;
+    --c-browser: #93a1ff; --t-browser: #1d2242;
+    --c-google: #e6aa45; --t-google: #2d2412;
+    --c-n8n: #52c6b7; --t-n8n: #0f2f2b;
+    --c-ai: #e48bd2; --t-ai: #33182e;
+    --c-ok: #6fd28f; --t-ok: #14301e;
+    --c-bad: #ff8a80; --t-bad: #3a1b19;
+    --t-muted: #1f2824;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 400 15px/1.6 var(--font-body);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 40px 64px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; display: grid; gap: 56px; }
+  header { display: grid; gap: 14px; max-width: 760px; }
+  .eyebrow { font: 500 12px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  h1 { font: 700 clamp(30px, 5vw, 44px)/1.08 var(--font-display); margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+  h2 { font: 700 22px/1.2 var(--font-display); margin: 0; text-wrap: balance; }
+  p { margin: 0; max-width: 68ch; }
+  .lead { font-size: 17px; color: var(--ink-2); }
+  code { font: 400 .9em var(--font-mono); background: var(--t-muted); padding: 1px 5px; border-radius: 4px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--ink-2); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .sw { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid; flex: none; }
+  .sw.browser { border-color: var(--c-browser); background: var(--t-browser); }
+  .sw.google { border-color: var(--c-google); background: var(--t-google); }
+  .sw.n8n { border-color: var(--c-n8n); background: var(--t-n8n); }
+  .sw.ai { border-color: var(--c-ai); background: var(--t-ai); }
+  .sw.bad { border-color: var(--c-bad); background: var(--t-bad); }
+  .sw.muted-sw { border-color: var(--line); background: var(--t-muted); }
+  .dashkey { width: 26px; height: 0; border-top: 2px dashed var(--ink-2); }
+
+  .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .facts > div { padding: 16px 20px 16px 0; display: grid; gap: 4px; min-width: 0; }
+  .facts > div + div { padding-left: 20px; border-left: 1px solid var(--line); }
+  .facts strong { font: 600 15px/1.3 var(--font-display); }
+  .facts span { color: var(--ink-2); font-size: 14px; }
+  @media (max-width: 760px) {
+    .facts { grid-template-columns: 1fr; }
+    .facts > div, .facts > div + div { padding: 14px 0; border-left: none; }
+    .facts > div + div { border-top: 1px solid var(--line); }
+  }
+
+  section { display: grid; gap: 16px; min-width: 0; }
+  .sec-head { display: grid; gap: 8px; }
+  .step { font: 500 12px/1 var(--font-mono); color: var(--muted); letter-spacing: .06em; }
+  figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .scroll { overflow-x: auto; padding: 18px; }
+  .narrow .scroll svg { max-width: 860px; margin: 0 auto; }
+  figcaption { padding: 12px 18px 14px; border-top: 1px solid var(--line); color: var(--ink-2); font-size: 14px; }
+
+  /* --- SVG styling (shared by all figures) --- */
+  svg { display: block; width: 100%; min-width: var(--minw, 700px); height: auto; }
+  .n { stroke-width: 1.6; }
+  .n-browser { fill: var(--t-browser); stroke: var(--c-browser); }
+  .n-google { fill: var(--t-google); stroke: var(--c-google); }
+  .n-n8n { fill: var(--t-n8n); stroke: var(--c-n8n); }
+  .n-ai { fill: var(--t-ai); stroke: var(--c-ai); }
+  .n-ok { fill: var(--t-ok); stroke: var(--c-ok); }
+  .n-bad { fill: var(--t-bad); stroke: var(--c-bad); }
+  .n-muted { fill: var(--t-muted); stroke: var(--line); }
+  .t { fill: var(--ink); font: 600 13.5px var(--font-body); }
+  .td { fill: var(--ink); font: 600 12.5px var(--font-body); }
+  .ts { fill: var(--muted); font: 400 11.5px var(--font-mono); }
+  .lbl {
+    fill: var(--ink-2); font: 500 12px var(--font-body);
+    paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round;
+  }
+  .band .lbl, .lbl { }
+  .e { fill: none; stroke: var(--ink-2); stroke-width: 1.5; }
+  .e.dash { stroke-dasharray: 5 4; }
+  .e-ai { stroke: var(--c-ai); }
+  .e-bad { stroke: var(--c-bad); }
+  .e-ok { stroke: var(--c-ok); }
+  .e-browser { stroke: var(--c-browser); }
+  .e-muted { stroke: var(--muted); }
+  .mk { fill: var(--ink-2); }
+  .mk-ai { fill: var(--c-ai); }
+  .mk-bad { fill: var(--c-bad); }
+  .mk-ok { fill: var(--c-ok); }
+  .region { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 6 5; }
+  .region-lbl { fill: var(--muted); font: 500 11px var(--font-mono); letter-spacing: .08em; }
+  .life { stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 3 4; }
+  .frame { fill: none; stroke: var(--line); stroke-width: 1.2; }
+  .frame-bad { stroke: var(--c-bad); stroke-opacity: .55; }
+  .frame-lbl { fill: var(--muted); font: 500 10.5px var(--font-mono); letter-spacing: .07em; }
+  .frame-lbl.bad { fill: var(--c-bad); }
+  .band { fill: var(--band); }
+  .band-alt { fill: var(--band-alt); }
+  figure .band ~ .lbl { stroke: var(--band); }
+
+  /* --- data table --- */
+  .table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14px; }
+  th, td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font: 500 11.5px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--band-alt); }
+  tr:last-child td { border-bottom: none; }
+  td:first-child { font-weight: 600; }
+  .tag { white-space: nowrap; display: inline-block; font: 500 12px/1.5 var(--font-mono); padding: 1px 8px; border-radius: 999px; }
+  .tag.no { background: var(--t-ok); color: var(--c-ok); }
+  .tag.cond { background: var(--t-ai); color: var(--c-ai); }
+
+  footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 4px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">ICS · Terminology extraction</div>
+    <h1>Terminology Job Flow</h1>
+    <p class="lead">How a job moves from the web page to a finished glossary: what the page sends n8n, what gets uploaded and downloaded, where each decision is made, and what happens when something goes wrong.</p>
+    <div class="legend" aria-label="Colour key">
+      <span><i class="sw browser"></i>Web page (browser)</span>
+      <span><i class="sw google"></i>Google: Apps Script, Sheets, Drive</span>
+      <span><i class="sw muted-sw"></i>Cloudflare</span>
+      <span><i class="sw n8n"></i>n8n</span>
+      <span><i class="sw ai"></i>Anthropic API</span>
+      <span><i class="sw bad"></i>Failure path</span>
+      <span><i class="dashkey"></i>Optional or reply</span>
+    </div>
+  </header>
+
+  <div class="facts">
+    <div><strong>Starts when you submit</strong><span>The page sends n8n one request through Cloudflare. n8n replies within seconds and keeps working.</span></div>
+    <div><strong>Two sets of access checked</strong><span>The page runs as you, so Drive checks your access. n8n checks its own before accepting.</span></div>
+    <div><strong>AI review needs three yeses</strong><span>Requested on the page, client approval ticked, and the client not on n8n's restricted list.</span></div>
+  </div>
+
+  <section aria-labelledby="s1">
+    <div class="sec-head">
+      <div class="step">1 · THE PARTS</div>
+      <h2 id="s1">Who talks to whom</h2>
+      <p>The page talks to n8n directly, through Cloudflare. Files never travel in the request: n8n reads and writes them in Drive.</p>
+    </div>
+    <figure>
+      <div class="scroll"><svg viewBox="0 0 1200 500" role="img" aria-label="System map. The page runs as the person using it. Apps Script checks folders with their access, saves uploads, and sends n8n a request through Cloudflare. n8n checks its own access, replies within seconds, downloads the source files, uploads results and writes status to the job log, which the page reads." style="--minw:720px"><defs><marker id="f1-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker><marker id="f1-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-bad"/></marker><marker id="f1-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-ai"/></marker><marker id="f1-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-ok"/></marker></defs><rect x="290" y="60" width="490" height="430" rx="14" class="region"/><text x="304" y="80" class="region-lbl" text-anchor="start">GOOGLE WORKSPACE · AS YOU</text><rect x="930" y="160" width="265" height="260" rx="14" class="region"/><text x="944" y="180" class="region-lbl" text-anchor="start">N8N</text><rect x="20" y="190" width="180" height="90" rx="8" class="n n-browser"/><text x="110.0" y="223.5" class="t" text-anchor="middle">Web page</text><text x="110.0" y="240.5" class="ts" text-anchor="middle">in the browser</text><text x="110.0" y="255.5" class="ts" text-anchor="middle">ics-translate.com only</text><rect x="330" y="190" width="170" height="90" rx="8" class="n n-google"/><text x="415.0" y="223.5" class="t" text-anchor="middle">Apps Script</text><text x="415.0" y="240.5" class="ts" text-anchor="middle">Code.gs</text><text x="415.0" y="255.5" class="ts" text-anchor="middle">runs as you</text><rect x="590" y="90" width="170" height="70" rx="8" class="n n-google"/><text x="675.0" y="121.0" class="t" text-anchor="middle">Job log</text><text x="675.0" y="138.0" class="ts" text-anchor="middle">written by n8n only</text><rect x="590" y="200" width="170" height="50" rx="8" class="n n-google"/><text x="675.0" y="228.5" class="t" text-anchor="middle">Source folder</text><rect x="590" y="280" width="170" height="50" rx="8" class="n n-google"/><text x="675.0" y="308.5" class="t" text-anchor="middle">Results folder</text><rect x="960" y="190" width="210" height="140" rx="8" class="n n-n8n"/><text x="1065.0" y="233.5" class="t" text-anchor="middle">Webhook workflow</text><text x="1065.0" y="250.5" class="ts" text-anchor="middle">checks its access</text><text x="1065.0" y="265.5" class="ts" text-anchor="middle">replies in seconds</text><text x="1065.0" y="280.5" class="ts" text-anchor="middle">extract + AI gate</text><text x="1065.0" y="295.5" class="ts" text-anchor="middle">writes results</text><rect x="1060" y="350" width="110" height="54" rx="8" class="n n-n8n"/><text x="1115.0" y="373.0" class="t" text-anchor="middle">Error wf</text><text x="1115.0" y="390.0" class="ts" text-anchor="middle">marks failed</text><rect x="960" y="40" width="210" height="60" rx="8" class="n n-ai"/><text x="1065.0" y="66.0" class="t" text-anchor="middle">Anthropic API</text><text x="1065.0" y="83.0" class="ts" text-anchor="middle">optional, per job</text><rect x="800" y="418" width="100" height="44" rx="8" class="n n-muted"/><text x="850.0" y="443.5" class="t" text-anchor="middle">Cloudflare</text><path d="M200,215 H328" class="e" marker-end="url(#f1-a)"/><text x="265" y="206" class="lbl" text-anchor="middle">submit + upload</text><path d="M330,255 H202" class="e" marker-end="url(#f1-a)"/><text x="265" y="273" class="lbl" text-anchor="middle">job list · 15 s</text><path d="M590,125 H415 V188" class="e" marker-end="url(#f1-a)"/><text x="500" y="116" class="lbl" text-anchor="middle">reads job list</text><path d="M500,225 H588" class="e" marker-end="url(#f1-a)"/><text x="545" y="216" class="lbl" text-anchor="middle">checks access</text><text x="545" y="243" class="lbl" text-anchor="middle">saves uploads</text><path d="M415,282 V440 H798" class="e" marker-start="url(#f1-a)" marker-end="url(#f1-a)"/><text x="606" y="432" class="lbl" text-anchor="middle">POST check / start</text><text x="606" y="458" class="lbl" text-anchor="middle">reply within seconds</text><path d="M902,440 H1000 V332" class="e" marker-start="url(#f1-a)" marker-end="url(#f1-a)"/><path d="M1000,188 V125 H762" class="e" marker-end="url(#f1-a)"/><text x="880" y="116" class="lbl" text-anchor="middle">writes status + links</text><path d="M760,225 H958" class="e" marker-end="url(#f1-a)"/><text x="858" y="216" class="lbl" text-anchor="middle">downloads</text><path d="M958,305 H762" class="e" marker-end="url(#f1-a)"/><text x="858" y="296" class="lbl" text-anchor="middle">uploads results</text><path d="M1120,188 V102" class="e e-ai dash" marker-start="url(#f1-p)" marker-end="url(#f1-p)"/><text x="1112" y="140" class="lbl" text-anchor="end">terms + 2 examples</text><text x="1112" y="155" class="lbl" text-anchor="end">25 per call</text><path d="M1115,332 V348" class="e e-bad dash" marker-end="url(#f1-r)"/></svg></div>
+      <figcaption>The request only carries the job details and folder IDs. Results come back through the job log, because Cloudflare drops requests that wait more than about 100 seconds and a job with AI review takes several minutes.</figcaption>
+    </figure>
+  </section>
+
+  <section aria-labelledby="s2">
+    <div class="sec-head">
+      <div class="step">2 · UPLOAD</div>
+      <h2 id="s2">Checking folders and submitting</h2>
+      <p>Folders are checked twice: when the link is pasted, so problems show up early, and again on submit. Uploaded files go to the working folder first, one call per file, so the request to n8n stays small.</p>
+    </div>
+    <figure>
+      <div class="scroll"><svg viewBox="0 0 1100 700" role="img" aria-label="Sequence. When a folder link is pasted, Apps Script checks your access and asks n8n to check its own. On submit, Apps Script re-checks and sends n8n a start request; n8n checks its access, logs the job as running and replies accepted within seconds. In the background n8n downloads, extracts, uploads the results and records them in the log, which the page reads every 15 seconds." style="--minw:720px"><defs><marker id="f2-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker><marker id="f2-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-bad"/></marker><marker id="f2-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-ai"/></marker><marker id="f2-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-ok"/></marker></defs><rect x="10" y="16" width="180" height="40" rx="8" class="n n-browser"/><text x="100.0" y="39.5" class="t" text-anchor="middle">Browser</text><line x1="100" y1="56" x2="100" y2="690" class="life"/><rect x="240" y="16" width="180" height="40" rx="8" class="n n-google"/><text x="330.0" y="39.5" class="t" text-anchor="middle">Apps Script (as you)</text><line x1="330" y1="56" x2="330" y2="690" class="life"/><rect x="470" y="16" width="180" height="40" rx="8" class="n n-google"/><text x="560.0" y="39.5" class="t" text-anchor="middle">Drive</text><line x1="560" y1="56" x2="560" y2="690" class="life"/><rect x="700" y="16" width="180" height="40" rx="8" class="n n-n8n"/><text x="790.0" y="39.5" class="t" text-anchor="middle">n8n via Cloudflare</text><line x1="790" y1="56" x2="790" y2="690" class="life"/><rect x="910" y="16" width="180" height="40" rx="8" class="n n-google"/><text x="1000.0" y="39.5" class="t" text-anchor="middle">Job log</text><line x1="1000" y1="56" x2="1000" y2="690" class="life"/><rect x="30" y="72" width="1040" height="178" rx="8" class="frame"/><text x="42" y="90" class="frame-lbl" text-anchor="start">WHEN A FOLDER LINK IS PASTED</text><path d="M100,118 H328" class="e" marker-end="url(#f2-a)"/><text x="215.0" y="111" class="lbl" text-anchor="middle">checkFolder(link)</text><path d="M330,148 H558" class="e" marker-end="url(#f2-a)"/><text x="445.0" y="141" class="lbl" text-anchor="middle">your access? usable files?</text><path d="M330,178 H788" class="e" marker-end="url(#f2-a)"/><text x="560.0" y="171" class="lbl" text-anchor="middle">POST check</text><path d="M790,208 H562" class="e" marker-end="url(#f2-a)"/><text x="675.0" y="201" class="lbl" text-anchor="middle">n8n&#x27;s own access?</text><path d="M790,238 H102" class="e dash" marker-end="url(#f2-a)"/><text x="445.0" y="231" class="lbl" text-anchor="middle">ok, or &quot;share it with n8n-bot@…&quot;</text><rect x="30" y="266" width="1040" height="236" rx="8" class="frame"/><text x="42" y="284" class="frame-lbl" text-anchor="start">ON SUBMIT · uploads, if any, go to the working folder first, one call per file</text><path d="M100,312 H328" class="e" marker-end="url(#f2-a)"/><text x="215.0" y="305" class="lbl" text-anchor="middle">submitJob(form)</text><path d="M330,342 H558" class="e" marker-end="url(#f2-a)"/><text x="445.0" y="335" class="lbl" text-anchor="middle">re-check folders as you</text><path d="M330,372 H788" class="e" marker-end="url(#f2-a)"/><text x="560.0" y="365" class="lbl" text-anchor="middle">POST start: client, language, settings, folders, you</text><path d="M790,402 H562" class="e" marker-end="url(#f2-a)"/><text x="675.0" y="395" class="lbl" text-anchor="middle">can n8n use them?</text><path d="M790,432 H998" class="e" marker-end="url(#f2-a)"/><text x="895.0" y="425" class="lbl" text-anchor="middle">add row · running</text><path d="M790,462 H332" class="e dash" marker-end="url(#f2-a)"/><text x="560.0" y="455" class="lbl" text-anchor="middle">202 accepted</text><path d="M330,490 H102" class="e dash" marker-end="url(#f2-a)"/><text x="215.0" y="483" class="lbl" text-anchor="middle">job started</text><rect x="30" y="518" width="1040" height="164" rx="8" class="frame"/><text x="42" y="536" class="frame-lbl" text-anchor="start">IN THE BACKGROUND · usually a few minutes</text><path d="M790,564 H562" class="e" marker-end="url(#f2-a)"/><text x="675.0" y="557" class="lbl" text-anchor="middle">download, extract, upload 3 files</text><path d="M790,594 H998" class="e" marker-end="url(#f2-a)"/><text x="895.0" y="587" class="lbl" text-anchor="middle">done + links, or failed + reason</text><path d="M100,630 H328" class="e" marker-end="url(#f2-a)"/><text x="215.0" y="623" class="lbl" text-anchor="middle">listJobs, every 15 s</text><path d="M330,660 H998" class="e" marker-end="url(#f2-a)"/><text x="665.0" y="653" class="lbl" text-anchor="middle">read rows (view access)</text></svg></div>
+      <figcaption>n8n writes the job log row before replying, so a job the page reports as started is always visible in the list.</figcaption>
+    </figure>
+  </section>
+
+  <section aria-labelledby="s3">
+    <div class="sec-head">
+      <div class="step">3 · STATUS</div>
+      <h2 id="s3">The states a job moves through</h2>
+      <p>A refused job never reaches the log: the reason is shown on the page and nothing has been started.</p>
+    </div>
+    <figure>
+      <div class="scroll"><svg viewBox="0 0 1000 300" role="img" aria-label="Job lifecycle. A submitted job is either refused straight away, with the reason shown on the page and nothing logged, or accepted and logged as running. Running ends as done or failed. A job still running after 45 minutes is shown as probably stopped." style="--minw:720px"><defs><marker id="f3-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker><marker id="f3-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-bad"/></marker><marker id="f3-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-ai"/></marker><marker id="f3-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-ok"/></marker></defs><rect x="30" y="80" width="150" height="50" rx="25" class="n n-browser"/><text x="105" y="102" class="t" text-anchor="middle">submitted</text><text x="105" y="118" class="ts" text-anchor="middle">on the page</text><rect x="400" y="80" width="150" height="50" rx="25" class="n n-n8n"/><text x="475" y="102" class="t" text-anchor="middle">running</text><text x="475" y="118" class="ts" text-anchor="middle">row in the job log</text><rect x="800" y="80" width="150" height="50" rx="25" class="n n-ok"/><text x="875" y="102" class="t" text-anchor="middle">done</text><text x="875" y="118" class="ts" text-anchor="middle">links in the row</text><rect x="800" y="210" width="150" height="50" rx="25" class="n n-bad"/><text x="875" y="232" class="t" text-anchor="middle">failed</text><text x="875" y="248" class="ts" text-anchor="middle">reason in the row</text><rect x="170" y="210" width="150" height="50" rx="25" class="n n-muted"/><text x="245" y="232" class="t" text-anchor="middle">refused</text><text x="245" y="248" class="ts" text-anchor="middle">reason on the page</text><path d="M180,105 H398" class="e" marker-end="url(#f3-a)"/><text x="289" y="96" class="lbl" text-anchor="middle">n8n accepts</text><text x="289" y="128" class="ts" text-anchor="middle">reply within seconds</text><path d="M550,105 H798" class="e e-ok" marker-end="url(#f3-g)"/><text x="674" y="96" class="lbl" text-anchor="middle">results saved</text><path d="M475,130 V235 H798" class="e e-bad" marker-end="url(#f3-r)"/><text x="483" y="168" class="lbl" text-anchor="start">a node errors →</text><text x="483" y="183" class="lbl" text-anchor="start">error workflow</text><path d="M105,130 V235 H168" class="e e-muted" marker-end="url(#f3-a)"/><text x="113" y="160" class="lbl" text-anchor="start">n8n or Cloudflare</text><text x="113" y="175" class="lbl" text-anchor="start">says no: folders,</text><text x="113" y="190" class="lbl" text-anchor="start">key, n8n down</text><text x="475" y="290" class="ts" text-anchor="middle">Still running after 45 min? The page says it has probably stopped.</text></svg></div>
+      <figcaption>Every accepted job ends as <code>done</code> or <code>failed</code>. If n8n restarts mid-job nothing can report back, so the page flags a job still running after 45 minutes.</figcaption>
+    </figure>
+  </section>
+
+  <section aria-labelledby="s4">
+    <div class="sec-head">
+      <div class="step">4 · PROCESSING</div>
+      <h2 id="s4">What n8n does with a request</h2>
+      <p>Everything in the top band happens while the page waits, in a second or two. After the 202 reply, each red exit writes a plain-language reason to the job's row.</p>
+    </div>
+    <figure class="narrow">
+      <div class="scroll"><svg viewBox="0 0 960 1550" role="img" aria-label="Flowchart of one n8n run. The request is validated and n8n checks the folders with its own account. A folder check is answered at once. A start request is refused with a reason, or logged as running and answered 202 accepted, after which the job lists, downloads and decodes the files, extracts terms, runs the AI review only if allowed, uploads the outputs and marks the row done." style="--minw:691px"><defs><marker id="f4-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker><marker id="f4-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-bad"/></marker><marker id="f4-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-ai"/></marker><marker id="f4-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-ok"/></marker></defs><rect x="0" y="0" width="960" height="625" class="band"/><text x="16" y="24" class="region-lbl" text-anchor="start">REQUEST · answered in seconds</text><rect x="0" y="625" width="960" height="305" class="band band-alt"/><text x="16" y="649" class="region-lbl" text-anchor="start">FETCH INPUT</text><rect x="0" y="930" width="960" height="365" class="band"/><text x="16" y="954" class="region-lbl" text-anchor="start">EXTRACT</text><rect x="0" y="1295" width="960" height="255" class="band band-alt"/><text x="16" y="1319" class="region-lbl" text-anchor="start">DELIVER</text><rect x="270" y="40" width="260" height="40" rx="20" class="n n-n8n"/><text x="400" y="65" class="t" text-anchor="middle">Request from the page</text><polygon points="400,110.0 525.0,150 400,190.0 275.0,150" class="n n-n8n"/><text x="400" y="147.0" class="td" text-anchor="middle">Request</text><text x="400" y="162.0" class="td" text-anchor="middle">valid?</text><path d="M400,80 V108" class="e" marker-end="url(#f4-a)"/><rect x="650" y="120.5" width="250" height="59" rx="8" class="n n-bad"/><text x="775.0" y="146.0" class="t" text-anchor="middle">Reply 400</text><text x="775.0" y="163.0" class="ts" text-anchor="middle">what&#x27;s missing or wrong</text><path d="M525,150 H648" class="e e-bad" marker-end="url(#f4-r)"/><text x="575" y="143" class="lbl" text-anchor="middle">no</text><rect x="250.0" y="215.5" width="300" height="59" rx="8" class="n n-google"/><text x="400.0" y="241.0" class="t" text-anchor="middle">Check folders as n8n</text><text x="400.0" y="258.0" class="ts" text-anchor="middle">its own Google account</text><path d="M400,190 V213.5" class="e" marker-end="url(#f4-a)"/><text x="408" y="206.75" class="lbl" text-anchor="start">yes</text><polygon points="400,300.0 525.0,340 400,380.0 275.0,340" class="n n-n8n"/><text x="400" y="337.0" class="td" text-anchor="middle">Folder check</text><text x="400" y="352.0" class="td" text-anchor="middle">only?</text><path d="M400,274.5 V298" class="e" marker-end="url(#f4-a)"/><rect x="650" y="310.5" width="250" height="59" rx="8" class="n n-n8n"/><text x="775.0" y="336.0" class="t" text-anchor="middle">Reply: can n8n use it</text><text x="775.0" y="353.0" class="ts" text-anchor="middle">or who to share it with</text><path d="M525,340 H648" class="e" marker-end="url(#f4-a)"/><text x="575" y="333" class="lbl" text-anchor="middle">yes</text><polygon points="400,405.0 525.0,445 400,485.0 275.0,445" class="n n-n8n"/><text x="400" y="442.0" class="td" text-anchor="middle">n8n can use</text><text x="400" y="457.0" class="td" text-anchor="middle">both folders?</text><path d="M400,380 V403" class="e" marker-end="url(#f4-a)"/><text x="408" y="396.5" class="lbl" text-anchor="start">no, start a job</text><rect x="650" y="415.5" width="250" height="59" rx="8" class="n n-bad"/><text x="775.0" y="441.0" class="t" text-anchor="middle">Reply 403</text><text x="775.0" y="458.0" class="ts" text-anchor="middle">&quot;share it with n8n-bot@…&quot;</text><path d="M525,445 H648" class="e e-bad" marker-end="url(#f4-r)"/><text x="575" y="438" class="lbl" text-anchor="middle">no</text><rect x="250.0" y="500.5" width="300" height="59" rx="8" class="n n-google"/><text x="400.0" y="526.0" class="t" text-anchor="middle">Job log: add row, running</text><text x="400.0" y="543.0" class="ts" text-anchor="middle">with the n8n execution ID</text><path d="M400,485 V498.5" class="e" marker-end="url(#f4-a)"/><text x="408" y="496.75" class="lbl" text-anchor="start">yes</text><rect x="250.0" y="580.0" width="300" height="40" rx="8" class="n n-n8n"/><text x="400.0" y="603.5" class="t" text-anchor="middle">Reply 202: accepted</text><path d="M400,559.5 V578.0" class="e" marker-end="url(#f4-a)"/><rect x="250.0" y="648.0" width="300" height="44" rx="8" class="n n-google"/><text x="400.0" y="673.5" class="t" text-anchor="middle">List files in the source folder</text><path d="M400,620.0 V646.0" class="e" marker-end="url(#f4-a)"/><polygon points="400,720.0 525.0,760 400,800.0 275.0,760" class="n n-n8n"/><text x="400" y="757.0" class="td" text-anchor="middle">Any usable</text><text x="400" y="772.0" class="td" text-anchor="middle">files?</text><path d="M400,692.0 V718" class="e" marker-end="url(#f4-a)"/><rect x="650" y="730.5" width="250" height="59" rx="8" class="n n-bad"/><text x="775.0" y="756.0" class="t" text-anchor="middle">Fail: nothing to read</text><text x="775.0" y="773.0" class="ts" text-anchor="middle">needs .tmx .xml .txt .md</text><path d="M525,760 H648" class="e e-bad" marker-end="url(#f4-r)"/><text x="575" y="753" class="lbl" text-anchor="middle">no</text><rect x="250.0" y="828.0" width="300" height="44" rx="8" class="n n-google"/><text x="400.0" y="853.5" class="t" text-anchor="middle">Download usable files</text><path d="M400,800 V826.0" class="e" marker-end="url(#f4-a)"/><text x="408" y="818.0" class="lbl" text-anchor="start">yes</text><rect x="250.0" y="887.0" width="300" height="50" rx="8" class="n n-n8n"/><text x="400.0" y="908.0" class="t" text-anchor="middle">Detect encoding, decode</text><text x="400.0" y="925.0" class="ts" text-anchor="middle">UTF-8 · UTF-16 LE/BE</text><path d="M400,872.0 V885.0" class="e" marker-end="url(#f4-a)"/><rect x="250.0" y="958.0" width="300" height="74" rx="8" class="n n-n8n"/><text x="400.0" y="983.5" class="t" text-anchor="middle">Stage 1: parse and score</text><text x="400.0" y="1000.5" class="ts" text-anchor="middle">source side of TMX, or sentences</text><text x="400.0" y="1015.5" class="ts" text-anchor="middle">YAKE-style scores, dedupe</text><path d="M400,937.0 V956.0" class="e" marker-end="url(#f4-a)"/><polygon points="400,1060.0 525.0,1100 400,1140.0 275.0,1100" class="n n-n8n"/><text x="400" y="1097.0" class="td" text-anchor="middle">Any</text><text x="400" y="1112.0" class="td" text-anchor="middle">terms?</text><path d="M400,1032.0 V1058" class="e" marker-end="url(#f4-a)"/><rect x="650" y="1070.5" width="250" height="59" rx="8" class="n n-bad"/><text x="775.0" y="1096.0" class="t" text-anchor="middle">Fail: no terms</text><text x="775.0" y="1113.0" class="ts" text-anchor="middle">check the source language</text><path d="M525,1100 H648" class="e e-bad" marker-end="url(#f4-r)"/><text x="575" y="1093" class="lbl" text-anchor="middle">no</text><rect x="250.0" y="1158.0" width="300" height="44" rx="8" class="n n-n8n"/><text x="400.0" y="1183.5" class="t" text-anchor="middle">Stage 1 file · Stage 2 (pass-through)</text><path d="M400,1140 V1156.0" class="e" marker-end="url(#f4-a)"/><text x="408" y="1153.0" class="lbl" text-anchor="start">yes</text><polygon points="400,1212.0 525.0,1252 400,1292.0 275.0,1252" class="n n-n8n"/><text x="400" y="1249.0" class="td" text-anchor="middle">AI review</text><text x="400" y="1264.0" class="td" text-anchor="middle">allowed?</text><path d="M400,1202.0 V1210" class="e" marker-end="url(#f4-a)"/><rect x="650" y="1210" width="250" height="84" rx="8" class="n n-ai"/><text x="775.0" y="1240.5" class="t" text-anchor="middle">Anthropic API</text><text x="775.0" y="1257.5" class="ts" text-anchor="middle">25 terms per call</text><text x="775.0" y="1272.5" class="ts" text-anchor="middle">keep / drop + definition</text><path d="M525,1252 H648" class="e e-ai" marker-end="url(#f4-p)"/><text x="575" y="1245" class="lbl" text-anchor="middle">yes</text><text x="575" y="1272" class="lbl" text-anchor="middle">run + approved +</text><text x="575" y="1286" class="lbl" text-anchor="middle">not restricted</text><rect x="250.0" y="1333.0" width="300" height="44" rx="8" class="n n-n8n"/><text x="400.0" y="1358.5" class="t" text-anchor="middle">Glossary .xlsx + run manifest</text><path d="M400,1292 V1331.0" class="e" marker-end="url(#f4-a)"/><text x="408" y="1316.5" class="lbl" text-anchor="start">no (columns left empty)</text><path d="M775,1294 V1355 H552.0" class="e e-ai" marker-end="url(#f4-p)"/><rect x="250.0" y="1403.0" width="300" height="44" rx="8" class="n n-google"/><text x="400.0" y="1428.5" class="t" text-anchor="middle">Upload 3 files to results folder</text><path d="M400,1377.0 V1401.0" class="e" marker-end="url(#f4-a)"/><rect x="250.0" y="1473.0" width="300" height="44" rx="8" class="n n-ok"/><text x="400.0" y="1498.5" class="t" text-anchor="middle">Job log: done + links</text><path d="M400,1447.0 V1471.0" class="e" marker-end="url(#f4-a)"/><rect x="650" y="1400" width="250" height="92" rx="8" class="n n-bad"/><text x="775.0" y="1427.0" class="t" text-anchor="middle">Any other error</text><text x="775.0" y="1444.0" class="ts" text-anchor="middle">after the 202 reply: the error</text><text x="775.0" y="1459.0" class="ts" text-anchor="middle">workflow finds the row by</text><text x="775.0" y="1474.0" class="ts" text-anchor="middle">execution ID, marks it failed</text></svg></div>
+      <figcaption>When AI review isn't allowed, the glossary is still produced with the AI columns left empty. Errors not covered by a red exit, such as a Drive or API outage, go through the error workflow, which also writes a link to the n8n execution.</figcaption>
+    </figure>
+  </section>
+
+  <section aria-labelledby="s5">
+    <div class="sec-head">
+      <div class="step">5 · DATA</div>
+      <h2 id="s5">Where the content goes</h2>
+      <p>Client files stay in Google Drive. Content leaves Google only for the AI review, and only in excerpts.</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>What</th><th>Where it is kept</th><th>Who can open it</th><th>Sent to Anthropic</th></tr></thead>
+        <tbody>
+          <tr><td>Request to n8n</td><td>n8n execution history</td><td>n8n admins</td><td><span class="tag no">never</span></td></tr>
+          <tr><td>Source files (TMX, text)</td><td>Your folder, or <code>&lt;job&gt;/input</code> in the working folder</td><td>Whoever the folder is shared with, including n8n's account</td><td><span class="tag no">never</span></td></tr>
+          <tr><td>Job settings and status</td><td>Job log sheet, one row per job</td><td>n8n writes; the team can view</td><td><span class="tag no">never</span></td></tr>
+          <tr><td>Candidate terms, counts and 2 example segments per term</td><td>n8n memory during the run</td><td>n8n</td><td><span class="tag cond">only if allowed</span></td></tr>
+          <tr><td>Glossary, stage 1 candidates, run manifest</td><td>Your folder, or <code>&lt;job&gt;/output</code> in the working folder</td><td>Whoever the results folder is shared with</td><td><span class="tag no">never</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <span>Built from <code>Code.gs</code>, <code>Index.html</code>, <code>Terminology_extraction_webhook_v4.json</code> and <code>Terminology_job_errors.json</code>.</span>
+    <span>Limits: uploads up to 25 MB per file and 20 files per job (no limit from a Drive folder); <code>.tmx .xml .txt .md</code>; Latin-script source languages.</span>
+  </footer>
+</div>
