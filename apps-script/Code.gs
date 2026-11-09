@@ -79,15 +79,38 @@ const LANGUAGES = [
 ];
 
 // Tuning settings: defaults match n8n; min/max are enforced here and in n8n.
+// `help` is shown in the question-mark tooltip next to each setting.
 const TUNING = {
-  ngram_max:          { def: 4,    min: 1,   max: 6,    step: 1,    label: 'Longest term (words)' },
-  top_n:              { def: 500,  min: 10,  max: 5000, step: 10,   label: 'Maximum terms returned' },
-  min_segments:       { def: 2,    min: 1,   max: 50,   step: 1,    label: 'Minimum segments a term must appear in' },
-  min_chars:          { def: 15,   min: 0,   max: 200,  step: 1,    label: 'Ignore segments shorter than (characters)' },
-  include_examples:   { def: 3,    min: 0,   max: 10,   step: 1,    label: 'Example segments kept per term' },
-  dedupe_threshold:   { def: 0.85, min: 0.5, max: 1,    step: 0.01, label: 'Near-duplicate merge threshold (higher merges less)' },
-  independence_ratio: { def: 1.25, min: 1,   max: 5,    step: 0.05, label: 'Sub-phrase suppression ratio (raise to keep more)' },
+  ngram_max: {
+    def: 4, min: 1, max: 6, step: 1, label: 'Longest term (words)',
+    help: 'The longest phrase, in words, that can become a term. 4 catches terms like "pressure relief valve body". Higher values find longer terms but add more noise.',
+  },
+  top_n: {
+    def: 500, min: 10, max: 5000, step: 10, label: 'Maximum terms returned',
+    help: 'How many terms the glossary keeps, best-scoring first. Lower it for a shorter, more focused list.',
+  },
+  min_segments: {
+    def: 2, min: 1, max: 50, step: 1, label: 'Minimum segments a term must appear in',
+    help: 'A term must appear in at least this many different segments. 2 drops one-off phrases. Raise it for large memories; use 1 for very small files.',
+  },
+  min_chars: {
+    def: 15, min: 0, max: 200, step: 1, label: 'Ignore segments shorter than (characters)',
+    help: 'Segments shorter than this are skipped, such as button labels or "OK". Set 0 to read everything, which suits UI strings or game text.',
+  },
+  include_examples: {
+    def: 3, min: 0, max: 10, step: 1, label: 'Example segments kept per term',
+    help: 'How many example segments appear next to each term in the glossary. AI review uses up to 2 of them to write definitions.',
+  },
+  dedupe_threshold: {
+    def: 0.85, min: 0.5, max: 1, step: 0.01, label: 'Near-duplicate merge threshold (higher merges less)',
+    help: 'How alike two terms of the same length must be in spelling to merge into one, such as "colour" and "color". 1 merges only identical terms; lower values merge more.',
+  },
+  independence_ratio: {
+    def: 1.25, min: 1, max: 5, step: 0.05, label: 'Sub-phrase suppression ratio (lower to keep more)',
+    help: 'Decides whether a shorter term inside a longer one is kept, e.g. "relief valve" inside "pressure relief valve". It is dropped unless it appears more than this many times as often as the longer term. Lower it to keep more of these; 1 keeps any that also appear on their own.',
+  },
 };
+const DEDUPE_SEGMENTS_HELP = 'Counts each distinct segment once, so text repeated many times, like a recurring disclaimer, does not inflate its terms.';
 
 // ---------------------------------------------------------------------------
 // Web app entry point
@@ -111,6 +134,7 @@ function getAppConfig() {
     user: currentUser_(),
     languages: LANGUAGES.map(function (l) { return { code: l.code, label: l.label }; }),
     tuning: TUNING,
+    dedupeSegmentsHelp: DEDUPE_SEGMENTS_HELP,
     limits: { maxFileMb: MAX_FILE_MB, maxFiles: MAX_FILES_PER_JOB, extensions: ALLOWED_EXTENSIONS },
     workFolderUrl: folderUrl_(cfg.workFolderId),
     logSheetUrl: 'https://docs.google.com/spreadsheets/d/' + cfg.logSheetId,

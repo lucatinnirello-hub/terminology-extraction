@@ -147,6 +147,35 @@
   .check-result.err { background: var(--danger-soft); color: var(--danger); }
   .check-result ul { margin: 6px 0 0; padding-left: 18px; color: var(--text); }
   .check-result .more { color: var(--muted); }
+  /* "?" help tooltips on the extraction settings */
+  .label-row { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 4px; }
+  .label-row label { margin: 0; }
+  .tip { position: relative; display: inline-flex; flex: none; margin-top: 1px; }
+  .tip-btn {
+    width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--muted); font: 700 11px/1 system-ui, sans-serif; cursor: help;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .tip-btn:hover, .tip-btn:focus-visible, .tip.open .tip-btn { color: var(--accent); border-color: var(--accent); }
+  .tip-text {
+    position: absolute; top: calc(100% + 6px); left: -8px; z-index: 30;
+    width: 250px; max-width: calc(100vw - 48px); padding: 9px 11px; border-radius: 8px;
+    background: var(--text); color: var(--surface); font: 400 12.5px/1.45 system-ui, sans-serif; text-align: left;
+    box-shadow: 0 4px 14px rgba(16, 24, 40, .18); visibility: hidden; opacity: 0; transition: opacity .12s;
+    pointer-events: none;
+  }
+  .tip.right .tip-text { left: auto; right: -8px; }
+  .tip:hover .tip-text, .tip-btn:focus-visible + .tip-text, .tip.open .tip-text { visibility: visible; opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .tip-text { transition: none; } }
+  /* Narrow screens: the "?" can sit anywhere along a row, so the tooltip spans
+     the whole settings box, just under the question mark, instead. */
+  @media (max-width: 600px) {
+    details .inner { position: relative; }
+    details .inner .tip { position: static; }
+    details .inner .tip-text, details .inner .tip.right .tip-text {
+      top: auto; left: 0; right: 0; width: auto; max-width: none; margin-top: 24px;
+    }
+  }
   .empty { padding: 28px 16px; text-align: center; color: var(--muted); }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
@@ -231,7 +260,10 @@
           <div class="inner">
             <div class="grid2" id="tuning"></div>
             <div class="field">
-              <label class="check"><input type="checkbox" id="dedupe_segments" checked> Collapse identical segments before counting</label>
+              <div class="label-row">
+                <label class="check"><input type="checkbox" id="dedupe_segments" checked> Collapse identical segments before counting</label>
+                <span id="dedupe_help_slot"></span>
+              </div>
             </div>
           </div>
         </details>
@@ -340,6 +372,24 @@
     return e;
   }
 
+  // A "?" that explains a setting. Shows on hover, on keyboard focus, and on
+  // tap (touch screens have no hover); Escape or tapping elsewhere closes it.
+  function helpTip(forId, name, text, alignRight) {
+    var tipId = forId + '_help';
+    var bubble = el('span', { class: 'tip-text', id: tipId, role: 'tooltip', text: text });
+    var btn = el('button', { type: 'button', class: 'tip-btn', 'aria-label': 'What is "' + name + '"?', 'aria-describedby': tipId, text: '?' });
+    var wrap = el('span', { class: 'tip' + (alignRight ? ' right' : '') }, [btn, bubble]);
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      var open = !wrap.classList.contains('open');
+      Array.prototype.forEach.call(document.querySelectorAll('.tip.open'), function (t) { t.classList.remove('open'); });
+      if (open) wrap.classList.add('open');
+    });
+    btn.addEventListener('blur', function () { wrap.classList.remove('open'); });
+    btn.addEventListener('keydown', function (e) { if (e.key === 'Escape') { wrap.classList.remove('open'); btn.blur(); } });
+    return wrap;
+  }
+
   // ---------------------------------------------------------------- setup
   function init() {
     call('getAppConfig').then(function (cfg) {
@@ -355,7 +405,7 @@
       });
 
       var tuning = $('tuning');
-      Object.keys(cfg.tuning).forEach(function (key) {
+      Object.keys(cfg.tuning).forEach(function (key, i) {
         var t = cfg.tuning[key];
         var input = el('input', { type: 'number', id: key, name: key, min: t.min, max: t.max, step: t.step, value: t.def });
         // Snap to the allowed range so what's shown is what gets used.
@@ -365,8 +415,13 @@
           var c = Math.min(t.max, Math.max(t.min, n));
           input.value = t.step >= 1 ? Math.round(c) : Math.round(c * 100) / 100;
         });
-        tuning.appendChild(el('div', { class: 'field' }, [el('label', { for: key, text: t.label }), input]));
+        // Fields in the right-hand column open their tooltip leftwards, so it stays inside the card.
+        tuning.appendChild(el('div', { class: 'field' }, [
+          el('div', { class: 'label-row' }, [el('label', { for: key, text: t.label }), helpTip(key, t.label, t.help, i % 2 === 1)]),
+          input,
+        ]));
       });
+      $('dedupe_help_slot').appendChild(helpTip('dedupe_segments', 'Collapse identical segments', cfg.dedupeSegmentsHelp, false));
 
       $('files-hint').textContent = cfg.limits.extensions.map(function (e) { return '.' + e; }).join(', ') +
         ' · up to ' + cfg.limits.maxFileMb + ' MB each · max ' + cfg.limits.maxFiles + ' files';
