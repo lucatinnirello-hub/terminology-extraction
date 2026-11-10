@@ -73,7 +73,7 @@
     background: var(--surface); color: var(--text); font: inherit;
   }
   textarea { resize: vertical; min-height: 110px; line-height: 1.45; }
-  input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, summary:focus-visible, .drop:focus-visible {
+  input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, summary:focus-visible {
     outline: 2px solid var(--accent); outline-offset: 2px;
   }
   .drop {
@@ -81,7 +81,11 @@
     background: var(--surface-2); cursor: pointer; transition: border-color .15s, background .15s;
   }
   .drop.over { border-color: var(--accent); background: var(--accent-soft); }
-  .drop strong { color: var(--accent); }
+  .drop-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .drop-actions button { font-weight: 600; color: var(--accent); border-color: var(--accent); }
+  .drop-or { color: var(--muted); font-size: 13px; }
+  .notice.info { background: var(--warn-soft); color: var(--warn); }
+  .files .name .dir { color: var(--muted); }
   .files { list-style: none; padding: 0; margin: 8px 0 0; }
   .files li {
     display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 13px;
@@ -261,11 +265,17 @@
               <label><input type="radio" name="input_mode" id="input_mode_folder" value="folder"> Use a Drive folder</label>
             </div>
             <div id="upload-panel">
-              <div id="drop" class="drop" tabindex="0" role="button" aria-label="Choose files to upload" aria-describedby="files-hint">
-                <div><strong>Choose files</strong> or drop them here</div>
+              <div id="drop" class="drop">
+                <div class="drop-actions">
+                  <button type="button" id="choose-files" aria-describedby="files-hint">Choose files</button>
+                  <button type="button" id="choose-folder" aria-describedby="files-hint folder-hint">Choose a folder</button>
+                </div>
+                <div class="drop-or">or drop files or folders here</div>
                 <div class="hint" id="files-hint"></div>
+                <div class="hint" id="folder-hint">A folder adds every supported file inside it, subfolders included. Your browser asks you to confirm the upload.</div>
               </div>
               <input id="file-input" type="file" multiple class="sr-only" tabindex="-1" aria-hidden="true">
+              <input id="folder-input" type="file" multiple webkitdirectory class="sr-only" tabindex="-1" aria-hidden="true">
               <ul id="file-list" class="files" aria-live="polite"></ul>
             </div>
             <div id="input-folder-panel" hidden>
@@ -530,36 +540,108 @@
   }
 
   // ---------------------------------------------------------------- files
-  function addFiles(list) {
+  // `list` holds { file, path }. `path` is where the file sits inside a
+  // chosen or dropped folder ("specs/valves.tmx"), or just its name.
+  // Files picked one by one get a message each; a folder gets a summary,
+  // since it can hold hundreds of files that aren't for us.
+  function addFiles(list, folderName) {
     if (busy || !config) return;
     var errors = [];
-    Array.prototype.forEach.call(list, function (f) {
-      var ext = (f.name.split('.').pop() || '').toLowerCase();
-      if (config.limits.extensions.indexOf(ext) === -1) { errors.push(f.name + ': unsupported type'); return; }
-      if (f.size > config.limits.maxFileMb * 1024 * 1024) { errors.push(f.name + ': larger than ' + config.limits.maxFileMb + ' MB'); return; }
-      if (f.size === 0) { errors.push(f.name + ': empty file'); return; }
-      if (files.some(function (x) { return x.file.name === f.name && x.file.size === f.size; })) return;
-      if (files.length >= config.limits.maxFiles) { errors.push(f.name + ': too many files'); return; }
-      files.push({ file: f, state: '' });
+    var skipped = { type: 0, size: 0, empty: 0, limit: 0 };
+    var added = 0;
+    list.forEach(function (x) {
+      var f = x.file;
+      var base = f.name;
+      var ext = (base.split('.').pop() || '').toLowerCase();
+      var hidden = base.charAt(0) === '.';
+      if (hidden || config.limits.extensions.indexOf(ext) === -1) { skipped.type++; if (!folderName && !hidden) errors.push(base + ': unsupported type'); return; }
+      if (f.size > config.limits.maxFileMb * 1024 * 1024) { skipped.size++; errors.push(x.path + ': larger than ' + config.limits.maxFileMb + ' MB'); return; }
+      if (f.size === 0) { skipped.empty++; if (!folderName) errors.push(base + ': empty file'); return; }
+      if (files.some(function (y) { return y.path === x.path && y.file.size === f.size; })) return;
+      if (files.length >= config.limits.maxFiles) { skipped.limit++; if (!folderName) errors.push(base + ': too many files'); return; }
+      files.push({ file: f, path: x.path, state: '' });
+      added++;
     });
     renderFiles();
-    notice(errors.length ? 'err' : '', errors.join('\n'));
+    if (!folderName) { notice(errors.length ? 'err' : '', errors.join('\n')); return; }
+
+    var parts = [];
+    if (skipped.type) parts.push(skipped.type + ' of another type');
+    if (skipped.empty) parts.push(skipped.empty + ' empty');
+    if (skipped.size) parts.push(skipped.size + ' larger than ' + config.limits.maxFileMb + ' MB');
+    if (skipped.limit) parts.push(skipped.limit + ' over the ' + config.limits.maxFiles + '-file limit');
+    var msg = (added ? 'Added ' + added + ' file' + (added === 1 ? '' : 's') : 'No supported files added') + ' from "' + folderName + '".';
+    if (parts.length) msg += ' Skipped: ' + parts.join(', ') + '.';
+    if (skipped.size) msg += '\n' + errors.join('\n');
+    if (skipped.limit || skipped.size) msg += '\nFor more or larger files, put the folder in Drive and choose "Use a Drive folder".';
+    notice(added ? (parts.length ? 'info' : 'ok') : 'err', msg);
   }
 
   function renderFiles() {
     var ul = $('file-list');
     ul.innerHTML = '';
     files.forEach(function (x, i) {
-      var remove = el('button', { type: 'button', class: 'link', 'aria-label': 'Remove ' + x.file.name, text: '✕' });
+      var remove = el('button', { type: 'button', class: 'link', 'aria-label': 'Remove ' + x.path, text: '✕' });
       remove.disabled = busy;
       remove.addEventListener('click', function () { files.splice(i, 1); renderFiles(); });
       var stateCls = 'state' + (x.state === 'uploaded' ? ' ok' : x.state === 'failed' ? ' err' : '');
+      var slash = x.path.lastIndexOf('/');
+      var name = el('span', { class: 'name', title: x.path }, [
+        slash > 0 ? el('span', { class: 'dir', text: x.path.slice(0, slash + 1) }) : null,
+        document.createTextNode(x.path.slice(slash + 1)),
+      ]);
       ul.appendChild(el('li', {}, [
-        el('span', { class: 'name', title: x.file.name, text: x.file.name }),
+        name,
         el('span', { class: 'size', text: fmtBytes(x.file.size) }),
         el('span', { class: stateCls, text: x.state }),
         busy ? null : remove,
       ]));
+    });
+  }
+
+  // Path inside the chosen folder, without the folder's own name:
+  // "Project/specs/valves.tmx" -> "specs/valves.tmx".
+  function innerPath(rel) {
+    var cut = rel.indexOf('/');
+    return cut === -1 ? rel : rel.slice(cut + 1);
+  }
+
+  // Dropped folders: walk them with the entries API (all current browsers).
+  function readEntry(entry, prefix) {
+    if (entry.isFile) {
+      return new Promise(function (resolve) {
+        entry.file(function (f) { resolve([{ file: f, path: prefix + f.name }]); }, function () { resolve([]); });
+      });
+    }
+    if (!entry.isDirectory) return Promise.resolve([]);
+    var reader = entry.createReader();
+    var all = [];
+    // readEntries returns at most ~100 entries per call: keep asking until empty.
+    function more() {
+      return new Promise(function (resolve) { reader.readEntries(resolve, function () { resolve([]); }); }).then(function (batch) {
+        if (!batch.length) return all;
+        all = all.concat(batch);
+        return more();
+      });
+    }
+    return more().then(function (entries) {
+      return Promise.all(entries.map(function (e) { return readEntry(e, prefix + entry.name + '/'); }));
+    }).then(function (lists) { return [].concat.apply([], lists); });
+  }
+
+  function handleDrop(dt) {
+    var items = Array.prototype.slice.call(dt.items || []);
+    var entries = items.map(function (it) { return it.webkitGetAsEntry ? it.webkitGetAsEntry() : null; }).filter(Boolean);
+    var folders = entries.filter(function (e) { return e.isDirectory; });
+    if (!folders.length) {
+      addFiles(Array.prototype.map.call(dt.files, function (f) { return { file: f, path: f.name }; }));
+      return;
+    }
+    // Paths keep the dropped folder's name only when several things were dropped.
+    var single = entries.length === 1;
+    Promise.all(entries.map(function (e) { return readEntry(e, ''); })).then(function (lists) {
+      var list = [].concat.apply([], lists).map(function (x) { return { file: x.file, path: single ? innerPath(x.path) : x.path }; });
+      addFiles(list, single ? folders[0].name : folders.length + ' dropped folders');
     });
   }
 
@@ -573,12 +655,25 @@
   }
 
   var drop = $('drop');
-  drop.addEventListener('click', function () { if (!busy) $('file-input').click(); });
-  drop.addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.key === ' ') && !busy) { e.preventDefault(); $('file-input').click(); } });
-  drop.addEventListener('dragover', function (e) { e.preventDefault(); drop.classList.add('over'); });
+  $('choose-files').addEventListener('click', function () { if (!busy) $('file-input').click(); });
+  $('choose-folder').addEventListener('click', function () { if (!busy) $('folder-input').click(); });
+  drop.addEventListener('dragover', function (e) { e.preventDefault(); if (!busy) drop.classList.add('over'); });
   drop.addEventListener('dragleave', function () { drop.classList.remove('over'); });
-  drop.addEventListener('drop', function (e) { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); });
-  $('file-input').addEventListener('change', function (e) { addFiles(e.target.files); e.target.value = ''; });
+  drop.addEventListener('drop', function (e) { e.preventDefault(); drop.classList.remove('over'); if (!busy) handleDrop(e.dataTransfer); });
+  $('file-input').addEventListener('change', function (e) {
+    addFiles(Array.prototype.map.call(e.target.files, function (f) { return { file: f, path: f.name }; }));
+    e.target.value = '';
+  });
+  $('folder-input').addEventListener('change', function (e) {
+    var list = Array.prototype.map.call(e.target.files, function (f) {
+      return { file: f, path: innerPath(f.webkitRelativePath || f.name) };
+    });
+    var first = e.target.files[0];
+    var folderName = first && first.webkitRelativePath ? first.webkitRelativePath.split('/')[0] : 'the folder';
+    e.target.value = '';
+    if (!list.length) { notice('err', '"' + folderName + '" is empty.'); return; }
+    addFiles(list, folderName);
+  });
 
   // ---------------------------------------------------------------- AI review
   function syncAi() {
@@ -607,7 +702,7 @@
   function step1Problem() {
     if (!$('client').value.trim()) return { msg: 'Enter the client name.', focus: $('client') };
     var inputMode = radio('input_mode');
-    if (inputMode === 'upload' && !files.length) return { msg: 'Add at least one file.', focus: drop };
+    if (inputMode === 'upload' && !files.length) return { msg: 'Add at least one file or folder.', focus: $('choose-files') };
     if (inputMode === 'folder' && !$('input_folder').value.trim()) return { msg: 'Paste the link to the folder with the source files.', focus: $('input_folder') };
     if (radio('output_mode') === 'folder' && !$('output_folder').value.trim()) return { msg: 'Paste the link to the folder for the results.', focus: $('output_folder') };
     return null;
@@ -846,7 +941,7 @@
           renderFiles();
           $('submit-btn').textContent = 'Uploading ' + (i + 1) + ' of ' + files.length + '…';
           return readBase64(x.file)
-            .then(function (b64) { return call('uploadFile', jobId, x.file.name, b64); })
+            .then(function (b64) { return call('uploadFile', jobId, x.path, b64); })
             .then(function () { x.state = 'uploaded'; setProgress(i + 2, files.length + 2); renderFiles(); })
             .catch(function (err) { x.state = 'failed'; renderFiles(); throw err; });
         });

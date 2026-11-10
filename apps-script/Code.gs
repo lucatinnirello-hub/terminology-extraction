@@ -194,7 +194,10 @@ function prepareUpload(form) {
   return { jobId: jobId };
 }
 
-/** Upload path, step 2: one call per file. `base64` excludes the data-URL prefix. */
+/**
+ * Upload path, step 2: one call per file. `base64` excludes the data-URL prefix.
+ * Files from a chosen folder arrive as "sub/name.tmx"; slashes become "_".
+ */
 function uploadFile(jobId, fileName, base64) {
   const folders = pendingJob_(jobId);
   const name = String(fileName || '').replace(/[\\/]/g, '_').slice(0, 200);

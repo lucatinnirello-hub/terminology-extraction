@@ -112,7 +112,7 @@ An XLIFF file that declares a different source language from the job's is skippe
   - Both checks run again on submit.
 - **Source files** come from one of two places:
   - an existing Drive folder: every supported file directly inside it, with no size limit;
-  - uploads (25 MB per file, 20 files), which go into a new job folder in the working folder.
+  - uploads (25 MB per file, 20 files), which go into a new job folder in the working folder. Pick files, or a folder on your computer (subfolders included), or drag either onto the page. Unsupported files in a folder are skipped and counted. A file in a subfolder is saved as `subfolder_name.tmx`, so files with the same name don't clash.
 - **Results** go to a folder you choose (you need edit access) or to a new job folder. File names include the job ID, so nothing is overwritten.
 - **Several jobs can run at once.** Each is independent, and failures are matched to their log row by the n8n execution ID.
 - **Failures:**
