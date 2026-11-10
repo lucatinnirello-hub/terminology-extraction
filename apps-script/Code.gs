@@ -111,6 +111,21 @@ const TUNING = {
   },
 };
 const DEDUPE_SEGMENTS_HELP = 'Counts each distinct segment once, so text repeated many times, like a recurring disclaimer, does not inflate its terms.';
+const NORMALISE_CASE_HELP = 'Glossary best practice: entries in lower case ("pressure valve", not "Pressure Valve"). Brands, proper nouns and acronyms keep their capitals ("Siemens", "PowerPoint", "ISO"). Decided from how the files write each word mid-sentence, so capitals that come only from headings or the start of a sentence are dropped. Languages that always capitalise nouns, such as German, keep them.';
+
+// AI review brief. Keys must match AI_FOCUS in the n8n "Read request" node
+// and FOCUS in "Build AI request".
+const AI_FOCUS = [
+  { key: 'general', label: 'General terminology' },
+  { key: 'ui', label: 'User interface and software strings' },
+  { key: 'technical', label: 'Technical documentation' },
+  { key: 'marketing', label: 'Marketing and brand content' },
+  { key: 'legal', label: 'Legal and compliance' },
+  { key: 'life_sciences', label: 'Life sciences and medical' },
+  { key: 'finance', label: 'Finance' },
+];
+const AI_DOMAIN_MAX = 120;
+const AI_INSTRUCTIONS_MAX = 2000;
 
 // ---------------------------------------------------------------------------
 // Web app entry point
@@ -135,6 +150,9 @@ function getAppConfig() {
     languages: LANGUAGES.map(function (l) { return { code: l.code, label: l.label }; }),
     tuning: TUNING,
     dedupeSegmentsHelp: DEDUPE_SEGMENTS_HELP,
+    normaliseCaseHelp: NORMALISE_CASE_HELP,
+    aiFocus: AI_FOCUS,
+    aiLimits: { domain: AI_DOMAIN_MAX, instructions: AI_INSTRUCTIONS_MAX },
     limits: { maxFileMb: MAX_FILE_MB, maxFiles: MAX_FILES_PER_JOB, extensions: ALLOWED_EXTENSIONS },
     workFolderUrl: folderUrl_(cfg.workFolderId),
     logSheetUrl: 'https://docs.google.com/spreadsheets/d/' + cfg.logSheetId,
@@ -231,7 +249,18 @@ function submitJob(form, jobId) {
     dedupe_segments: form.dedupe_segments !== false,
     run_ai_review: form.run_ai_review === true,
     ai_review_approved: form.run_ai_review === true && form.ai_review_approved === true,
+    normalise_case: form.normalise_case !== false,
+    ai_focus: '',
+    ai_domain: '',
+    ai_instructions: '',
   };
+  // The brief only matters (and is only kept) when AI review is requested.
+  if (settings.run_ai_review) {
+    const focus = AI_FOCUS.filter(function (f) { return f.key === form.ai_focus; })[0];
+    settings.ai_focus = focus ? focus.key : 'general';
+    settings.ai_domain = String(form.ai_domain || '').replace(/\s+/g, ' ').trim().slice(0, AI_DOMAIN_MAX);
+    settings.ai_instructions = String(form.ai_instructions || '').trim().slice(0, AI_INSTRUCTIONS_MAX);
+  }
   Object.keys(TUNING).forEach(function (key) { settings[key] = clampNumber_(form[key], TUNING[key]); });
 
   const reply = callN8n_({

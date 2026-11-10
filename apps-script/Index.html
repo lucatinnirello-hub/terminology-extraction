@@ -58,7 +58,7 @@
   header h1 { font-size: 18px; margin: 0; font-weight: 650; }
   header .meta { color: var(--muted); font-size: 13px; display: flex; gap: 16px; flex-wrap: wrap; }
   main {
-    display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 20px;
+    display: grid; grid-template-columns: minmax(340px, 500px) 1fr; gap: 20px; align-items: start;
     padding: 20px 24px 40px; max-width: 1400px; margin: 0 auto;
   }
   @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 16px; } header { padding: 14px 16px; } }
@@ -68,11 +68,12 @@
   label { display: block; font-weight: 560; margin-bottom: 4px; }
   .hint { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
   .field { margin-bottom: 14px; }
-  input[type=text], input[type=number], select {
+  input[type=text], input[type=number], select, textarea {
     width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px;
     background: var(--surface); color: var(--text); font: inherit;
   }
-  input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible, .drop:focus-visible {
+  textarea { resize: vertical; min-height: 110px; line-height: 1.45; }
+  input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, summary:focus-visible, .drop:focus-visible {
     outline: 2px solid var(--accent); outline-offset: 2px;
   }
   .drop {
@@ -91,9 +92,41 @@
   .files .state { font-size: 12px; color: var(--muted); min-width: 64px; text-align: right; }
   .files .state.ok { color: var(--ok); }
   .files .state.err { color: var(--danger); }
-  details { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 14px; }
-  details summary { padding: 9px 12px; cursor: pointer; font-weight: 560; }
-  details .inner { padding: 4px 12px 2px; }
+  /* Three steps: job details, settings, AI review */
+  .steps { list-style: none; margin: 0; padding: 0 8px; display: flex; border-bottom: 1px solid var(--border); }
+  .steps li { flex: 1; min-width: 0; }
+  .step {
+    width: 100%; border: none; border-radius: 0; background: none; color: var(--muted);
+    padding: 11px 6px 9px; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    display: flex; gap: 7px; align-items: center; justify-content: center; font-size: 13px; font-weight: 560;
+  }
+  .step .num {
+    width: 20px; height: 20px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center;
+    background: var(--surface-2); border: 1px solid var(--border); font-size: 11.5px; font-weight: 700;
+  }
+  .step .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .step[aria-current=step] { color: var(--accent); border-bottom-color: var(--accent); }
+  .step[aria-current=step] .num { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .step.done .num { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--accent); }
+  .step-panel[hidden] { display: none; }
+  .step-h { font-size: 15px; margin: 0 0 4px; font-weight: 620; }
+  .step-intro { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+  .step-nav { display: flex; gap: 8px; margin-top: 18px; }
+  .step-nav button { padding: 10px 14px; }
+  .step-nav .primary { flex: 1; width: auto; }
+  .step-nav [hidden] { display: none; }
+  .settings-box { border: 1px solid var(--border); border-radius: 8px; margin: 0 0 14px; padding: 10px 12px 2px; min-width: 0; }
+  .settings-box > legend { font-weight: 620; padding: 0 4px; margin-left: -4px; }
+  .settings-box .box-intro { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; }
+  .settings-foot { display: flex; justify-content: flex-end; margin: -4px 0 10px; }
+  .count { color: var(--muted); font-size: 12px; text-align: right; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .count.over { color: var(--danger); }
+  .ai-brief[hidden] { display: none; }
+  .summary { border-radius: 8px; background: var(--surface-2); padding: 10px 12px; font-size: 13px; margin-top: 4px; }
+  .summary dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; }
+  .summary dt { color: var(--muted); }
+  .summary dd { margin: 0; overflow-wrap: anywhere; }
+  @media (max-width: 420px) { .step .lbl { font-size: 12px; } .step { gap: 5px; } }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
   .grid2 .field label { font-weight: 500; font-size: 13px; }
   .check { display: flex; gap: 8px; align-items: flex-start; font-weight: 500; }
@@ -170,9 +203,9 @@
   /* Narrow screens: the "?" can sit anywhere along a row, so the tooltip spans
      the whole settings box, just under the question mark, instead. */
   @media (max-width: 600px) {
-    details .inner { position: relative; }
-    details .inner .tip { position: static; }
-    details .inner .tip-text, details .inner .tip.right .tip-text {
+    .settings-box { position: relative; }
+    .settings-box .tip { position: static; }
+    .settings-box .tip-text, .settings-box .tip.right .tip-text {
       top: auto; left: 0; right: 0; width: auto; max-width: none; margin-top: 24px;
     }
   }
@@ -198,66 +231,89 @@
 <main>
   <section class="card" aria-labelledby="new-job-h">
     <h2 id="new-job-h">New extraction</h2>
+    <ol class="steps" aria-label="Steps">
+      <li><button type="button" class="step" data-step="1" aria-current="step"><span class="num">1</span><span class="lbl">Job details</span></button></li>
+      <li><button type="button" class="step" data-step="2"><span class="num">2</span><span class="lbl">Job settings</span></button></li>
+      <li><button type="button" class="step" data-step="3"><span class="num">3</span><span class="lbl">AI review</span></button></li>
+    </ol>
     <div class="card-body">
       <div id="form-notice" class="notice" role="status" hidden></div>
       <form id="job-form" novalidate>
-        <div class="field">
-          <label for="client">Client</label>
-          <input id="client" name="client" type="text" autocomplete="off" required maxlength="80" placeholder="e.g. Acme Ltd">
-          <div class="hint">Used for file names and to check whether AI review is allowed for this client.</div>
+        <div class="step-panel" data-step="1" role="group" aria-labelledby="step1-h">
+          <h3 class="step-h" id="step1-h" tabindex="-1">Job details</h3>
+          <p class="step-intro">Who the glossary is for, and which files to read.</p>
+          <div class="field">
+            <label for="client">Client</label>
+            <input id="client" name="client" type="text" autocomplete="off" required maxlength="80" placeholder="e.g. Acme Ltd">
+            <div class="hint">Used for file names and to check whether AI review is allowed for this client.</div>
+          </div>
+
+          <div class="field">
+            <label for="source_lang">Source language</label>
+            <select id="source_lang" name="source_lang" required></select>
+            <div class="hint">For TMX files, the source-language side of each unit is extracted. Only Latin-script languages are supported for now.</div>
+          </div>
+
+          <fieldset class="field group">
+            <legend>Source files</legend>
+            <div class="choice">
+              <label><input type="radio" name="input_mode" id="input_mode_upload" value="upload" checked> Upload files</label>
+              <label><input type="radio" name="input_mode" id="input_mode_folder" value="folder"> Use a Drive folder</label>
+            </div>
+            <div id="upload-panel">
+              <div id="drop" class="drop" tabindex="0" role="button" aria-label="Choose files to upload" aria-describedby="files-hint">
+                <div><strong>Choose files</strong> or drop them here</div>
+                <div class="hint" id="files-hint"></div>
+              </div>
+              <input id="file-input" type="file" multiple class="sr-only" tabindex="-1" aria-hidden="true">
+              <ul id="file-list" class="files" aria-live="polite"></ul>
+            </div>
+            <div id="input-folder-panel" hidden>
+              <label for="input_folder" class="sub-label">Folder link</label>
+              <div class="folder-row">
+                <input id="input_folder" type="text" autocomplete="off" spellcheck="false" placeholder="https://drive.google.com/drive/folders/…">
+                <button type="button" class="small" id="input_folder_check">Check</button>
+              </div>
+              <div class="hint">Uses the TMX, XLIFF (including memoQ .mqxliff and .mqxlz) and .txt/.md files directly inside the folder, not subfolders. No size limit.</div>
+              <div id="input_folder_result" class="check-result" aria-live="polite" hidden></div>
+            </div>
+          </fieldset>
+
+          <fieldset class="field group">
+            <legend>Save results to</legend>
+            <div class="choice">
+              <label><input type="radio" name="output_mode" id="output_mode_job" value="job" checked> A new folder for this job</label>
+              <label><input type="radio" name="output_mode" id="output_mode_folder" value="folder"> A Drive folder I choose</label>
+            </div>
+            <div id="output-folder-panel" hidden>
+              <label for="output_folder" class="sub-label">Folder link</label>
+              <div class="folder-row">
+                <input id="output_folder" type="text" autocomplete="off" spellcheck="false" placeholder="https://drive.google.com/drive/folders/…">
+                <button type="button" class="small" id="output_folder_check">Check</button>
+              </div>
+              <div class="hint">The glossary, stage 1 candidates and run manifest are added here. File names include the job ID, so nothing is overwritten.</div>
+              <div id="output_folder_result" class="check-result" aria-live="polite" hidden></div>
+            </div>
+          </fieldset>
         </div>
 
-        <div class="field">
-          <label for="source_lang">Source language</label>
-          <select id="source_lang" name="source_lang" required></select>
-          <div class="hint">For TMX files, the source-language side of each unit is extracted. Only Latin-script languages are supported for now.</div>
-        </div>
+        <div class="step-panel" data-step="2" role="group" aria-labelledby="step2-h" hidden>
+          <h3 class="step-h" id="step2-h" tabindex="-1">Job settings</h3>
+          <p class="step-intro">How terms are written and found. The defaults suit most translation memories.</p>
 
-        <fieldset class="field group">
-          <legend>Source files</legend>
-          <div class="choice">
-            <label><input type="radio" name="input_mode" id="input_mode_upload" value="upload" checked> Upload files</label>
-            <label><input type="radio" name="input_mode" id="input_mode_folder" value="folder"> Use a Drive folder</label>
-          </div>
-          <div id="upload-panel">
-            <div id="drop" class="drop" tabindex="0" role="button" aria-label="Choose files to upload" aria-describedby="files-hint">
-              <div><strong>Choose files</strong> or drop them here</div>
-              <div class="hint" id="files-hint"></div>
+          <fieldset class="settings-box">
+            <legend>Normalisation</legend>
+            <div class="field">
+              <div class="label-row">
+                <label class="check"><input type="checkbox" id="normalise_case" checked> Write entries in lower case</label>
+                <span id="normalise_help_slot"></span>
+              </div>
+              <div class="hint">Keeps the capitals of brands, proper nouns and acronyms. The glossary also shows each term's original form and why its case was changed or kept.</div>
             </div>
-            <input id="file-input" type="file" multiple class="sr-only" tabindex="-1" aria-hidden="true">
-            <ul id="file-list" class="files" aria-live="polite"></ul>
-          </div>
-          <div id="input-folder-panel" hidden>
-            <label for="input_folder" class="sub-label">Folder link</label>
-            <div class="folder-row">
-              <input id="input_folder" type="text" autocomplete="off" spellcheck="false" placeholder="https://drive.google.com/drive/folders/…">
-              <button type="button" class="small" id="input_folder_check">Check</button>
-            </div>
-            <div class="hint">Uses the TMX, XLIFF (including memoQ .mqxliff and .mqxlz) and .txt/.md files directly inside the folder, not subfolders. No size limit.</div>
-            <div id="input_folder_result" class="check-result" aria-live="polite" hidden></div>
-          </div>
-        </fieldset>
+          </fieldset>
 
-        <fieldset class="field group">
-          <legend>Save results to</legend>
-          <div class="choice">
-            <label><input type="radio" name="output_mode" id="output_mode_job" value="job" checked> A new folder for this job</label>
-            <label><input type="radio" name="output_mode" id="output_mode_folder" value="folder"> A Drive folder I choose</label>
-          </div>
-          <div id="output-folder-panel" hidden>
-            <label for="output_folder" class="sub-label">Folder link</label>
-            <div class="folder-row">
-              <input id="output_folder" type="text" autocomplete="off" spellcheck="false" placeholder="https://drive.google.com/drive/folders/…">
-              <button type="button" class="small" id="output_folder_check">Check</button>
-            </div>
-            <div class="hint">The glossary, stage 1 candidates and run manifest are added here. File names include the job ID, so nothing is overwritten.</div>
-            <div id="output_folder_result" class="check-result" aria-live="polite" hidden></div>
-          </div>
-        </fieldset>
-
-        <details>
-          <summary>Extraction settings</summary>
-          <div class="inner">
+          <fieldset class="settings-box">
+            <legend>Extraction</legend>
             <div class="grid2" id="tuning"></div>
             <div class="field">
               <div class="label-row">
@@ -265,19 +321,48 @@
                 <span id="dedupe_help_slot"></span>
               </div>
             </div>
-          </div>
-        </details>
-
-        <div class="ai-box">
-          <label class="check"><input type="checkbox" id="run_ai_review"> Run AI review of candidate terms (Google Gemini)</label>
-          <div class="hint">Adds a keep/drop verdict and a one-line definition to each term.</div>
-          <div class="ai-approve" id="ai-approve" hidden>
-            <label class="check"><input type="checkbox" id="ai_review_approved"> The client has approved sending term excerpts to Google's Gemini API</label>
-            <div class="hint">What is sent: each term, its counts and up to 2 example segments. Whole files are never sent. Clients on the restricted list are blocked in n8n regardless of this setting.</div>
-          </div>
+            <div class="settings-foot"><button type="button" class="small" id="reset-settings">Restore defaults</button></div>
+          </fieldset>
         </div>
 
-        <button type="submit" class="primary" id="submit-btn">Submit job</button>
+        <div class="step-panel" data-step="3" role="group" aria-labelledby="step3-h" hidden>
+          <h3 class="step-h" id="step3-h" tabindex="-1">AI review</h3>
+          <p class="step-intro">Optional. Google Gemini adds a keep/drop verdict and a one-line definition to each term, and double-checks its case.</p>
+
+          <div class="ai-box">
+            <label class="check"><input type="checkbox" id="run_ai_review"> Run AI review of candidate terms (Google Gemini)</label>
+            <div class="ai-approve" id="ai-approve" hidden>
+              <label class="check"><input type="checkbox" id="ai_review_approved"> The client has approved sending term excerpts to Google's Gemini API</label>
+              <div class="hint">What is sent: each term, its counts and up to 2 example segments, plus the brief below. Whole files are never sent. Clients on the restricted list are blocked in n8n regardless of this setting.</div>
+            </div>
+          </div>
+
+          <fieldset class="settings-box ai-brief" id="ai-brief" hidden>
+            <legend>Brief for the AI</legend>
+            <p class="box-intro">Tells the model which terms matter for this job. Don't include anything the client hasn't approved for sharing.</p>
+            <div class="field">
+              <label for="ai_focus">Type of terminology</label>
+              <select id="ai_focus"></select>
+            </div>
+            <div class="field">
+              <label for="ai_domain">Subject area</label>
+              <input id="ai_domain" type="text" autocomplete="off" placeholder="e.g. industrial boilers, smart-home app, retail banking">
+            </div>
+            <div class="field">
+              <label for="ai_instructions">Additional instructions</label>
+              <textarea id="ai_instructions" rows="5" aria-describedby="ai_instructions_count" placeholder="e.g. Keep feature and menu names. Drop generic marketing words. Definitions should suit a translator, not an engineer."></textarea>
+              <div class="count" id="ai_instructions_count" aria-live="polite"></div>
+            </div>
+          </fieldset>
+
+          <div class="summary" id="summary" aria-label="Job summary"></div>
+        </div>
+
+        <div class="step-nav">
+          <button type="button" id="back-btn" hidden>Back</button>
+          <button type="button" class="primary" id="next-btn">Next: job settings</button>
+          <button type="submit" class="primary" id="submit-btn" hidden>Submit job</button>
+        </div>
         <div class="progress" id="progress" hidden><div></div></div>
       </form>
     </div>
@@ -309,6 +394,7 @@
   var scope = 'mine';
   var refreshTimer = null;
   var busy = false;
+  var step = 1;
   var REFRESH_MS = 15000;
 
   var $ = function (id) { return document.getElementById(id); };
@@ -422,6 +508,12 @@
         ]));
       });
       $('dedupe_help_slot').appendChild(helpTip('dedupe_segments', 'Collapse identical segments', cfg.dedupeSegmentsHelp, false));
+      $('normalise_help_slot').appendChild(helpTip('normalise_case', 'Write entries in lower case', cfg.normaliseCaseHelp, false));
+
+      cfg.aiFocus.forEach(function (f) { $('ai_focus').appendChild(el('option', { value: f.key, text: f.label })); });
+      $('ai_domain').maxLength = cfg.aiLimits.domain;
+      $('ai_instructions').maxLength = cfg.aiLimits.instructions;
+      updateCount();
 
       $('files-hint').textContent = cfg.limits.extensions.map(function (e) { return '.' + e; }).join(', ') +
         ' · up to ' + cfg.limits.maxFileMb + ' MB each · max ' + cfg.limits.maxFiles + ' files';
@@ -431,6 +523,7 @@
     }).catch(function (e) {
       notice('err', errText(e));
       $('submit-btn').disabled = true;
+      $('next-btn').disabled = true;
       $('jobs').innerHTML = '';
       $('jobs').appendChild(el('div', { class: 'empty', text: errText(e) }));
     });
@@ -487,11 +580,104 @@
   drop.addEventListener('drop', function (e) { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); });
   $('file-input').addEventListener('change', function (e) { addFiles(e.target.files); e.target.value = ''; });
 
-  // ---------------------------------------------------------------- AI toggle
-  $('run_ai_review').addEventListener('change', function (e) {
-    $('ai-approve').hidden = !e.target.checked;
-    if (!e.target.checked) $('ai_review_approved').checked = false;
+  // ---------------------------------------------------------------- AI review
+  function syncAi() {
+    var on = $('run_ai_review').checked;
+    $('ai-approve').hidden = !on;
+    $('ai-brief').hidden = !on;
+    if (!on) $('ai_review_approved').checked = false;
+    renderSummary();
+  }
+  $('run_ai_review').addEventListener('change', syncAi);
+  $('ai_review_approved').addEventListener('change', renderSummary);
+
+  function updateCount() {
+    var box = $('ai_instructions');
+    var max = box.maxLength > 0 ? box.maxLength : 2000;
+    var left = max - box.value.length;
+    $('ai_instructions_count').textContent = left + ' characters left';
+    $('ai_instructions_count').className = 'count' + (left < 100 ? ' over' : '');
+  }
+  $('ai_instructions').addEventListener('input', updateCount);
+
+  // ---------------------------------------------------------------- steps
+  var NEXT_LABEL = { 1: 'Next: job settings', 2: 'Next: AI review' };
+
+  // What's missing on step 1, as { msg, focus } or null.
+  function step1Problem() {
+    if (!$('client').value.trim()) return { msg: 'Enter the client name.', focus: $('client') };
+    var inputMode = radio('input_mode');
+    if (inputMode === 'upload' && !files.length) return { msg: 'Add at least one file.', focus: drop };
+    if (inputMode === 'folder' && !$('input_folder').value.trim()) return { msg: 'Paste the link to the folder with the source files.', focus: $('input_folder') };
+    if (radio('output_mode') === 'folder' && !$('output_folder').value.trim()) return { msg: 'Paste the link to the folder for the results.', focus: $('output_folder') };
+    return null;
+  }
+
+  function showStep(n, focusHeading) {
+    step = n;
+    Array.prototype.forEach.call(document.querySelectorAll('.step-panel'), function (panel) {
+      panel.hidden = Number(panel.dataset.step) !== n;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.step'), function (b) {
+      var k = Number(b.dataset.step);
+      if (k === n) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
+      b.classList.toggle('done', k < n);
+    });
+    $('back-btn').hidden = n === 1;
+    $('next-btn').hidden = n === 3;
+    $('submit-btn').hidden = n !== 3;
+    if (n < 3) $('next-btn').textContent = NEXT_LABEL[n];
+    if (n === 3) renderSummary();
+    if (focusHeading) $('step' + n + '-h').focus();
+  }
+
+  // Moving forward past step 1 needs its fields; going back is always fine.
+  function goTo(n) {
+    if (busy) return;
+    if (n > 1) {
+      var problem = step1Problem();
+      if (problem) { showStep(1); notice('err', problem.msg); problem.focus.focus(); return; }
+    }
+    notice('', '');
+    showStep(n, true);
+  }
+  $('next-btn').addEventListener('click', function () { goTo(step + 1); });
+  $('back-btn').addEventListener('click', function () { goTo(step - 1); });
+  Array.prototype.forEach.call(document.querySelectorAll('.step'), function (b) {
+    b.addEventListener('click', function () { goTo(Number(b.dataset.step)); });
   });
+
+  $('reset-settings').addEventListener('click', function () {
+    Object.keys(config.tuning).forEach(function (k) { $(k).value = config.tuning[k].def; });
+    $('dedupe_segments').checked = true;
+    $('normalise_case').checked = true;
+  });
+
+  function renderSummary() {
+    var box = $('summary');
+    if (!config) return;
+    box.innerHTML = '';
+    var lang = (config.languages.filter(function (l) { return l.code === $('source_lang').value; })[0] || {}).label || '';
+    var source = radio('input_mode') === 'folder'
+      ? 'Drive folder'
+      : files.length + ' uploaded file' + (files.length === 1 ? '' : 's');
+    var changed = Object.keys(config.tuning).filter(function (k) { return Number($(k).value) !== config.tuning[k].def; });
+    if (!$('dedupe_segments').checked) changed.push('dedupe');
+    var ai = !$('run_ai_review').checked ? 'Off'
+      : $('ai_review_approved').checked ? 'On' : 'Ticked, but the client approval box is not, so it will be skipped';
+    var rows = [
+      ['Client', $('client').value.trim() || '—'],
+      ['Language', lang],
+      ['Source', source],
+      ['Results', radio('output_mode') === 'folder' ? 'Drive folder you chose' : 'New folder for this job'],
+      ['Lower case', $('normalise_case').checked ? 'On' : 'Off'],
+      ['Extraction', changed.length ? changed.length + ' setting' + (changed.length === 1 ? '' : 's') + ' changed from default' : 'Defaults'],
+      ['AI review', ai],
+    ];
+    var dl = el('dl');
+    rows.forEach(function (r) { dl.appendChild(el('dt', { text: r[0] })); dl.appendChild(el('dd', { text: r[1] })); });
+    box.appendChild(dl);
+  }
 
   // ---------------------------------------------------------------- Drive folders
   function radio(name) {
@@ -595,6 +781,7 @@
     busy = b;
     $('submit-btn').disabled = b;
     Array.prototype.forEach.call($('job-form').elements, function (x) { if (x.id !== 'submit-btn') x.disabled = b; });
+    Array.prototype.forEach.call(document.querySelectorAll('.step'), function (x) { x.disabled = b; });
     $('progress').hidden = !b;
     renderFiles();
   }
@@ -606,15 +793,15 @@
   $('job-form').addEventListener('submit', function (e) {
     e.preventDefault();
     if (busy || !config) return;
+    // Enter in a field on steps 1-2 moves on instead of submitting.
+    if (step < 3) { goTo(step + 1); return; }
     notice('', '');
 
     var client = $('client').value.trim();
     var inputMode = radio('input_mode');
     var outputMode = radio('output_mode');
-    if (!client) { notice('err', 'Enter the client name.'); $('client').focus(); return; }
-    if (inputMode === 'upload' && !files.length) { notice('err', 'Add at least one file.'); drop.focus(); return; }
-    if (inputMode === 'folder' && !$('input_folder').value.trim()) { notice('err', 'Paste the link to the folder with the source files.'); $('input_folder').focus(); return; }
-    if (outputMode === 'folder' && !$('output_folder').value.trim()) { notice('err', 'Paste the link to the folder for the results.'); $('output_folder').focus(); return; }
+    var problem = step1Problem();
+    if (problem) { showStep(1); notice('err', problem.msg); problem.focus.focus(); return; }
     if ($('run_ai_review').checked && !$('ai_review_approved').checked) {
       if (!confirm('AI review is ticked but client approval is not, so the AI stage will be skipped. Submit anyway?')) return;
     }
@@ -630,6 +817,10 @@
       dedupe_segments: $('dedupe_segments').checked,
       run_ai_review: $('run_ai_review').checked,
       ai_review_approved: $('ai_review_approved').checked,
+      normalise_case: $('normalise_case').checked,
+      ai_focus: $('ai_focus').value,
+      ai_domain: $('ai_domain').value.trim(),
+      ai_instructions: $('ai_instructions').value.trim(),
     };
     Object.keys(config.tuning).forEach(function (k) { form[k] = $(k).value; });
 
@@ -672,9 +863,14 @@
       $('input_folder').value = '';
       lastChecked.input = '';
       showCheck('input', null);
+      // Settings stay for the next job; the AI brief is job-specific.
       $('run_ai_review').checked = false;
-      $('ai_review_approved').checked = false;
-      $('ai-approve').hidden = true;
+      $('ai_focus').selectedIndex = 0;
+      $('ai_domain').value = '';
+      $('ai_instructions').value = '';
+      updateCount();
+      syncAi();
+      showStep(1);
       scope = 'mine'; syncScope();
       loadJobs();
     }).catch(function (err) {

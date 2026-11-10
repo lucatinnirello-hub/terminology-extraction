@@ -238,22 +238,25 @@ function candidatesFrom(tokens, ngramMax) {
   // Needed for Romance and other languages where multi-word terms are built
   // with prepositions: "valvola di sicurezza", "messa in servizio",
   // "chiffre d'affaires". Without this the boundary rule splits them apart.
+  // Each run remembers where it starts in the sentence, so a phrase knows
+  // whether it is sentence-initial (capitalised for grammar, not meaning).
   const runs = [];
   let current = [];
-  for (const tok of tokens) {
+  tokens.forEach((tok, idx) => {
     const t = tok.toLowerCase();
     if (ACTIVE_CONNECTORS.has(t)) {
       // Only continues a run that has already started.
       if (current.length) current.push(tok);
-      continue;
+      return;
     }
     if (isStop(tok)) {
       if (current.length) runs.push(current);
       current = [];
     } else {
+      if (!current.length) current.start = idx;
       current.push(tok);
     }
-  }
+  });
   if (current.length) runs.push(current);
 
   const isConnector = (tok) => ACTIVE_CONNECTORS.has(tok.toLowerCase());
@@ -273,11 +276,75 @@ function candidatesFrom(tokens, ngramMax) {
           if (consecutive > 1) { bad = true; break; }
         }
         if (bad) continue;
+        phrase.start = run.start + i;
         out.push(phrase);
       }
     }
   }
   return out;
+}
+
+// --- casing ---------------------------------------------------------------
+// Glossary convention: entries in lower case, except proper nouns, brands
+// and acronyms. Decided per word from how the corpus writes it where
+// capitals carry meaning: mid-sentence, outside headings.
+
+// "ISO", "PLC", "CO2": two or more capitals, no lower case.
+function isAcronymForm(tok) { return /^[^a-z]*[A-Z][^a-z]*[A-Z][^a-z]*$/.test(tok); }
+// "iPhone", "PowerPoint", "eBay", "McDonald": a capital after the first letter.
+function isMixedForm(tok) { return /^.[^A-Z]*[A-Z]/.test(tok) && /[a-z]/.test(tok); }
+
+// Sentence-initial capitals are grammar, so they only count when the form
+// could not come from capitalising the first letter (acronyms, mixed case).
+function caseIsReliable(tok, sentenceInitial) {
+  if (!/[A-Za-z\u00C0-\u024F]/.test(tok)) return false;
+  if (!sentenceInitial) return true;
+  return isAcronymForm(tok) || isMixedForm(tok);
+}
+
+// Title Case Or ALL CAPS lines with at least three content words.
+function isHeadingLike(tokens) {
+  const content = tokens.filter((t) => /^[A-Za-z\u00C0-\u024F]/.test(t) && !isStop(t));
+  if (content.length < 3) return false;
+  const capped = content.filter((t) => t[0] !== t[0].toLowerCase()).length;
+  return capped / content.length >= 0.8;
+}
+
+function caseTerm(words, forms, wordCase) {
+  const reasons = new Set();
+  const noEvidence = [];
+  let unsure = false;
+  const out = words.map((word, w) => {
+    const lower = word.toLowerCase();
+    // This phrase's own evidence first, then the word anywhere in the corpus.
+    const evidence = forms[w] && forms[w].size ? forms[w] : wordCase.get(lower);
+    if (!evidence || !evidence.size) {
+      if (lower !== word) { unsure = true; noEvidence.push(w); }
+      return lower;
+    }
+    let lowerCount = 0;
+    let best = null;
+    for (const [form, n] of evidence) {
+      if (form === form.toLowerCase()) lowerCount += n;
+      else if (!best || n > best[1]) best = [form, n];
+    }
+    const otherCount = [...evidence.values()].reduce((a, b) => a + b, 0) - lowerCount;
+    if (!best || lowerCount >= otherCount) return lower;
+    reasons.add(isAcronymForm(best[0]) ? 'acronym' : isMixedForm(best[0]) ? 'brand or product name' : 'proper noun');
+    return best[0];
+  });
+  // "Commissioning Report": later words capitalised mid-sentence make it a
+  // name, so a first word only ever seen at sentence start keeps its capital.
+  if (reasons.has('proper noun') && noEvidence.length) {
+    noEvidence.forEach((w) => { out[w] = words[w]; });
+    unsure = false;
+  }
+  const term = out.join(' ');
+  const original = words.join(' ');
+  let note = '';
+  if (reasons.size) note = `kept capitals: ${[...reasons].join(', ')}`;
+  else if (term !== original) note = unsure ? 'lower case (check: only seen at sentence start or in headings)' : 'lower case';
+  return { term, note, unsure: unsure && term !== original };
 }
 
 // --- similarity for dedup -------------------------------------------------
@@ -309,6 +376,7 @@ function extract(documents, opts = {}) {
     includeExamples = 3,
     dedupeSegments = true,
     independenceRatio = 1.25,
+    normaliseCase = true,
     stopwords = [],
     extraStopwords = [],
     connectors = [],
@@ -372,6 +440,22 @@ function extract(documents, opts = {}) {
   const tokensBySentence = sentences.map(tokenise);
   const wordScores = wordFeatures(sentences, tokensBySentence);
 
+  // ---- casing evidence, for writing terms in lower case (see caseTerm)
+  // Headings and title-case lines capitalise everything, so they say nothing
+  // about how a word is normally written.
+  const headingLike = tokensBySentence.map(isHeadingLike);
+  const wordCase = new Map();   // word -> Map(form -> count), from reliable positions only
+  tokensBySentence.forEach((tokens, sIdx) => {
+    if (headingLike[sIdx]) return;
+    tokens.forEach((tok, pos) => {
+      if (!caseIsReliable(tok, pos === 0)) return;
+      const key = tok.toLowerCase();
+      if (!wordCase.has(key)) wordCase.set(key, new Map());
+      const m = wordCase.get(key);
+      m.set(tok, (m.get(tok) || 0) + 1);
+    });
+  });
+
   // ---- candidate accumulation
   const cands = new Map();
   tokensBySentence.forEach((tokens, sIdx) => {
@@ -391,6 +475,7 @@ function extract(documents, opts = {}) {
           sources: new Set(),
           examples: [],
           surfaces: new Map(),
+          forms: phrase.map(() => new Map()),   // per word: form -> count, reliable positions only
         };
         cands.set(key, c);
       }
@@ -399,6 +484,11 @@ function extract(documents, opts = {}) {
       c.sourceTypes.add(seg.source_type);
       c.sources.add(seg.source);
       c.surfaces.set(surface, (c.surfaces.get(surface) || 0) + 1);
+      if (!headingLike[sIdx]) {
+        phrase.forEach((tok, w) => {
+          if (caseIsReliable(tok, phrase.start + w === 0)) c.forms[w].set(tok, (c.forms[w].get(tok) || 0) + 1);
+        });
+      }
       if (c.examples.length < includeExamples && !c.examples.includes(seg.text)) {
         c.examples.push(seg.text);
       }
@@ -422,10 +512,15 @@ function extract(documents, opts = {}) {
     }
     if (missing) continue;
     const yake = product / (c.occurrences * (1 + sum));
-    // Most frequent surface form becomes the display term.
+    // Most frequent surface form; written in lower case unless the evidence
+    // says it is a proper noun, brand or acronym.
     const best = [...c.surfaces.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    const cased = normaliseCase ? caseTerm(best.split(' '), c.forms, wordCase) : { term: best, note: '', unsure: false };
     scored.push({
-      term: best,
+      term: cased.term,
+      source_form: best,
+      case_note: cased.note,
+      case_unsure: cased.unsure,
       words: c.words,
       n: c.n,
       yake_score: yake,
@@ -439,6 +534,7 @@ function extract(documents, opts = {}) {
   }
 
   log.dropped_below_min_segments = log.candidates_before_filter - scored.length;
+  log.case_normalisation = normaliseCase ? 'on' : 'off';
   scored.sort((a, b) => a.yake_score - b.yake_score);
 
   // ---- collapse near-duplicates into the better-scoring candidate
@@ -497,6 +593,9 @@ function extract(documents, opts = {}) {
   const terms = kept.slice(0, topN).map((t, i) => ({
     rank: i + 1,
     term: t.term,
+    source_form: t.source_form,
+    case_note: t.case_note,
+    case_unsure: t.case_unsure,
     word_count: t.n,
     yake_score: Number(t.yake_score.toPrecision(4)),
     occurrences: t.occurrences,
@@ -512,10 +611,17 @@ function extract(documents, opts = {}) {
   }));
 
   log.terms_returned = terms.length;
+  log.case = {
+    lowercased: terms.filter((t) => t.term !== t.source_form).length,
+    kept_capitals: terms.filter((t) => /^kept/.test(t.case_note)).length,
+    unsure: terms.filter((t) => t.case_unsure).length,
+  };
 
   const rows = terms.map((t) => ({
     rank: t.rank,
     term: t.term,
+    source_form: t.source_form,
+    case_note: t.case_note,
     word_count: t.word_count,
     yake_score: t.yake_score,
     occurrences: t.occurrences,
@@ -553,6 +659,7 @@ const result = extract(documents, {
   includeExamples: settings.include_examples,
   dedupeSegments: settings.dedupe_segments,
   independenceRatio: settings.independence_ratio,
+  normaliseCase: settings.normalise_case !== false,
   stopwords: sw.stopwords,
   extraStopwords: sw.extra_stopwords,
   connectors: sw.connectors,
