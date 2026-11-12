@@ -167,7 +167,7 @@
 </tr><tr data-setup="0" data-google="0" data-stops="1" data-name="read request">
   <td class="num">2</td>
   <td class="node"><span class="nm">Read request</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Works out what the page wants: <b>check</b> folders, or <b>start</b> a job. For a job, checks the job ID, client, language, folder IDs and email, and clamps every setting to its limits. Nothing out of range gets past this point.<div class="stops"><span class="stop-label">Can stop the job</span> Anything missing or malformed: replies 400 with the reason</div></td>
+  <td class="what">Works out what the page wants: <b>check</b> folders, or <b>start</b> a job. For a job, checks the job ID, client, language, folder IDs and email, and clamps every setting to its limits, including the AI brief (focus from a fixed list, subject area up to 120 characters, instructions up to 2,000). Nothing out of range gets past this point.<div class="stops"><span class="stop-label">Can stop the job</span> Anything missing or malformed: replies 400 with the reason</div></td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="request valid?">
   <td class="num">3</td>
@@ -286,7 +286,7 @@
     <tbody><tr data-setup="0" data-google="0" data-stops="0" data-name="stage 1 statistical extraction">
   <td class="num">21</td>
   <td class="node"><span class="nm">Stage 1 statistical extraction</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Takes the source-language side of each TMX unit, the source text of each XLIFF unit (skipping TM matches and units marked do-not-translate), or sentences from text. Skips XLIFF files in a different source language. Removes duplicate segments, and scores every 1–4 word phrase with YAKE's features. Then merges near-duplicates, drops sub-phrases that rarely appear on their own, and keeps the top N terms with example segments.</td>
+  <td class="what">Takes the source-language side of each TMX unit, the source text of each XLIFF unit (skipping TM matches and units marked do-not-translate), or sentences from text. Skips XLIFF files in a different source language. Removes duplicate segments, and scores every 1–4 word phrase with YAKE's features. Then merges near-duplicates, drops sub-phrases that rarely appear on their own, and keeps the top N terms with example segments. With <i>lower case</i> on (the default), writes each term in lower case unless the files capitalise it mid-sentence (proper nouns, brands) or write it as an acronym. Capitals seen only in headings or at the start of a sentence don&#x27;t count. The original form and the reason go in <code>source_form</code> and <code>case_note</code>.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="1" data-name="stage 1 rows">
   <td class="num">22</td>
@@ -339,7 +339,7 @@
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="build ai request">
   <td class="num">30</td>
   <td class="node"><span class="nm">Build AI request</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Builds one prompt per batch: each term, its counts and 2 example segments. Never whole files. Asks for keep or drop, a reason and a one-line definition, as JSON. With translations on, adds the files&#x27; suggestion and 1–2 source/target example pairs, and asks the AI to confirm or correct it; terms with no suggestion are translated only if the page asked for that.</td>
+  <td class="what">Builds one prompt per batch: each term, its counts and 2 example segments. Never whole files. Adds the brief from the page: the type of terminology, the subject area and any extra instructions. Asks for keep or drop, a reason and a one-line definition, as JSON, plus the term&#x27;s correct case when <i>lower case</i> is on. With translations on, adds the files&#x27; suggestion and 1–2 source/target example pairs, and asks the AI to confirm or correct it; terms with no suggestion are translated only if the page asked for that.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="1" data-google="0" data-stops="1" data-name="ai review">
   <td class="num">31</td>
@@ -349,7 +349,7 @@
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="parse ai response">
   <td class="num">32</td>
   <td class="node"><span class="nm">Parse AI response</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Adds the verdicts and definitions to the terms. If a reply was cut off, blocked or can't be read, that batch is marked <code>ai_error</code> with the reason and the job carries on.</td>
+  <td class="what">Adds the verdicts and definitions to the terms. Takes the model&#x27;s case for a term only when the letters are otherwise identical, and notes the change in <code>case_note</code>. If a reply was cut off, blocked or can't be read, that batch is marked <code>ai_error</code> with the reason and the job carries on.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="terms to items (no ai)">
   <td class="num">33</td>
@@ -475,7 +475,7 @@
     <tbody><tr data-setup="0" data-google="0" data-stops="0" data-name="final rows">
   <td class="num">54</td>
   <td class="node"><span class="nm">Final rows</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Lays out the glossary columns: rank, term, score, counts, variants, AI verdict, definition and examples. With translations on, also the translation, where it came from (<code>translation_check</code>) and what the files suggested; with wildcards on, the memoQ columns.</td>
+  <td class="what">Lays out the glossary columns: rank, term, original form, case note, score, counts, variants, AI verdict, definition and examples. With translations on, also the translation, where it came from (<code>translation_check</code>) and what the files suggested; with wildcards on, the memoQ columns.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="final spreadsheet">
   <td class="num">55</td>

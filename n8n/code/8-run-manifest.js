@@ -36,6 +36,11 @@ const manifest = {
     dropped_below_min_segments: stage.log.dropped_below_min_segments,
     terms_returned: stage.log.terms_returned,
   },
+  case_normalisation: {
+    setting: settings.normalise_case !== false ? 'on' : 'off',
+    ...(stage.log.case || {}),
+    changed_by_ai: finalRows.filter((r) => /^AI:/.test(r.case_note)).length,
+  },
   stage_2: stage.log.stage_2,
   translations: settings.suggest_translations
     ? {
@@ -59,6 +64,9 @@ const manifest = {
     restricted: gate.restricted || false,
     ran: gate.may_run_ai || false,
     note: gate.reason || '',
+    focus: settings.ai_focus || 'general',
+    domain: settings.ai_domain || '',
+    instructions: settings.ai_instructions || '',
     terms_with_parse_errors: finalRows.filter((r) => r.ai_error).length,
   },
 };

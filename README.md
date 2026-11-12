@@ -30,7 +30,7 @@ to the job log sheet, which the page shows.
 | `n8n/Terminology_extraction_webhook_v4.json` | Main workflow: Webhook → checks → reply → extraction → log |
 | `n8n/Terminology_job_errors.json` | Error workflow: marks the failed job's log row, matched by execution ID |
 | `docs/terminology-job-flow.html` | The diagrams |
-| `n8n/code/` | Plain copies of Code nodes changed since first setup (XLIFF support, Gemini AI review, translation suggestions, memoQ wildcards), for pasting into an existing workflow |
+| `n8n/code/` | Plain copies of Code nodes changed since first setup (XLIFF support, Gemini AI review, lower-case entries, the AI brief, translation suggestions, memoQ wildcards), for pasting into an existing workflow |
 | `docs/workflow-nodes.html` | Every n8n node: what it does, what to set up on it, whether it can stop a job |
 | `n8n/superseded/` | The earlier scheduled-check version, for reference only |
 
@@ -113,13 +113,21 @@ An XLIFF file that declares a different source language from the job's is skippe
   - Both checks run again on submit.
 - **Source files** come from one of two places:
   - an existing Drive folder: every supported file directly inside it, with no size limit;
-  - uploads (25 MB per file, 20 files), which go into a new job folder in the working folder.
+  - uploads (25 MB per file, 20 files), which go into a new job folder in the working folder. Pick files, or a folder on your computer (subfolders included), or drag either onto the page. Unsupported files in a folder are skipped and counted. A file in a subfolder is saved as `subfolder_name.tmx`, so files with the same name don't clash.
 - **Results** go to a folder you choose (you need edit access) or to a new job folder. File names include the job ID, so nothing is overwritten.
 - **Several jobs can run at once.** Each is independent, and failures are matched to their log row by the n8n execution ID.
 - **Failures:**
   - Problems found before the reply (folders, the key, Cloudflare, n8n down or the workflow inactive) appear on the page at once, and nothing is logged.
   - Problems after the reply (no usable files, no terms, Drive or Gemini errors) are written to the job's log row, with a link to the n8n execution.
   - If n8n restarts mid-job, nothing can report back, so the page flags a job still running after 45 minutes.
+- **The page has three steps:** *Job details* (client, what to do, language, files, where results go), *Job settings* (lower case, translations and extraction settings; or, for a glossary, its target language and column) and *AI review*. *Next* only moves on once the step's required fields are filled in. After a job starts, the page goes back to step 1, and the settings are kept for the next job.
+- **Lower case** is on by default, following glossary practice. Stage 1 decides each word's case from how the files write it mid-sentence:
+  - Words the files mostly write in lower case become lower case ("Pressure Valve" from a heading becomes "pressure valve").
+  - Words mostly capitalised stay that way ("Siemens", German nouns), as do acronyms ("ISO") and mixed-case names ("PowerPoint").
+  - A term only ever seen at the start of a sentence or in a heading becomes lower case, and its `case_note` says to check it.
+
+  When AI review runs, the model can correct a term's case, but nothing else about the term. The glossary's `source_form` column keeps the most common original form.
+- **The AI brief** (step 3, extraction jobs) is sent with every batch. It holds the type of terminology (general, UI strings, technical, marketing and others), the subject area and up to 2,000 characters of instructions, and it's saved in the run manifest. It can change which terms are kept, how definitions read and how translations are judged, but not the reply format.
 - **AI review** still needs both ticks on the page, and the client must not be on the restricted list in n8n (*Check restricted list*). The page can't override that list.
 - **Languages** offered are the Latin-script ones, because the stage 1 tokeniser only reads Latin script. Each language maps to its TMX code, e.g. Czech is `cz` in the stopword lists and `cs-CZ` in TMX files.
 

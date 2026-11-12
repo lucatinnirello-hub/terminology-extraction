@@ -22,8 +22,13 @@
 const DEFAULTS = {
   ngram_max: 4, dedupe_threshold: 0.85, top_n: 500, min_segments: 2, min_chars: 15,
   include_examples: 3, dedupe_segments: true, independence_ratio: 1.25,
-  run_ai_review: false, ai_review_approved: false,
+  run_ai_review: false, ai_review_approved: false, normalise_case: true,
+  ai_focus: 'general', ai_domain: '', ai_instructions: '',
 };
+// The AI brief: what to focus on, plus free text from the linguist. Kept
+// short so a batch prompt stays small.
+const AI_FOCUS = ['general', 'ui', 'technical', 'marketing', 'legal', 'life_sciences', 'finance'];
+const TEXT_LIMITS = { ai_domain: 120, ai_instructions: 2000 };
 const LIMITS = {
   ngram_max: [1, 6, true], dedupe_threshold: [0.5, 1, false], top_n: [10, 5000, true],
   min_segments: [1, 50, true], min_chars: [0, 200, true], include_examples: [0, 10, true],
@@ -62,6 +67,13 @@ for (const [key, [min, max, integer]] of Object.entries(LIMITS)) {
 settings.dedupe_segments = fromPage.dedupe_segments !== false;
 settings.run_ai_review = fromPage.run_ai_review === true;
 settings.ai_review_approved = settings.run_ai_review && fromPage.ai_review_approved === true;
+settings.normalise_case = fromPage.normalise_case !== false;
+settings.ai_focus = AI_FOCUS.includes(fromPage.ai_focus) ? fromPage.ai_focus : 'general';
+for (const [key, max] of Object.entries(TEXT_LIMITS)) {
+  // Control characters out (line breaks kept in the instructions), then trimmed.
+  const text = String(fromPage[key] || '').replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, ' ').trim();
+  settings[key] = key === 'ai_domain' ? text.replace(/\s+/g, ' ').slice(0, max) : text.slice(0, max);
+}
 
 // Translation suggestions: target language as a stopword-list key (e.g.
 // 'it', or 'sr', which uses the Croatian list), and what it's called inside

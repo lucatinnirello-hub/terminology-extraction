@@ -28,6 +28,8 @@ return $input.all().map((item) => {
   const row = {
     rank: t.rank,
     term: t.term,
+    source_form: t.source_form || '',
+    case_note: t.case_note || '',
     word_count: t.word_count,
     yake_score: t.yake_score,
     occurrences: t.occurrences,

@@ -55,12 +55,18 @@ try {
 }
 
 const byTerm = new Map((parsed.results || []).map((r) => [String(r.term).toLowerCase(), r]));
+const normaliseCase = $('Settings').first().json.normalise_case !== false;
 
 return sent.map((t) => {
   const v = byTerm.get(String(t.term).toLowerCase());
+  // The model may only change letter case: anything else is ignored.
+  const cased = v && normaliseCase && typeof v.term_cased === 'string' ? v.term_cased.trim() : '';
+  const recase = cased && cased !== t.term && cased.toLowerCase() === String(t.term).toLowerCase();
   return {
     json: {
       ...t,
+      term: recase ? cased : t.term,
+      case_note: recase ? `AI: ${cased === cased.toLowerCase() ? 'lower case' : 'kept capitals'} (rule gave "${t.term}")` : t.case_note || '',
       ai_keep: v ? v.keep !== false : null,
       ai_reason: v ? v.reason || '' : 'no verdict returned',
       definition: v && v.definition ? v.definition : t.definition || '',

@@ -58,7 +58,7 @@
   header h1 { font-size: 18px; margin: 0; font-weight: 650; }
   header .meta { color: var(--muted); font-size: 13px; display: flex; gap: 16px; flex-wrap: wrap; }
   main {
-    display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 20px;
+    display: grid; grid-template-columns: minmax(340px, 500px) 1fr; gap: 20px; align-items: start;
     padding: 20px 24px 40px; max-width: 1400px; margin: 0 auto;
   }
   @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 16px; } header { padding: 14px 16px; } }
@@ -68,11 +68,12 @@
   label { display: block; font-weight: 560; margin-bottom: 4px; }
   .hint { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
   .field { margin-bottom: 14px; }
-  input[type=text], input[type=number], select {
+  input[type=text], input[type=number], select, textarea {
     width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px;
     background: var(--surface); color: var(--text); font: inherit;
   }
-  input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible, .drop:focus-visible {
+  textarea { resize: vertical; min-height: 110px; line-height: 1.45; }
+  input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, summary:focus-visible {
     outline: 2px solid var(--accent); outline-offset: 2px;
   }
   .drop {
@@ -80,7 +81,11 @@
     background: var(--surface-2); cursor: pointer; transition: border-color .15s, background .15s;
   }
   .drop.over { border-color: var(--accent); background: var(--accent-soft); }
-  .drop strong { color: var(--accent); }
+  .drop-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .drop-actions button { font-weight: 600; color: var(--accent); border-color: var(--accent); }
+  .drop-or { color: var(--muted); font-size: 13px; }
+  .notice.info { background: var(--warn-soft); color: var(--warn); }
+  .files .name .dir { color: var(--muted); }
   .files { list-style: none; padding: 0; margin: 8px 0 0; }
   .files li {
     display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 13px;
@@ -91,9 +96,41 @@
   .files .state { font-size: 12px; color: var(--muted); min-width: 64px; text-align: right; }
   .files .state.ok { color: var(--ok); }
   .files .state.err { color: var(--danger); }
-  details { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 14px; }
-  details summary { padding: 9px 12px; cursor: pointer; font-weight: 560; }
-  details .inner { padding: 4px 12px 2px; }
+  /* Three steps: job details, settings, AI review */
+  .steps { list-style: none; margin: 0; padding: 0 8px; display: flex; border-bottom: 1px solid var(--border); }
+  .steps li { flex: 1; min-width: 0; }
+  .step {
+    width: 100%; border: none; border-radius: 0; background: none; color: var(--muted);
+    padding: 11px 6px 9px; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    display: flex; gap: 7px; align-items: center; justify-content: center; font-size: 13px; font-weight: 560;
+  }
+  .step .num {
+    width: 20px; height: 20px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center;
+    background: var(--surface-2); border: 1px solid var(--border); font-size: 11.5px; font-weight: 700;
+  }
+  .step .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .step[aria-current=step] { color: var(--accent); border-bottom-color: var(--accent); }
+  .step[aria-current=step] .num { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .step.done .num { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--accent); }
+  .step-panel[hidden] { display: none; }
+  .step-h { font-size: 15px; margin: 0 0 4px; font-weight: 620; }
+  .step-intro { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+  .step-nav { display: flex; gap: 8px; margin-top: 18px; }
+  .step-nav button { padding: 10px 14px; }
+  .step-nav .primary { flex: 1; width: auto; }
+  .step-nav [hidden] { display: none; }
+  .settings-box { border: 1px solid var(--border); border-radius: 8px; margin: 0 0 14px; padding: 10px 12px 2px; min-width: 0; }
+  .settings-box > legend { font-weight: 620; padding: 0 4px; margin-left: -4px; }
+  .settings-box .box-intro { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; }
+  .settings-foot { display: flex; justify-content: flex-end; margin: -4px 0 10px; }
+  .count { color: var(--muted); font-size: 12px; text-align: right; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .count.over { color: var(--danger); }
+  .ai-brief[hidden] { display: none; }
+  .summary { border-radius: 8px; background: var(--surface-2); padding: 10px 12px; font-size: 13px; margin-top: 4px; }
+  .summary dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; }
+  .summary dt { color: var(--muted); }
+  .summary dd { margin: 0; overflow-wrap: anywhere; }
+  @media (max-width: 420px) { .step .lbl { font-size: 12px; } .step { gap: 5px; } }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
   .grid2 .field label { font-weight: 500; font-size: 13px; }
   .check { display: flex; gap: 8px; align-items: flex-start; font-weight: 500; }
@@ -174,9 +211,9 @@
   /* Narrow screens: the "?" can sit anywhere along a row, so the tooltip spans
      the whole settings box, just under the question mark, instead. */
   @media (max-width: 600px) {
-    details .inner { position: relative; }
-    details .inner .tip { position: static; }
-    details .inner .tip-text, details .inner .tip.right .tip-text {
+    .settings-box { position: relative; }
+    .settings-box .tip { position: static; }
+    .settings-box .tip-text, .settings-box .tip.right .tip-text {
       top: auto; left: 0; right: 0; width: auto; max-width: none; margin-top: 24px;
     }
   }
@@ -202,88 +239,132 @@
 <main>
   <section class="card" aria-labelledby="new-job-h">
     <h2 id="new-job-h">New job</h2>
+    <ol class="steps" aria-label="Steps">
+      <li><button type="button" class="step" data-step="1" aria-current="step"><span class="num">1</span><span class="lbl">Job details</span></button></li>
+      <li><button type="button" class="step" data-step="2"><span class="num">2</span><span class="lbl">Job settings</span></button></li>
+      <li><button type="button" class="step" data-step="3"><span class="num">3</span><span class="lbl">AI review</span></button></li>
+    </ol>
     <div class="card-body">
       <div id="form-notice" class="notice" role="status" hidden></div>
       <form id="job-form" novalidate>
-        <div class="field">
-          <label for="client">Client</label>
-          <input id="client" name="client" type="text" autocomplete="off" required maxlength="80" placeholder="e.g. Acme Ltd">
-          <div class="hint">Used for file names and to check whether AI review is allowed for this client.</div>
-        </div>
-
-        <fieldset class="field group">
-          <legend>What to do</legend>
-          <div class="choice">
-            <label><input type="radio" name="job_mode" id="mode_extract" value="extract" checked> Extract terms</label>
-            <label><input type="radio" name="job_mode" id="mode_wildcards" value="wildcards"> Add memoQ wildcards to a glossary</label>
-          </div>
-          <div class="hint" id="mode-hint"></div>
-        </fieldset>
-
-        <div class="field">
-          <label for="source_lang">Source language</label>
-          <select id="source_lang" name="source_lang" required></select>
-          <div class="hint" id="source-lang-hint"></div>
-        </div>
-
-        <fieldset class="field group">
-          <legend>Source files</legend>
-          <div class="choice">
-            <label><input type="radio" name="input_mode" id="input_mode_upload" value="upload" checked> Upload files</label>
-            <label><input type="radio" name="input_mode" id="input_mode_folder" value="folder"> Use a Drive folder</label>
-          </div>
-          <div id="upload-panel">
-            <div id="drop" class="drop" tabindex="0" role="button" aria-label="Choose files to upload" aria-describedby="files-hint">
-              <div><strong>Choose files</strong> or drop them here</div>
-              <div class="hint" id="files-hint"></div>
-            </div>
-            <input id="file-input" type="file" multiple class="sr-only" tabindex="-1" aria-hidden="true">
-            <ul id="file-list" class="files" aria-live="polite"></ul>
-          </div>
-          <div id="input-folder-panel" hidden>
-            <label for="input_folder" class="sub-label">Folder link</label>
-            <div class="folder-row">
-              <input id="input_folder" type="text" autocomplete="off" spellcheck="false" placeholder="https://drive.google.com/drive/folders/…">
-              <button type="button" class="small" id="input_folder_check">Check</button>
-            </div>
-            <div class="hint" id="folder-hint"></div>
-            <div id="input_folder_result" class="check-result" aria-live="polite" hidden></div>
-          </div>
-        </fieldset>
-
-        <fieldset class="field group">
-          <legend>Save results to</legend>
-          <div class="choice">
-            <label><input type="radio" name="output_mode" id="output_mode_job" value="job" checked> A new folder for this job</label>
-            <label><input type="radio" name="output_mode" id="output_mode_folder" value="folder"> A Drive folder I choose</label>
-          </div>
-          <div id="output-folder-panel" hidden>
-            <label for="output_folder" class="sub-label">Folder link</label>
-            <div class="folder-row">
-              <input id="output_folder" type="text" autocomplete="off" spellcheck="false" placeholder="https://drive.google.com/drive/folders/…">
-              <button type="button" class="small" id="output_folder_check">Check</button>
-            </div>
-            <div class="hint">The glossary, stage 1 candidates and run manifest are added here. File names include the job ID, so nothing is overwritten.</div>
-            <div id="output_folder_result" class="check-result" aria-live="polite" hidden></div>
-          </div>
-        </fieldset>
-
-        <div class="ai-box" id="wildcards-box" hidden>
+        <div class="step-panel" data-step="1" role="group" aria-labelledby="step1-h">
+          <h3 class="step-h" id="step1-h" tabindex="-1">Job details</h3>
+          <p class="step-intro">Who it's for, what to do, and which files to use.</p>
           <div class="field">
-            <label for="wc_target_lang">Target language of the glossary</label>
-            <select id="wc_target_lang"><option value="">Choose…</option></select>
+            <label for="client">Client</label>
+            <input id="client" name="client" type="text" autocomplete="off" required maxlength="80" placeholder="e.g. Acme Ltd">
+            <div class="hint">Used for file names and to check whether AI review is allowed for this client.</div>
           </div>
+
+          <fieldset class="field group">
+            <legend>What to do</legend>
+            <div class="choice">
+              <label><input type="radio" name="job_mode" id="mode_extract" value="extract" checked> Extract terms</label>
+              <label><input type="radio" name="job_mode" id="mode_wildcards" value="wildcards"> Add memoQ wildcards to a glossary</label>
+            </div>
+            <div class="hint" id="mode-hint"></div>
+          </fieldset>
+
           <div class="field">
-            <label for="target_column">Target term column (optional)</label>
-            <input id="target_column" type="text" autocomplete="off" maxlength="80" placeholder="e.g. Serbian">
-            <div class="hint">The header of the column holding the target terms. Leave it empty to find it from the language name.</div>
+            <label for="source_lang">Source language</label>
+            <select id="source_lang" name="source_lang" required></select>
+            <div class="hint" id="source-lang-hint"></div>
           </div>
-          <div class="hint">Only target terms get wildcards. The glossary comes back with a column added next to the others; terms that need no wildcard are left as they are. Several terms in one cell, separated by ";", are handled one by one.</div>
+
+          <fieldset class="field group">
+            <legend>Source files</legend>
+            <div class="choice">
+              <label><input type="radio" name="input_mode" id="input_mode_upload" value="upload" checked> Upload files</label>
+              <label><input type="radio" name="input_mode" id="input_mode_folder" value="folder"> Use a Drive folder</label>
+            </div>
+            <div id="upload-panel">
+              <div id="drop" class="drop">
+                <div class="drop-actions">
+                  <button type="button" id="choose-files" aria-describedby="files-hint">Choose files</button>
+                  <button type="button" id="choose-folder" aria-describedby="files-hint folder-hint">Choose a folder</button>
+                </div>
+                <div class="drop-or">or drop files or folders here</div>
+                <div class="hint" id="files-hint"></div>
+                <div class="hint" id="folder-hint">A folder adds every supported file inside it, subfolders included. Your browser asks you to confirm the upload.</div>
+              </div>
+              <input id="file-input" type="file" multiple class="sr-only" tabindex="-1" aria-hidden="true">
+              <input id="folder-input" type="file" multiple webkitdirectory class="sr-only" tabindex="-1" aria-hidden="true">
+              <ul id="file-list" class="files" aria-live="polite"></ul>
+            </div>
+            <div id="input-folder-panel" hidden>
+              <label for="input_folder" class="sub-label">Folder link</label>
+              <div class="folder-row">
+                <input id="input_folder" type="text" autocomplete="off" spellcheck="false" placeholder="https://drive.google.com/drive/folders/…">
+                <button type="button" class="small" id="input_folder_check">Check</button>
+              </div>
+              <div class="hint" id="drive-folder-hint"></div>
+              <div id="input_folder_result" class="check-result" aria-live="polite" hidden></div>
+            </div>
+          </fieldset>
+
+          <fieldset class="field group">
+            <legend>Save results to</legend>
+            <div class="choice">
+              <label><input type="radio" name="output_mode" id="output_mode_job" value="job" checked> A new folder for this job</label>
+              <label><input type="radio" name="output_mode" id="output_mode_folder" value="folder"> A Drive folder I choose</label>
+            </div>
+            <div id="output-folder-panel" hidden>
+              <label for="output_folder" class="sub-label">Folder link</label>
+              <div class="folder-row">
+                <input id="output_folder" type="text" autocomplete="off" spellcheck="false" placeholder="https://drive.google.com/drive/folders/…">
+                <button type="button" class="small" id="output_folder_check">Check</button>
+              </div>
+              <div class="hint">The glossary, stage 1 candidates and run manifest are added here. File names include the job ID, so nothing is overwritten.</div>
+              <div id="output_folder_result" class="check-result" aria-live="polite" hidden></div>
+            </div>
+          </fieldset>
         </div>
 
-        <details id="extraction-settings">
-          <summary>Extraction settings</summary>
-          <div class="inner">
+        <div class="step-panel" data-step="2" role="group" aria-labelledby="step2-h" hidden>
+          <h3 class="step-h" id="step2-h" tabindex="-1">Job settings</h3>
+          <p class="step-intro" id="step2-intro"></p>
+
+          <fieldset class="settings-box" id="wildcards-box" hidden>
+            <legend>memoQ wildcards</legend>
+            <div class="field">
+              <label for="wc_target_lang">Target language of the glossary</label>
+              <select id="wc_target_lang"><option value="">Choose…</option></select>
+            </div>
+            <div class="field">
+              <label for="target_column">Target term column (optional)</label>
+              <input id="target_column" type="text" autocomplete="off" maxlength="80" placeholder="e.g. Serbian">
+              <div class="hint">The header of the column holding the target terms. Leave it empty to find it from the language name.</div>
+            </div>
+            <div class="hint">Only target terms get wildcards. The glossary comes back with a column added next to the others; terms that need no wildcard are left as they are. Several terms in one cell, separated by ";", are handled one by one.</div>
+          </fieldset>
+
+          <fieldset class="settings-box" id="normalisation-box">
+            <legend>Normalisation</legend>
+            <div class="field">
+              <div class="label-row">
+                <label class="check"><input type="checkbox" id="normalise_case" checked> Write entries in lower case</label>
+                <span id="normalise_help_slot"></span>
+              </div>
+              <div class="hint">Keeps the capitals of brands, proper nouns and acronyms. The glossary also shows each term's original form and why its case was changed or kept.</div>
+            </div>
+          </fieldset>
+
+          <fieldset class="settings-box" id="translations-box">
+            <legend>Translations</legend>
+            <label class="check"><input type="checkbox" id="suggest_translations"> Suggest translations of the terms</label>
+            <div class="hint">Found in the target side of TMX and XLIFF files, without AI. With AI review on (next step), the AI checks each one; without it, they're listed as unchecked suggestions.</div>
+            <div class="sub-panel" id="translation-panel" hidden>
+              <div class="field">
+                <label for="target_lang">Target language</label>
+                <select id="target_lang"><option value="">Choose…</option></select>
+              </div>
+              <label class="check"><input type="checkbox" id="add_wildcards"> Add memoQ wildcards to the target terms</label>
+              <div class="hint">In a separate column. With AI review, the AI lists each term's forms and checks the wildcards; without it, only forms seen in the files are used, marked not validated.</div>
+            </div>
+          </fieldset>
+
+          <fieldset class="settings-box" id="extraction-box">
+            <legend>Extraction</legend>
             <div class="grid2" id="tuning"></div>
             <div class="field">
               <div class="label-row">
@@ -291,34 +372,53 @@
                 <span id="dedupe_help_slot"></span>
               </div>
             </div>
-          </div>
-        </details>
-
-        <div class="ai-box">
-          <label class="check"><input type="checkbox" id="run_ai_review"> <span id="ai-label">Run AI review of candidate terms (Google Gemini)</span></label>
-          <div class="hint" id="ai-hint"></div>
-          <div class="ai-approve" id="ai-approve" hidden>
-            <label class="check"><input type="checkbox" id="ai_review_approved"> The client has approved sending term excerpts to Google's Gemini API</label>
-            <div class="hint" id="ai-approve-hint"></div>
-          </div>
+            <div class="settings-foot"><button type="button" class="small" id="reset-settings">Restore defaults</button></div>
+          </fieldset>
         </div>
 
-        <div class="ai-box" id="translations-box">
-          <label class="check"><input type="checkbox" id="suggest_translations"> Suggest translations of the terms</label>
-          <div class="hint">Found in the target side of TMX and XLIFF files, without AI. With AI review on, the AI checks each one; without it, they're listed as unchecked suggestions.</div>
-          <div class="sub-panel" id="translation-panel" hidden>
-            <div class="field">
-              <label for="target_lang">Target language</label>
-              <select id="target_lang"><option value="">Choose…</option></select>
+        <div class="step-panel" data-step="3" role="group" aria-labelledby="step3-h" hidden>
+          <h3 class="step-h" id="step3-h" tabindex="-1">AI review</h3>
+          <p class="step-intro" id="step3-intro"></p>
+
+          <div class="ai-box">
+            <label class="check"><input type="checkbox" id="run_ai_review"> <span id="ai-label">Run AI review of candidate terms (Google Gemini)</span></label>
+            <div class="ai-approve" id="ai-approve" hidden>
+              <label class="check"><input type="checkbox" id="ai_review_approved"> The client has approved sending term excerpts to Google's Gemini API</label>
+              <div class="hint" id="ai-approve-hint"></div>
             </div>
-            <label class="check"><input type="checkbox" id="add_wildcards"> Add memoQ wildcards to the target terms</label>
-            <div class="hint">In a separate column. With AI review, the AI lists each term's forms and checks the wildcards; without it, only forms seen in the files are used, marked not validated.</div>
-            <label class="check off" id="ai-translate-label" style="margin-top:10px"><input type="checkbox" id="ai_translate_missing" disabled> Where the files have no translation for a term, let the AI translate it</label>
-            <div class="hint" id="ai-translate-hint">Needs AI review, above. These translations aren't based on the client's own translations, and are marked "AI translated (not from the files)" in the glossary.</div>
           </div>
+
+          <fieldset class="settings-box ai-brief" id="ai-brief" hidden>
+            <legend>Brief for the AI</legend>
+            <p class="box-intro">Tells the model which terms matter for this job. Don't include anything the client hasn't approved for sharing.</p>
+            <div class="field">
+              <label for="ai_focus">Type of terminology</label>
+              <select id="ai_focus"></select>
+            </div>
+            <div class="field">
+              <label for="ai_domain">Subject area</label>
+              <input id="ai_domain" type="text" autocomplete="off" placeholder="e.g. industrial boilers, smart-home app, retail banking">
+            </div>
+            <div class="field">
+              <label for="ai_instructions">Additional instructions</label>
+              <textarea id="ai_instructions" rows="5" aria-describedby="ai_instructions_count" placeholder="e.g. Keep feature and menu names. Drop generic marketing words. Definitions should suit a translator, not an engineer."></textarea>
+              <div class="count" id="ai_instructions_count" aria-live="polite"></div>
+            </div>
+          </fieldset>
+
+          <div class="ai-box" id="translate-missing-box" hidden>
+            <label class="check off" id="ai-translate-label"><input type="checkbox" id="ai_translate_missing" disabled> Where the files have no translation for a term, let the AI translate it</label>
+            <div class="hint" id="ai-translate-hint"></div>
+          </div>
+
+          <div class="summary" id="summary" aria-label="Job summary"></div>
         </div>
 
-        <button type="submit" class="primary" id="submit-btn">Submit job</button>
+        <div class="step-nav">
+          <button type="button" id="back-btn" hidden>Back</button>
+          <button type="button" class="primary" id="next-btn">Next: job settings</button>
+          <button type="submit" class="primary" id="submit-btn" hidden>Submit job</button>
+        </div>
         <div class="progress" id="progress" hidden><div></div></div>
       </form>
     </div>
@@ -350,6 +450,7 @@
   var scope = 'mine';
   var refreshTimer = null;
   var busy = false;
+  var step = 1;
   var REFRESH_MS = 15000;
 
   var $ = function (id) { return document.getElementById(id); };
@@ -440,6 +541,7 @@
       $('folder-link').href = cfg.workFolderUrl; $('folder-link').hidden = false;
       $('sheet-link').href = cfg.logSheetUrl; $('sheet-link').hidden = false;
 
+      var sel = $('source_lang');
       cfg.targetLanguages.forEach(function (l) {
         $('target_lang').appendChild(el('option', { value: l.code, text: l.label }));
       });
@@ -447,7 +549,6 @@
         $('wc_target_lang').appendChild(el('option', { value: l.code, text: l.label }));
       });
 
-      var sel = $('source_lang');
       cfg.languages.forEach(function (l) {
         sel.appendChild(el('option', { value: l.code, text: l.label }));
       });
@@ -470,49 +571,131 @@
         ]));
       });
       $('dedupe_help_slot').appendChild(helpTip('dedupe_segments', 'Collapse identical segments', cfg.dedupeSegmentsHelp, false));
+      $('normalise_help_slot').appendChild(helpTip('normalise_case', 'Write entries in lower case', cfg.normaliseCaseHelp, false));
+
+      cfg.aiFocus.forEach(function (f) { $('ai_focus').appendChild(el('option', { value: f.key, text: f.label })); });
+      $('ai_domain').maxLength = cfg.aiLimits.domain;
+      $('ai_instructions').maxLength = cfg.aiLimits.instructions;
+      updateCount();
 
       syncMode();
+      $('files-hint').textContent = extensions().map(function (e) { return '.' + e; }).join(', ') +
+        ' · up to ' + cfg.limits.maxFileMb + ' MB each · max ' + cfg.limits.maxFiles + ' files';
+      $('file-input').accept = extensions().map(function (e) { return '.' + e; }).join(',');
 
       loadJobs();
     }).catch(function (e) {
       notice('err', errText(e));
       $('submit-btn').disabled = true;
+      $('next-btn').disabled = true;
       $('jobs').innerHTML = '';
       $('jobs').appendChild(el('div', { class: 'empty', text: errText(e) }));
     });
   }
 
   // ---------------------------------------------------------------- files
-  function addFiles(list) {
+  // `list` holds { file, path }. `path` is where the file sits inside a
+  // chosen or dropped folder ("specs/valves.tmx"), or just its name.
+  // Files picked one by one get a message each; a folder gets a summary,
+  // since it can hold hundreds of files that aren't for us.
+  function addFiles(list, folderName) {
     if (busy || !config) return;
     var errors = [];
-    Array.prototype.forEach.call(list, function (f) {
-      var ext = (f.name.split('.').pop() || '').toLowerCase();
-      if (extensions().indexOf(ext) === -1) { errors.push(f.name + ': not used for this job type'); return; }
-      if (f.size > config.limits.maxFileMb * 1024 * 1024) { errors.push(f.name + ': larger than ' + config.limits.maxFileMb + ' MB'); return; }
-      if (f.size === 0) { errors.push(f.name + ': empty file'); return; }
-      if (files.some(function (x) { return x.file.name === f.name && x.file.size === f.size; })) return;
-      if (files.length >= config.limits.maxFiles) { errors.push(f.name + ': too many files'); return; }
-      files.push({ file: f, state: '' });
+    var skipped = { type: 0, size: 0, empty: 0, limit: 0 };
+    var added = 0;
+    list.forEach(function (x) {
+      var f = x.file;
+      var base = f.name;
+      var ext = (base.split('.').pop() || '').toLowerCase();
+      var hidden = base.charAt(0) === '.';
+      if (hidden || extensions().indexOf(ext) === -1) { skipped.type++; if (!folderName && !hidden) errors.push(base + ': not used for this job type'); return; }
+      if (f.size > config.limits.maxFileMb * 1024 * 1024) { skipped.size++; errors.push(x.path + ': larger than ' + config.limits.maxFileMb + ' MB'); return; }
+      if (f.size === 0) { skipped.empty++; if (!folderName) errors.push(base + ': empty file'); return; }
+      if (files.some(function (y) { return y.path === x.path && y.file.size === f.size; })) return;
+      if (files.length >= config.limits.maxFiles) { skipped.limit++; if (!folderName) errors.push(base + ': too many files'); return; }
+      files.push({ file: f, path: x.path, state: '' });
+      added++;
     });
     renderFiles();
-    notice(errors.length ? 'err' : '', errors.join('\n'));
+    if (!folderName) { notice(errors.length ? 'err' : '', errors.join('\n')); return; }
+
+    var parts = [];
+    if (skipped.type) parts.push(skipped.type + ' of another type');
+    if (skipped.empty) parts.push(skipped.empty + ' empty');
+    if (skipped.size) parts.push(skipped.size + ' larger than ' + config.limits.maxFileMb + ' MB');
+    if (skipped.limit) parts.push(skipped.limit + ' over the ' + config.limits.maxFiles + '-file limit');
+    var msg = (added ? 'Added ' + added + ' file' + (added === 1 ? '' : 's') : 'No supported files added') + ' from "' + folderName + '".';
+    if (parts.length) msg += ' Skipped: ' + parts.join(', ') + '.';
+    if (skipped.size) msg += '\n' + errors.join('\n');
+    if (skipped.limit || skipped.size) msg += '\nFor more or larger files, put the folder in Drive and choose "Use a Drive folder".';
+    notice(added ? (parts.length ? 'info' : 'ok') : 'err', msg);
   }
 
   function renderFiles() {
     var ul = $('file-list');
     ul.innerHTML = '';
     files.forEach(function (x, i) {
-      var remove = el('button', { type: 'button', class: 'link', 'aria-label': 'Remove ' + x.file.name, text: '✕' });
+      var remove = el('button', { type: 'button', class: 'link', 'aria-label': 'Remove ' + x.path, text: '✕' });
       remove.disabled = busy;
       remove.addEventListener('click', function () { files.splice(i, 1); renderFiles(); });
       var stateCls = 'state' + (x.state === 'uploaded' ? ' ok' : x.state === 'failed' ? ' err' : '');
+      var slash = x.path.lastIndexOf('/');
+      var name = el('span', { class: 'name', title: x.path }, [
+        slash > 0 ? el('span', { class: 'dir', text: x.path.slice(0, slash + 1) }) : null,
+        document.createTextNode(x.path.slice(slash + 1)),
+      ]);
       ul.appendChild(el('li', {}, [
-        el('span', { class: 'name', title: x.file.name, text: x.file.name }),
+        name,
         el('span', { class: 'size', text: fmtBytes(x.file.size) }),
         el('span', { class: stateCls, text: x.state }),
         busy ? null : remove,
       ]));
+    });
+  }
+
+  // Path inside the chosen folder, without the folder's own name:
+  // "Project/specs/valves.tmx" -> "specs/valves.tmx".
+  function innerPath(rel) {
+    var cut = rel.indexOf('/');
+    return cut === -1 ? rel : rel.slice(cut + 1);
+  }
+
+  // Dropped folders: walk them with the entries API (all current browsers).
+  function readEntry(entry, prefix) {
+    if (entry.isFile) {
+      return new Promise(function (resolve) {
+        entry.file(function (f) { resolve([{ file: f, path: prefix + f.name }]); }, function () { resolve([]); });
+      });
+    }
+    if (!entry.isDirectory) return Promise.resolve([]);
+    var reader = entry.createReader();
+    var all = [];
+    // readEntries returns at most ~100 entries per call: keep asking until empty.
+    function more() {
+      return new Promise(function (resolve) { reader.readEntries(resolve, function () { resolve([]); }); }).then(function (batch) {
+        if (!batch.length) return all;
+        all = all.concat(batch);
+        return more();
+      });
+    }
+    return more().then(function (entries) {
+      return Promise.all(entries.map(function (e) { return readEntry(e, prefix + entry.name + '/'); }));
+    }).then(function (lists) { return [].concat.apply([], lists); });
+  }
+
+  function handleDrop(dt) {
+    var items = Array.prototype.slice.call(dt.items || []);
+    var entries = items.map(function (it) { return it.webkitGetAsEntry ? it.webkitGetAsEntry() : null; }).filter(Boolean);
+    var folders = entries.filter(function (e) { return e.isDirectory; });
+    if (!folders.length) {
+      addFiles(Array.prototype.map.call(dt.files, function (f) { return { file: f, path: f.name }; }));
+      return;
+    }
+    // Paths keep the dropped folder's name only when several things were dropped.
+    var single = entries.length === 1;
+    Promise.all(entries.map(function (e) { return readEntry(e, ''); })).then(function (lists) {
+      var list = [].concat.apply([], lists).map(function (x) { return { file: x.file, path: single ? innerPath(x.path) : x.path }; });
+      addFiles(list, single ? folders[0].name : folders.length + ' dropped folders');
     });
   }
 
@@ -526,18 +709,24 @@
   }
 
   var drop = $('drop');
-  drop.addEventListener('click', function () { if (!busy) $('file-input').click(); });
-  drop.addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.key === ' ') && !busy) { e.preventDefault(); $('file-input').click(); } });
-  drop.addEventListener('dragover', function (e) { e.preventDefault(); drop.classList.add('over'); });
+  $('choose-files').addEventListener('click', function () { if (!busy) $('file-input').click(); });
+  $('choose-folder').addEventListener('click', function () { if (!busy) $('folder-input').click(); });
+  drop.addEventListener('dragover', function (e) { e.preventDefault(); if (!busy) drop.classList.add('over'); });
   drop.addEventListener('dragleave', function () { drop.classList.remove('over'); });
-  drop.addEventListener('drop', function (e) { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); });
-  $('file-input').addEventListener('change', function (e) { addFiles(e.target.files); e.target.value = ''; });
-
-  // ---------------------------------------------------------------- AI toggle
-  $('run_ai_review').addEventListener('change', function (e) {
-    $('ai-approve').hidden = !e.target.checked;
-    if (!e.target.checked) $('ai_review_approved').checked = false;
-    syncTranslations();
+  drop.addEventListener('drop', function (e) { e.preventDefault(); drop.classList.remove('over'); if (!busy) handleDrop(e.dataTransfer); });
+  $('file-input').addEventListener('change', function (e) {
+    addFiles(Array.prototype.map.call(e.target.files, function (f) { return { file: f, path: f.name }; }));
+    e.target.value = '';
+  });
+  $('folder-input').addEventListener('change', function (e) {
+    var list = Array.prototype.map.call(e.target.files, function (f) {
+      return { file: f, path: innerPath(f.webkitRelativePath || f.name) };
+    });
+    var first = e.target.files[0];
+    var folderName = first && first.webkitRelativePath ? first.webkitRelativePath.split('/')[0] : 'the folder';
+    e.target.value = '';
+    if (!list.length) { notice('err', '"' + folderName + '" is empty.'); return; }
+    addFiles(list, folderName);
   });
 
   // ---------------------------------------------------------------- job type
@@ -548,16 +737,18 @@
       mode: 'Finds terms in TMX, XLIFF and text files, and can suggest their translations.',
       source: 'For TMX files, the source-language side of each unit is extracted. Only Latin-script languages are supported for now.',
       folder: 'Uses the TMX, XLIFF (including memoQ .mqxliff and .mqxlz) and .txt/.md files directly inside the folder, not subfolders. No size limit.',
+      step2: 'How terms are written and found, and whether to suggest translations. The defaults suit most translation memories.',
+      step3: 'Optional. Google Gemini adds a keep/drop verdict and a one-line definition to each term, double-checks its case, and checks any translations and wildcards.',
       aiLabel: 'Run AI review of candidate terms (Google Gemini)',
-      ai: 'Adds a keep/drop verdict and a one-line definition to each term.',
-      approve: 'What is sent: each term, its counts and up to 2 example segments, with their translations if translations are on. Whole files are never sent. Clients on the restricted list are blocked in n8n regardless of this setting.',
+      approve: 'What is sent: each term, its counts and up to 2 example segments (with their translations if translations are on), plus the brief below. Whole files are never sent. Clients on the restricted list are blocked in n8n regardless of this setting.',
     },
     wildcards: {
       mode: 'Adds memoQ wildcards to the target terms of a finished glossary (.xlsx or .csv). Add the client\'s TMX or XLIFF files too if you have them: they show which other words a wildcard would also catch.',
       source: 'The language of the glossary\'s source terms. They are sent to the AI as context.',
       folder: 'Uses the one .xlsx or .csv glossary directly inside the folder, plus any TMX and XLIFF files. Google Sheets must be downloaded as .xlsx first.',
+      step2: 'Which language and column hold the target terms.',
+      step3: 'Needed for glossaries (except languages that don\'t inflect, such as Chinese): the AI lists each term\'s forms, the wildcards are worked out from them, and the AI checks the result.',
       aiLabel: 'Use AI for the wildcards (Google Gemini)',
-      ai: 'Needed for glossaries: the AI lists each term\'s forms, the wildcards are worked out from them, and the AI checks the result.',
       approve: 'What is sent: each target term and its source term. Nothing from the TMX/XLIFF files is sent. Clients on the restricted list are blocked in n8n regardless of this setting.',
     },
   };
@@ -566,13 +757,14 @@
     var text = MODE_TEXT[m];
     $('mode-hint').textContent = text.mode;
     $('source-lang-hint').textContent = text.source;
-    $('folder-hint').textContent = text.folder;
-    $('ai-hint').textContent = text.ai;
+    $('drive-folder-hint').textContent = text.folder;
+    $('step2-intro').textContent = text.step2;
+    $('step3-intro').textContent = text.step3;
     $('ai-label').textContent = text.aiLabel;
     $('ai-approve-hint').textContent = text.approve;
     $('wildcards-box').hidden = m !== 'wildcards';
-    $('extraction-settings').hidden = m === 'wildcards';
-    $('translations-box').hidden = m === 'wildcards';
+    ['normalisation-box', 'translations-box', 'extraction-box'].forEach(function (id) { $(id).hidden = m === 'wildcards'; });
+    syncAi();
     if (!config) return;
     var exts = extensions();
     $('files-hint').textContent = exts.map(function (e) { return '.' + e; }).join(', ') +
@@ -583,7 +775,7 @@
     if (dropped.length) {
       files = files.filter(function (x) { return dropped.indexOf(x) === -1; });
       renderFiles();
-      notice('err', 'Removed, not used for this job type: ' + dropped.map(function (x) { return x.file.name; }).join(', '));
+      notice('err', 'Removed, not used for this job type: ' + dropped.map(function (x) { return x.path; }).join(', '));
     }
     // Which files in the source folder count depends on the job type.
     lastChecked.input = '';
@@ -591,23 +783,154 @@
   }
   $('mode_extract').addEventListener('change', syncMode);
   $('mode_wildcards').addEventListener('change', syncMode);
-  syncMode();
 
   // ---------------------------------------------------------------- translations
   // AI translation of terms the files don't translate is opt-in, and only
   // possible with AI review ticked.
   function syncTranslations() {
-    var on = $('suggest_translations').checked;
+    var on = mode() === 'extract' && $('suggest_translations').checked;
     var aiOk = on && $('run_ai_review').checked;
     $('translation-panel').hidden = !on;
+    $('translate-missing-box').hidden = !on;
     $('ai_translate_missing').disabled = busy || !aiOk;
     if (!aiOk) $('ai_translate_missing').checked = false;
     $('ai-translate-label').classList.toggle('off', !aiOk);
-    $('ai-translate-hint').textContent = aiOk
-      ? 'These translations aren\'t based on the client\'s own translations, and are marked "AI translated (not from the files)" in the glossary.'
-      : 'Needs AI review, above. These translations aren\'t based on the client\'s own translations, and are marked "AI translated (not from the files)" in the glossary.';
+    $('ai-translate-hint').textContent = (aiOk ? '' : 'Needs AI review, above. ') +
+      'These translations aren\'t based on the client\'s own translations, and are marked "AI translated (not from the files)" in the glossary.';
   }
-  $('suggest_translations').addEventListener('change', syncTranslations);
+  $('suggest_translations').addEventListener('change', function () { syncTranslations(); renderSummary(); });
+  $('target_lang').addEventListener('change', renderSummary);
+  $('add_wildcards').addEventListener('change', renderSummary);
+  $('wc_target_lang').addEventListener('change', renderSummary);
+
+  // ---------------------------------------------------------------- AI review
+  function syncAi() {
+    var on = $('run_ai_review').checked;
+    $('ai-approve').hidden = !on;
+    // The brief steers the review of terms, so extraction jobs only.
+    $('ai-brief').hidden = !on || mode() === 'wildcards';
+    if (!on) $('ai_review_approved').checked = false;
+    syncTranslations();
+    renderSummary();
+  }
+  $('run_ai_review').addEventListener('change', syncAi);
+  $('ai_review_approved').addEventListener('change', renderSummary);
+  syncMode();
+
+  function updateCount() {
+    var box = $('ai_instructions');
+    var max = box.maxLength > 0 ? box.maxLength : 2000;
+    var left = max - box.value.length;
+    $('ai_instructions_count').textContent = left + ' characters left';
+    $('ai_instructions_count').className = 'count' + (left < 100 ? ' over' : '');
+  }
+  $('ai_instructions').addEventListener('input', updateCount);
+
+  // ---------------------------------------------------------------- steps
+  var NEXT_LABEL = { 1: 'Next: job settings', 2: 'Next: AI review' };
+
+  // What's missing on step 1, as { msg, focus } or null.
+  function step1Problem() {
+    if (!$('client').value.trim()) return { msg: 'Enter the client name.', focus: $('client') };
+    var inputMode = radio('input_mode');
+    if (inputMode === 'upload' && !files.length) return { msg: 'Add at least one file or folder.', focus: $('choose-files') };
+    if (inputMode === 'folder' && !$('input_folder').value.trim()) return { msg: 'Paste the link to the folder with the source files.', focus: $('input_folder') };
+    if (radio('output_mode') === 'folder' && !$('output_folder').value.trim()) return { msg: 'Paste the link to the folder for the results.', focus: $('output_folder') };
+    if (mode() === 'wildcards' && inputMode === 'upload') {
+      var glossaries = files.filter(function (x) { return config.limits.glossaryExtensions.indexOf((x.file.name.split('.').pop() || '').toLowerCase()) !== -1; });
+      if (glossaries.length !== 1) return { msg: glossaries.length ? 'Add only one glossary (.xlsx or .csv).' : 'Add the glossary (.xlsx or .csv).', focus: $('choose-files') };
+    }
+    return null;
+  }
+
+  // What's missing on step 2.
+  function targetLang() { return mode() === 'wildcards' ? $('wc_target_lang').value : $('target_lang').value; }
+  function step2Problem() {
+    var wildcardsOnly = mode() === 'wildcards';
+    if (!wildcardsOnly && !$('suggest_translations').checked) return null;
+    var box = wildcardsOnly ? $('wc_target_lang') : $('target_lang');
+    if (!box.value) return { msg: wildcardsOnly ? 'Choose the target language of the glossary.' : 'Choose the target language for the translations.', focus: box };
+    if (box.value === $('source_lang').value) return { msg: 'The target language must differ from the source language.', focus: box };
+    return null;
+  }
+
+  function showStep(n, focusHeading) {
+    step = n;
+    Array.prototype.forEach.call(document.querySelectorAll('.step-panel'), function (panel) {
+      panel.hidden = Number(panel.dataset.step) !== n;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.step'), function (b) {
+      var k = Number(b.dataset.step);
+      if (k === n) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
+      b.classList.toggle('done', k < n);
+    });
+    $('back-btn').hidden = n === 1;
+    $('next-btn').hidden = n === 3;
+    $('submit-btn').hidden = n !== 3;
+    if (n < 3) $('next-btn').textContent = NEXT_LABEL[n];
+    if (n === 3) renderSummary();
+    if (focusHeading) $('step' + n + '-h').focus();
+  }
+
+  // Moving forward past step 1 needs its fields; going back is always fine.
+  function goTo(n) {
+    if (busy) return;
+    if (n > 1) {
+      var problem = step1Problem();
+      if (problem) { showStep(1); notice('err', problem.msg); problem.focus.focus(); return; }
+    }
+    if (n > 2) {
+      var problem2 = step2Problem();
+      if (problem2) { showStep(2); notice('err', problem2.msg); problem2.focus.focus(); return; }
+    }
+    notice('', '');
+    showStep(n, true);
+  }
+  $('next-btn').addEventListener('click', function () { goTo(step + 1); });
+  $('back-btn').addEventListener('click', function () { goTo(step - 1); });
+  Array.prototype.forEach.call(document.querySelectorAll('.step'), function (b) {
+    b.addEventListener('click', function () { goTo(Number(b.dataset.step)); });
+  });
+
+  $('reset-settings').addEventListener('click', function () {
+    Object.keys(config.tuning).forEach(function (k) { $(k).value = config.tuning[k].def; });
+    $('dedupe_segments').checked = true;
+    $('normalise_case').checked = true;
+  });
+
+  function renderSummary() {
+    var box = $('summary');
+    if (!config) return;
+    box.innerHTML = '';
+    var lang = (config.languages.filter(function (l) { return l.code === $('source_lang').value; })[0] || {}).label || '';
+    var source = radio('input_mode') === 'folder'
+      ? 'Drive folder'
+      : files.length + ' uploaded file' + (files.length === 1 ? '' : 's');
+    var changed = Object.keys(config.tuning).filter(function (k) { return Number($(k).value) !== config.tuning[k].def; });
+    if (!$('dedupe_segments').checked) changed.push('dedupe');
+    var ai = !$('run_ai_review').checked ? 'Off'
+      : $('ai_review_approved').checked ? 'On' : 'Ticked, but the client approval box is not, so it will be skipped';
+    var targetLabel = function (list, code) { return (list.filter(function (l) { return l.code === code; })[0] || {}).label || '—'; };
+    var rows = [
+      ['Client', $('client').value.trim() || '—'],
+      ['Job', mode() === 'wildcards' ? 'Add memoQ wildcards to a glossary' : 'Extract terms'],
+      ['Language', lang],
+      ['Source', source],
+      ['Results', radio('output_mode') === 'folder' ? 'Drive folder you chose' : 'New folder for this job'],
+    ];
+    if (mode() === 'wildcards') {
+      rows.push(['Target', targetLabel(config.wildcardTargetLanguages, $('wc_target_lang').value) + ($('target_column').value.trim() ? ', column "' + $('target_column').value.trim() + '"' : '')]);
+    } else {
+      rows.push(['Lower case', $('normalise_case').checked ? 'On' : 'Off']);
+      rows.push(['Extraction', changed.length ? changed.length + ' setting' + (changed.length === 1 ? '' : 's') + ' changed from default' : 'Defaults']);
+      rows.push(['Translations', !$('suggest_translations').checked ? 'Off'
+        : targetLabel(config.targetLanguages, $('target_lang').value) + ($('add_wildcards').checked ? ', with memoQ wildcards' : '')]);
+    }
+    rows.push([mode() === 'wildcards' ? 'AI' : 'AI review', ai]);
+    var dl = el('dl');
+    rows.forEach(function (r) { dl.appendChild(el('dt', { text: r[0] })); dl.appendChild(el('dd', { text: r[1] })); });
+    box.appendChild(dl);
+  }
 
   // ---------------------------------------------------------------- Drive folders
   function radio(name) {
@@ -665,7 +988,7 @@
       if (!r.usable.length) {
         showCheck('input', 'err', function (b) {
           b.appendChild(link);
-          b.appendChild(document.createTextNode(' has no ' + config.limits.extensions.map(function (e) { return '.' + e; }).join(' ') +
+          b.appendChild(document.createTextNode(' has no ' + extensions().map(function (e) { return '.' + e; }).join(' ') +
             ' files directly inside it' + (r.skipped.length ? ' (' + r.skipped.length + ' other files).' : '.')));
         });
         return;
@@ -711,6 +1034,7 @@
     busy = b;
     $('submit-btn').disabled = b;
     Array.prototype.forEach.call($('job-form').elements, function (x) { if (x.id !== 'submit-btn') x.disabled = b; });
+    Array.prototype.forEach.call(document.querySelectorAll('.step'), function (x) { x.disabled = b; });
     syncTranslations();
     $('progress').hidden = !b;
     renderFiles();
@@ -723,33 +1047,26 @@
   $('job-form').addEventListener('submit', function (e) {
     e.preventDefault();
     if (busy || !config) return;
+    // Enter in a field on steps 1-2 moves on instead of submitting.
+    if (step < 3) { goTo(step + 1); return; }
     notice('', '');
 
     var client = $('client').value.trim();
     var inputMode = radio('input_mode');
     var outputMode = radio('output_mode');
-    if (!client) { notice('err', 'Enter the client name.'); $('client').focus(); return; }
-    if (inputMode === 'upload' && !files.length) { notice('err', 'Add at least one file.'); drop.focus(); return; }
-    if (inputMode === 'folder' && !$('input_folder').value.trim()) { notice('err', 'Paste the link to the folder with the source files.'); $('input_folder').focus(); return; }
-    if (outputMode === 'folder' && !$('output_folder').value.trim()) { notice('err', 'Paste the link to the folder for the results.'); $('output_folder').focus(); return; }
+    var problem = step1Problem();
+    if (problem) { showStep(1); notice('err', problem.msg); problem.focus.focus(); return; }
+    var problem2 = step2Problem();
+    if (problem2) { showStep(2); notice('err', problem2.msg); problem2.focus.focus(); return; }
     var wildcardsOnly = mode() === 'wildcards';
-    var targetLang = wildcardsOnly ? $('wc_target_lang').value : $('target_lang').value;
     if (wildcardsOnly) {
-      if (!targetLang) { notice('err', 'Choose the target language of the glossary.'); $('wc_target_lang').focus(); return; }
-      if (targetLang === $('source_lang').value) { notice('err', 'The target language must differ from the source language.'); $('wc_target_lang').focus(); return; }
-      if (inputMode === 'upload') {
-        var glossaries = files.filter(function (x) { return config.limits.glossaryExtensions.indexOf((x.file.name.split('.').pop() || '').toLowerCase()) !== -1; });
-        if (glossaries.length !== 1) { notice('err', glossaries.length ? 'Add only one glossary (.xlsx or .csv).' : 'Add the glossary (.xlsx or .csv).'); drop.focus(); return; }
-      }
-      var inflects = (config.wildcardTargetLanguages.filter(function (l) { return l.code === targetLang; })[0] || {}).inflects !== false;
+      var inflects = (config.wildcardTargetLanguages.filter(function (l) { return l.code === targetLang(); })[0] || {}).inflects !== false;
       if (inflects && (!$('run_ai_review').checked || !$('ai_review_approved').checked)) {
-        notice('err', 'Adding wildcards to a glossary needs AI review, with the client\'s approval: without it there are no forms to work from.');
+        notice('err', 'Adding wildcards to a glossary needs AI, with the client\'s approval: without it there are no forms to work from.');
         $('run_ai_review').focus();
         return;
       }
     }
-    if (!wildcardsOnly && $('suggest_translations').checked && !$('target_lang').value) { notice('err', 'Choose the target language for the translations.'); $('target_lang').focus(); return; }
-    if (!wildcardsOnly && $('suggest_translations').checked && $('target_lang').value === $('source_lang').value) { notice('err', 'The target language must differ from the source language.'); $('target_lang').focus(); return; }
     if ($('run_ai_review').checked && !$('ai_review_approved').checked) {
       if (!confirm('AI review is ticked but client approval is not, so the AI stage will be skipped. Submit anyway?')) return;
     }
@@ -765,9 +1082,13 @@
       dedupe_segments: $('dedupe_segments').checked,
       run_ai_review: $('run_ai_review').checked,
       ai_review_approved: $('ai_review_approved').checked,
+      normalise_case: $('normalise_case').checked,
+      ai_focus: $('ai_focus').value,
+      ai_domain: $('ai_domain').value.trim(),
+      ai_instructions: $('ai_instructions').value.trim(),
       mode: mode(),
       suggest_translations: !wildcardsOnly && $('suggest_translations').checked,
-      target_lang: targetLang,
+      target_lang: targetLang(),
       ai_translate_missing: $('ai_translate_missing').checked,
       add_wildcards: $('add_wildcards').checked,
       target_column: wildcardsOnly ? $('target_column').value.trim() : '',
@@ -796,7 +1117,7 @@
           renderFiles();
           $('submit-btn').textContent = 'Uploading ' + (i + 1) + ' of ' + files.length + '…';
           return readBase64(x.file)
-            .then(function (b64) { return call('uploadFile', jobId, x.file.name, b64); })
+            .then(function (b64) { return call('uploadFile', jobId, x.path, b64); })
             .then(function () { x.state = 'uploaded'; setProgress(i + 2, files.length + 2); renderFiles(); })
             .catch(function (err) { x.state = 'failed'; renderFiles(); throw err; });
         });
@@ -813,10 +1134,14 @@
       $('input_folder').value = '';
       lastChecked.input = '';
       showCheck('input', null);
+      // Settings stay for the next job; the AI brief is job-specific.
       $('run_ai_review').checked = false;
-      $('ai_review_approved').checked = false;
-      $('ai-approve').hidden = true;
-      syncTranslations();
+      $('ai_focus').selectedIndex = 0;
+      $('ai_domain').value = '';
+      $('ai_instructions').value = '';
+      updateCount();
+      syncAi();
+      showStep(1);
       scope = 'mine'; syncScope();
       loadJobs();
     }).catch(function (err) {
