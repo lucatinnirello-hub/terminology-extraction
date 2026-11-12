@@ -4,7 +4,8 @@
 
 // ===========================================================================
 // Turns Google Drive downloads into the shape stage 1 expects: TMX, XLIFF
-// (including memoQ .mqxliff and .mqxlz packages) or plain text.
+// (including memoQ .mqxliff and .mqxlz packages) or plain text. Glossaries
+// (.xlsx, .csv) for wildcards-only jobs become rows: { columns, rows }.
 //
 // Expects each incoming item to carry the downloaded file as binary property
 // 'data'. If your Drive node names it differently, change BINARY_PROPERTY.
@@ -17,6 +18,7 @@ const BINARY_PROPERTY = 'data';
 const EXT_TO_TYPE = {
   tmx: 'tmx', xml: 'xml', txt: 'text', md: 'text',
   xlf: 'xliff', xliff: 'xliff', mqxliff: 'xliff', mqxlz: 'package',
+  xlsx: 'xlsx', csv: 'csv',
 };
 const XLIFF_IN_PACKAGE = /\.(mqxliff|xliff|xlf)$/i;
 
@@ -226,6 +228,81 @@ function unzip(buf, wanted) {
   return found;
 }
 
+// --- Glossaries: .xlsx (a ZIP of XML files) and .csv ---------------------
+const xmlText = (s) => decodeEntities(String(s || '').replace(/<[^>]+>/g, ''));
+function decodeEntities(s) {
+  return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(+d))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&amp;/g, '&');
+}
+// Header row first; one object per row, keyed by header. Empty rows dropped.
+function toRecords(table) {
+  const start = table.findIndex((r) => r.some((c) => String(c).trim()));
+  if (start < 0) return { columns: [], rows: [] };
+  // Every column that holds data anywhere, named "Column N" if it has no header.
+  const width = Math.max(...table.slice(start).map((r) => r.length));
+  const columns = Array.from({ length: width }, (_, i) => String(table[start][i] || '').trim() || `Column ${i + 1}`);
+  const rows = table.slice(start + 1)
+    .filter((r) => r.some((c) => String(c).trim()))
+    .map((r) => Object.fromEntries(columns.map((c, i) => [c, r[i] === undefined ? '' : String(r[i])])));
+  return { columns, rows };
+}
+// The first worksheet of an .xlsx file.
+function readXlsx(buf) {
+  const files = Object.fromEntries(unzip(buf, (n) => /^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|sharedStrings\.xml|worksheets\/[^/]+\.xml)$/.test(n))
+    .map((e) => [e.name, e.data.toString('utf8')]));
+  const shared = (files['xl/sharedStrings.xml'] || '').match(/<si\b[\s\S]*?<\/si>/g) || [];
+  const strings = shared.map((si) => (si.match(/<t\b[^>]*>[\s\S]*?<\/t>/g) || []).map(xmlText).join(''));
+  const firstSheet = ((files['xl/workbook.xml'] || '').match(/<sheet\b[^>]*>/) || [''])[0];
+  const relId = (firstSheet.match(/r:id="([^"]+)"/) || [, ''])[1];
+  const rel = ((files['xl/_rels/workbook.xml.rels'] || '').match(new RegExp(`<Relationship\\b[^>]*Id="${relId}"[^>]*>`)) || [''])[0];
+  let target = (rel.match(/Target="([^"]+)"/) || [, ''])[1].replace(/^\/?(xl\/)?/, '');
+  if (!files['xl/' + target]) target = Object.keys(files).filter((n) => n.startsWith('xl/worksheets/')).sort()[0].slice(3);
+  const sheet = files['xl/' + target];
+  if (!sheet) throw new Error('No worksheet found.');
+  const table = [];
+  for (const row of sheet.match(/<row\b[\s\S]*?<\/row>/g) || []) {
+    const cells = [];
+    let next = 0;
+    for (const c of row.match(/<c\b[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g) || []) {
+      const open = c.match(/<c\b[^>]*/)[0];
+      const ref = (open.match(/\br="([A-Z]+)\d+"/) || [, ''])[1];
+      const col = ref ? [...ref].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1 : next;
+      next = col + 1;
+      const type = (open.match(/\bt="([^"]+)"/) || [, ''])[1];
+      const v = (c.match(/<v>([\s\S]*?)<\/v>/) || [, ''])[1];
+      cells[col] = type === 's' ? strings[+v] || ''
+        : type === 'inlineStr' ? (c.match(/<t\b[^>]*>[\s\S]*?<\/t>/g) || []).map(xmlText).join('')
+          : xmlText(v);
+    }
+    table.push(Array.from(cells, (x) => (x === undefined ? '' : x)));
+  }
+  return toRecords(table);
+}
+// CSV with a header row; comma, semicolon or tab, whichever the header uses most.
+function readCsv(text) {
+  const firstLine = text.split(/\r?\n/, 1)[0];
+  const delim = [',', ';', '\t'].sort((a, b) => firstLine.split(b).length - firstLine.split(a).length)[0];
+  const table = [];
+  let row = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i += 1; } else if (ch === '"') quoted = false; else cell += ch;
+    } else if (ch === '"' && !cell) quoted = true;
+    else if (ch === delim) { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i += 1;
+      row.push(cell); table.push(row); row = []; cell = '';
+    } else cell += ch;
+  }
+  if (cell || row.length) { row.push(cell); table.push(row); }
+  return toRecords(table);
+}
+
 const items = $input.all();
 const out = [];
 
@@ -251,6 +328,17 @@ for (let i = 0; i < items.length; i += 1) {
   }
 
   const buffer = await this.helpers.getBinaryDataBuffer(i, BINARY_PROPERTY);
+
+  if (sourceType === 'xlsx' || sourceType === 'csv') {
+    try {
+      const g = sourceType === 'xlsx' ? readXlsx(buffer) : readCsv(decodeText(buffer));
+      if (!g.rows.length) throw new Error('no rows under the header');
+      out.push({ json: { file_name: name, source_type: 'glossary', content: '', columns: g.columns, rows: g.rows } });
+    } catch (e) {
+      out.push({ json: { file_name: name, source_type: 'unsupported', content: '', skipped: `glossary_unreadable:${e.message}` } });
+    }
+    continue;
+  }
 
   if (sourceType === 'package') {
     let entries;

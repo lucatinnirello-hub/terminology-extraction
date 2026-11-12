@@ -44,6 +44,9 @@ const MAX_FILES_PER_JOB = 20;
 const MAX_FOLDER_SCAN = 500;         // files listed per source folder
 // TMX, XLIFF (incl. memoQ .mqxliff and compressed .mqxlz exports) and plain text.
 const ALLOWED_EXTENSIONS = ['tmx', 'xml', 'xlf', 'xliff', 'mqxliff', 'mqxlz', 'txt', 'md'];
+// Wildcards-only jobs: one glossary, plus TMX/XLIFF files if there are any.
+const GLOSSARY_EXTENSIONS = ['xlsx', 'csv'];
+const WILDCARD_EXTENSIONS = GLOSSARY_EXTENSIONS.concat(['tmx', 'xml', 'xlf', 'xliff', 'mqxliff', 'mqxlz']);
 const STALE_MINUTES = 45;            // 'running' for longer than this probably stopped
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
@@ -78,6 +81,29 @@ const LANGUAGES = [
   { code: 'id', tmx: 'id', label: 'Indonesian' },
 ];
 
+// Target languages for translation suggestions. `code` must be a stopword
+// list in n8n's "Stopword lists" node (or borrow one there: Serbian uses
+// Croatian); `tmx` is what the language is called inside TMX/XLIFF files.
+// Unlike source languages, non-Latin scripts work here: the translation
+// matching reads any alphabet with spaces between words.
+const TARGET_LANGUAGES = LANGUAGES.concat([
+  { code: 'sr', tmx: 'sr,sh', label: 'Serbian (Latin)' },
+  { code: 'bg', tmx: 'bg', label: 'Bulgarian' },
+  { code: 'el', tmx: 'el', label: 'Greek' },
+  { code: 'ru', tmx: 'ru', label: 'Russian' },
+  { code: 'uk', tmx: 'uk', label: 'Ukrainian' },
+]).sort(function (a, b) { return a.label.localeCompare(b.label); });
+
+// Written without spaces between words: offered for wildcards-only jobs, not
+// for translation suggestions (the matching finds words by their spaces).
+// `inflects: false`: their terms never need wildcards, so no AI is needed;
+// keep in step with NO_INFLECTION in n8n's "Wildcard plan".
+const WILDCARD_TARGET_LANGUAGES = TARGET_LANGUAGES.concat([
+  { code: 'zh', tmx: 'zh', label: 'Chinese', inflects: false },
+  { code: 'ja', tmx: 'ja', label: 'Japanese', inflects: false },
+  { code: 'th', tmx: 'th', label: 'Thai', inflects: false },
+]).sort(function (a, b) { return a.label.localeCompare(b.label); });
+
 // Tuning settings: defaults match n8n; min/max are enforced here and in n8n.
 // `help` is shown in the question-mark tooltip next to each setting.
 const TUNING = {
@@ -111,6 +137,21 @@ const TUNING = {
   },
 };
 const DEDUPE_SEGMENTS_HELP = 'Counts each distinct segment once, so text repeated many times, like a recurring disclaimer, does not inflate its terms.';
+const NORMALISE_CASE_HELP = 'Glossary best practice: entries in lower case ("pressure valve", not "Pressure Valve"). Brands, proper nouns and acronyms keep their capitals ("Siemens", "PowerPoint", "ISO"). Decided from how the files write each word mid-sentence, so capitals that come only from headings or the start of a sentence are dropped. Languages that always capitalise nouns, such as German, keep them.';
+
+// AI review brief. Keys must match AI_FOCUS in the n8n "Read request" node
+// and FOCUS in "Build AI request".
+const AI_FOCUS = [
+  { key: 'general', label: 'General terminology' },
+  { key: 'ui', label: 'User interface and software strings' },
+  { key: 'technical', label: 'Technical documentation' },
+  { key: 'marketing', label: 'Marketing and brand content' },
+  { key: 'legal', label: 'Legal and compliance' },
+  { key: 'life_sciences', label: 'Life sciences and medical' },
+  { key: 'finance', label: 'Finance' },
+];
+const AI_DOMAIN_MAX = 120;
+const AI_INSTRUCTIONS_MAX = 2000;
 
 // ---------------------------------------------------------------------------
 // Web app entry point
@@ -133,9 +174,14 @@ function getAppConfig() {
     title: APP_TITLE,
     user: currentUser_(),
     languages: LANGUAGES.map(function (l) { return { code: l.code, label: l.label }; }),
+    targetLanguages: TARGET_LANGUAGES.map(function (l) { return { code: l.code, label: l.label }; }),
+    wildcardTargetLanguages: WILDCARD_TARGET_LANGUAGES.map(function (l) { return { code: l.code, label: l.label, inflects: l.inflects !== false }; }),
     tuning: TUNING,
     dedupeSegmentsHelp: DEDUPE_SEGMENTS_HELP,
-    limits: { maxFileMb: MAX_FILE_MB, maxFiles: MAX_FILES_PER_JOB, extensions: ALLOWED_EXTENSIONS },
+    normaliseCaseHelp: NORMALISE_CASE_HELP,
+    aiFocus: AI_FOCUS,
+    aiLimits: { domain: AI_DOMAIN_MAX, instructions: AI_INSTRUCTIONS_MAX },
+    limits: { maxFileMb: MAX_FILE_MB, maxFiles: MAX_FILES_PER_JOB, extensions: ALLOWED_EXTENSIONS, wildcardExtensions: WILDCARD_EXTENSIONS, glossaryExtensions: GLOSSARY_EXTENSIONS },
     workFolderUrl: folderUrl_(cfg.workFolderId),
     logSheetUrl: 'https://docs.google.com/spreadsheets/d/' + cfg.logSheetId,
   };
@@ -146,9 +192,9 @@ function getAppConfig() {
  * asking n8n whether its Google account can use it. `purpose` is 'input'
  * or 'output'.
  */
-function checkFolder(link, purpose) {
+function checkFolder(link, purpose, mode) {
   purpose = purpose === 'output' ? 'output' : 'input';
-  const info = inspectFolderAsUser_(link, purpose);
+  const info = inspectFolderAsUser_(link, purpose, mode);
   let n8n;
   try {
     const reply = callN8n_({ action: 'check', folders: [{ purpose: purpose, id: info.id }] });
@@ -172,17 +218,22 @@ function prepareUpload(form) {
 
   const jobId = newJobId_();
   const folders = createJobFolders_(jobId, String(form.client).trim(), true, form.output_mode !== 'folder');
+  folders.mode = modeOf_(form);
   CacheService.getUserCache().put('job:' + jobId, JSON.stringify(folders), 21600);
   return { jobId: jobId };
 }
 
-/** Upload path, step 2: one call per file. `base64` excludes the data-URL prefix. */
+/**
+ * Upload path, step 2: one call per file. `base64` excludes the data-URL prefix.
+ * Files from a chosen folder arrive as "sub/name.tmx"; slashes become "_".
+ */
 function uploadFile(jobId, fileName, base64) {
   const folders = pendingJob_(jobId);
   const name = String(fileName || '').replace(/[\\/]/g, '_').slice(0, 200);
   const ext = (name.split('.').pop() || '').toLowerCase();
-  if (ALLOWED_EXTENSIONS.indexOf(ext) === -1) {
-    throw new Error('"' + name + '": only ' + ALLOWED_EXTENSIONS.join(', ') + ' files are accepted.');
+  const allowed = extensionsFor_(folders.mode);
+  if (allowed.indexOf(ext) === -1) {
+    throw new Error('"' + name + '": only ' + allowed.join(', ') + ' files are accepted.');
   }
   const bytes = Utilities.base64Decode(String(base64 || ''));
   if (!bytes.length) throw new Error('"' + name + '" is empty.');
@@ -202,6 +253,7 @@ function submitJob(form, jobId) {
   const user = currentUser_();
   const client = String(form.client).trim();
   const lang = languageOf_(form.source_lang);
+  const mode = modeOf_(form);
   const inputMode = form.input_mode === 'folder' ? 'folder' : 'upload';
   const outputMode = form.output_mode === 'folder' ? 'folder' : 'job';
 
@@ -212,15 +264,23 @@ function submitJob(form, jobId) {
     fileNames = listFileNames_(folders.input);
     if (!fileNames.length) throw new Error('No files arrived for this job. Try submitting again.');
   } else {
-    const src = inspectFolderAsUser_(form.input_folder, 'input');
-    if (!src.usable.length) throw new Error('"' + src.name + '" has no ' + extList_() + ' files directly inside it.');
+    const src = inspectFolderAsUser_(form.input_folder, 'input', mode);
+    if (!src.usable.length) throw new Error('"' + src.name + '" has no ' + extList_(mode) + ' files directly inside it.');
     jobId = newJobId_();
     folders = { input: src.id };
     fileNames = src.usable.map(function (f) { return f.name; });
   }
 
+  if (mode === 'wildcards') {
+    const glossaries = fileNames.filter(function (n) { return GLOSSARY_EXTENSIONS.indexOf(n.split('.').pop().toLowerCase()) !== -1; });
+    if (glossaries.length !== 1) {
+      throw new Error(glossaries.length ? 'Use exactly one glossary (.xlsx or .csv); found ' + glossaries.length + ': ' + glossaries.join(', ') + '.'
+        : 'Add the glossary (.xlsx or .csv).');
+    }
+  }
+
   if (outputMode === 'folder') {
-    folders.output = inspectFolderAsUser_(form.output_folder, 'output').id;
+    folders.output = inspectFolderAsUser_(form.output_folder, 'output', mode).id;
   } else if (!folders.output) {
     const made = createJobFolders_(jobId, client, false, true);
     folders.output = made.output;
@@ -231,13 +291,36 @@ function submitJob(form, jobId) {
     dedupe_segments: form.dedupe_segments !== false,
     run_ai_review: form.run_ai_review === true,
     ai_review_approved: form.run_ai_review === true && form.ai_review_approved === true,
+    suggest_translations: mode === 'extract' && form.suggest_translations === true,
+    normalise_case: form.normalise_case !== false,
+    ai_focus: '',
+    ai_domain: '',
+    ai_instructions: '',
   };
+  // The brief only matters (and is only kept) when AI review is requested.
+  if (settings.run_ai_review) {
+    const focus = AI_FOCUS.filter(function (f) { return f.key === form.ai_focus; })[0];
+    settings.ai_focus = focus ? focus.key : 'general';
+    settings.ai_domain = String(form.ai_domain || '').replace(/\s+/g, ' ').trim().slice(0, AI_DOMAIN_MAX);
+    settings.ai_instructions = String(form.ai_instructions || '').trim().slice(0, AI_INSTRUCTIONS_MAX);
+  }
+  if (settings.suggest_translations || mode === 'wildcards') {
+    const target = targetLanguageOf_(form.target_lang, lang.code, mode);
+    settings.target_lang = target.code;
+    settings.target_tmx = target.tmx;
+    settings.target_label = target.label;
+    // AI translation of terms the files don't translate: only on request, and only with AI review.
+    settings.ai_translate_missing = settings.suggest_translations && settings.run_ai_review && form.ai_translate_missing === true;
+    settings.add_wildcards = settings.suggest_translations && form.add_wildcards === true;
+  }
+  if (mode === 'wildcards') settings.target_column = String(form.target_column || '').trim().slice(0, 80);
   Object.keys(TUNING).forEach(function (key) { settings[key] = clampNumber_(form[key], TUNING[key]); });
 
   const reply = callN8n_({
     action: 'start',
     job: {
       job_id: jobId,
+      mode: mode,
       client: client,
       source_lang: lang.code,
       tmx_lang: lang.tmx,
@@ -293,6 +376,8 @@ function listJobs(scope) {
         folder_url: r.job_folder_id ? folderUrl_(r.job_folder_id) : '',
         message: r.message,
         ai: aiSummary_(s),
+        target_label: s.suggest_translations || s.mode === 'wildcards' ? s.target_label || s.target_lang : '',
+        mode: s.mode || 'extract',
       };
     }),
   };
@@ -445,7 +530,7 @@ function parseFolderId_(input) {
  * Checks a folder with the person's own Drive access and, for a source
  * folder, lists the usable files. Throws an Error meant for the person.
  */
-function inspectFolderAsUser_(link, purpose) {
+function inspectFolderAsUser_(link, purpose, mode) {
   const id = parseFolderId_(link);
   if (!id) throw new Error('Paste a Google Drive folder link. It contains /folders/ followed by the folder ID.');
   let meta;
@@ -475,7 +560,7 @@ function inspectFolderAsUser_(link, purpose) {
       seen += 1;
       const name = f.getName();
       const ext = (name.split('.').pop() || '').toLowerCase();
-      if (ALLOWED_EXTENSIONS.indexOf(ext) !== -1 && f.getMimeType().indexOf('application/vnd.google-apps') !== 0) {
+      if (extensionsFor_(mode).indexOf(ext) !== -1 && f.getMimeType().indexOf('application/vnd.google-apps') !== 0) {
         info.usable.push({ name: name, bytes: f.getSize() });
         info.totalBytes += f.getSize();
       } else {
@@ -541,7 +626,19 @@ function validateForm_(form) {
   const client = String((form && form.client) || '').trim();
   if (!client) throw new Error('Client is required.');
   if (client.length > 80) throw new Error('Client name is too long.');
-  languageOf_(form.source_lang);
+  const lang = languageOf_(form.source_lang);
+  if (form.suggest_translations === true || modeOf_(form) === 'wildcards') targetLanguageOf_(form.target_lang, lang.code, modeOf_(form));
+}
+
+function modeOf_(form) { return form && form.mode === 'wildcards' ? 'wildcards' : 'extract'; }
+function extensionsFor_(mode) { return mode === 'wildcards' ? WILDCARD_EXTENSIONS : ALLOWED_EXTENSIONS; }
+
+function targetLanguageOf_(code, sourceCode, mode) {
+  const list = mode === 'wildcards' ? WILDCARD_TARGET_LANGUAGES : TARGET_LANGUAGES;
+  const lang = list.filter(function (l) { return l.code === code; })[0];
+  if (!lang) throw new Error('Choose a target language for the translations.');
+  if (lang.code === sourceCode) throw new Error('The target language must differ from the source language.');
+  return lang;
 }
 
 function languageOf_(code) {
@@ -584,7 +681,7 @@ function clampNumber_(value, spec) {
 }
 
 function folderUrl_(id) { return id ? 'https://drive.google.com/drive/folders/' + id : ''; }
-function extList_() { return ALLOWED_EXTENSIONS.map(function (e) { return '.' + e; }).join(' '); }
+function extList_(mode) { return extensionsFor_(mode).map(function (e) { return '.' + e; }).join(' '); }
 function safeName_(s) { return String(s).replace(/[^\w .\-]/g, '_').slice(0, 60); }
 
 function existingFolder_(id) {

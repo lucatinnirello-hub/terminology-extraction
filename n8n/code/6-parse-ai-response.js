@@ -10,7 +10,22 @@
 const response = $input.first().json;
 const sent = $('Build AI request').first().json.terms || [];
 
-const fail = (why) => sent.map((t) => ({ json: { ...t, ai_keep: null, ai_reason: '', ai_error: why } }));
+const fail = (why) => sent.map((t) => ({ json: { ...t, ai_keep: null, ai_reason: '', ai_translation_check: null, ai_error: why } }));
+
+// Translations are accepted only where the job allowed them: for terms with a
+// suggestion from the files, and for the rest only if "let AI translate" was
+// chosen. The check is set from that, not taken on trust from the model.
+const settings = $('Settings').first().json;
+function translationOf(t, v) {
+  if (!settings.suggest_translations || !v || typeof v.translation !== 'string' || !v.translation.trim()) return {};
+  const translation = v.translation.trim();
+  if (t.code_suggestion) {
+    const check = v.translation_check === 'confirmed' ? 'confirmed' : 'corrected';
+    return { ai_translation: translation, ai_translation_check: check, ai_translation_note: check === 'corrected' ? String(v.translation_note || '') : '' };
+  }
+  if (settings.ai_translate_missing) return { ai_translation: translation, ai_translation_check: 'translated', ai_translation_note: '' };
+  return {};
+}
 
 // Gemini: { content: { parts: [{ text }] }, finishReason } per candidate,
 // or { candidates: [...] } with Simplify Output off.
@@ -40,15 +55,22 @@ try {
 }
 
 const byTerm = new Map((parsed.results || []).map((r) => [String(r.term).toLowerCase(), r]));
+const normaliseCase = $('Settings').first().json.normalise_case !== false;
 
 return sent.map((t) => {
   const v = byTerm.get(String(t.term).toLowerCase());
+  // The model may only change letter case: anything else is ignored.
+  const cased = v && normaliseCase && typeof v.term_cased === 'string' ? v.term_cased.trim() : '';
+  const recase = cased && cased !== t.term && cased.toLowerCase() === String(t.term).toLowerCase();
   return {
     json: {
       ...t,
+      term: recase ? cased : t.term,
+      case_note: recase ? `AI: ${cased === cased.toLowerCase() ? 'lower case' : 'kept capitals'} (rule gave "${t.term}")` : t.case_note || '',
       ai_keep: v ? v.keep !== false : null,
       ai_reason: v ? v.reason || '' : 'no verdict returned',
       definition: v && v.definition ? v.definition : t.definition || '',
+      ...translationOf(t, v),
     },
   };
 });

@@ -132,20 +132,20 @@
     </div>
   </header>
 
-  <nav class="strip" aria-label="Stages"><a href="#request" class="seg s-main"><b>Request</b><span>13</span></a><a href="#prepare" class="seg s-main"><b>Prepare</b><span>2</span></a><a href="#fetch" class="seg s-main"><b>Fetch input</b><span>5</span></a><a href="#extract" class="seg s-main"><b>Extract</b><span>6</span></a><a href="#ai" class="seg s-main"><b>AI review</b><span>6</span></a><a href="#deliver" class="seg s-main"><b>Deliver</b><span>6</span></a><a href="#errors" class="seg s-error"><b>Error workflow</b><span>4</span></a></nav>
+  <nav class="strip" aria-label="Stages"><a href="#request" class="seg s-main"><b>Request</b><span>13</span></a><a href="#prepare" class="seg s-main"><b>Prepare</b><span>2</span></a><a href="#fetch" class="seg s-main"><b>Fetch input</b><span>5</span></a><a href="#extract" class="seg s-main"><b>Extract</b><span>7</span></a><a href="#ai" class="seg s-main"><b>AI review</b><span>6</span></a><a href="#wildcards" class="seg s-main"><b>memoQ wildcards</b><span>20</span></a><a href="#deliver" class="seg s-main"><b>Deliver</b><span>6</span></a><a href="#errors" class="seg s-error"><b>Error workflow</b><span>4</span></a></nav>
 
   <section class="setup-box" aria-labelledby="setup-h">
     <h2 id="setup-h">What to set on which nodes</h2>
     <p>Everything else works as imported. The Google credentials must sign in as the same account on every node.</p>
     <div class="table-wrap"><table>
       <thead><tr><th>Setting</th><th>Nodes</th><th>Where</th></tr></thead>
-      <tbody><tr><td>Header Auth: X-Terminology-Key</td><td>1</td><td>Webhook</td></tr><tr><td>Google Drive credential</td><td>5</td><td>Get folder (as n8n), n8n account, List job files, Download job files, Upload to job folder</td></tr><tr><td>Google Sheets credential</td><td>4</td><td>Log job started, Mark job done, Read jobs sheet, Mark job failed</td></tr><tr><td>Log sheet ID</td><td>4</td><td>Log job started, Mark job done, Read jobs sheet, Mark job failed</td></tr><tr><td>Google Gemini credential (billing-enabled key)</td><td>1</td><td>AI review</td></tr><tr><td>Publish this workflow</td><td>1</td><td>Error Trigger</td></tr></tbody>
+      <tbody><tr><td>Header Auth: X-Terminology-Key</td><td>1</td><td>Webhook</td></tr><tr><td>Google Drive credential</td><td>5</td><td>Get folder (as n8n), n8n account, List job files, Download job files, Upload to job folder</td></tr><tr><td>Google Sheets credential</td><td>4</td><td>Log job started, Mark job done, Read jobs sheet, Mark job failed</td></tr><tr><td>Log sheet ID</td><td>4</td><td>Log job started, Mark job done, Read jobs sheet, Mark job failed</td></tr><tr><td>Google Gemini credential (billing-enabled key)</td><td>3</td><td>AI review, AI forms, AI wildcard check</td></tr><tr><td>Publish this workflow</td><td>1</td><td>Error Trigger</td></tr></tbody>
     </table></div>
   </section>
 
   <div class="controls">
     <div class="filters" role="group" aria-label="Show">
-      <button type="button" id="f-all" data-filter="all" aria-pressed="true">All 42</button>
+      <button type="button" id="f-all" data-filter="all" aria-pressed="true">All 63</button>
       <button type="button" id="f-setup" data-filter="setup" aria-pressed="false">Needs setup</button>
       <button type="button" id="f-google" data-filter="google" aria-pressed="false">Uses Google</button>
       <button type="button" id="f-stops" data-filter="stops" aria-pressed="false">Can stop a job</button>
@@ -167,7 +167,7 @@
 </tr><tr data-setup="0" data-google="0" data-stops="1" data-name="read request">
   <td class="num">2</td>
   <td class="node"><span class="nm">Read request</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Works out what the page wants: <b>check</b> folders, or <b>start</b> a job. For a job, checks the job ID, client, language, folder IDs and email, and clamps every setting to its limits. Nothing out of range gets past this point.<div class="stops"><span class="stop-label">Can stop the job</span> Anything missing or malformed: replies 400 with the reason</div></td>
+  <td class="what">Works out what the page wants: <b>check</b> folders, or <b>start</b> a job. For a job, checks the job ID, client, language, folder IDs and email, and clamps every setting to its limits, including the AI brief (focus from a fixed list, subject area up to 120 characters, instructions up to 2,000). Nothing out of range gets past this point.<div class="stops"><span class="stop-label">Can stop the job</span> Anything missing or malformed: replies 400 with the reason</div></td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="request valid?">
   <td class="num">3</td>
@@ -240,7 +240,7 @@
 </tr><tr data-setup="0" data-google="0" data-stops="1" data-name="stopword lists">
   <td class="num">15</td>
   <td class="node"><span class="nm">Stopword lists</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Picks the word list for the source language (34 languages, from YAKE), plus extra boundary words and the "connector" words that may sit inside a term, such as <i>di</i> in <i>valvola di sicurezza</i>.<div class="stops"><span class="stop-label">Can stop the job</span> Language not in the list</div></td>
+  <td class="what">Picks the word list for the source language (34 languages, from YAKE), plus extra boundary words and the "connector" words that may sit inside a term, such as <i>di</i> in <i>valvola di sicurezza</i>. With translations on, also the target language&#x27;s list (Serbian borrows Croatian&#x27;s).<div class="stops"><span class="stop-label">Can stop the job</span> Language not in the list</div></td>
   <td class="setup"><span class="none">None</span></td>
 </tr></tbody>
   </table></div>
@@ -280,13 +280,13 @@
   <p class="empty-phase" hidden>No nodes in this stage match.</p>
 </section>
 <section class="phase" id="extract" aria-labelledby="h-extract">
-  <div class="phase-head"><h2 id="h-extract">Extract</h2><p>Finding and scoring candidate terms</p><span class="count">6 nodes</span></div>
+  <div class="phase-head"><h2 id="h-extract">Extract</h2><p>Finding and scoring candidate terms</p><span class="count">7 nodes</span></div>
   <div class="table-wrap"><table>
     <thead><tr><th class="num">#</th><th>Node and type</th><th>What it does</th><th>Setup you do</th></tr></thead>
     <tbody><tr data-setup="0" data-google="0" data-stops="0" data-name="stage 1 statistical extraction">
   <td class="num">21</td>
   <td class="node"><span class="nm">Stage 1 statistical extraction</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Takes the source-language side of each TMX unit, the source text of each XLIFF unit (skipping TM matches and units marked do-not-translate), or sentences from text. Skips XLIFF files in a different source language. Removes duplicate segments, and scores every 1–4 word phrase with YAKE's features. Then merges near-duplicates, drops sub-phrases that rarely appear on their own, and keeps the top N terms with example segments.</td>
+  <td class="what">Takes the source-language side of each TMX unit, the source text of each XLIFF unit (skipping TM matches and units marked do-not-translate), or sentences from text. Skips XLIFF files in a different source language. Removes duplicate segments, and scores every 1–4 word phrase with YAKE's features. Then merges near-duplicates, drops sub-phrases that rarely appear on their own, and keeps the top N terms with example segments. With <i>lower case</i> on (the default), writes each term in lower case unless the files capitalise it mid-sentence (proper nouns, brands) or write it as an acronym. Capitals seen only in headings or at the start of a sentence don&#x27;t count. The original form and the reason go in <code>source_form</code> and <code>case_note</code>.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="1" data-name="stage 1 rows">
   <td class="num">22</td>
@@ -303,13 +303,18 @@
   <td class="node"><span class="nm">Stage 2 NLP stub</span><span class="type t-n8n">Code</span></td>
   <td class="what">Placeholder for future lemmatising (valve / valves) and dropping verb phrases. Passes terms through unchanged for now.</td>
   <td class="setup"><span class="none">None</span></td>
-</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="check restricted list">
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="match translations">
   <td class="num">25</td>
+  <td class="node"><span class="nm">Match translations</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Only with translations on. Reads the target side of the TMX and XLIFF files and suggests a translation for each term: the target phrase found in the translations of the term&#x27;s segments and rarely elsewhere, built from the translations of its words. Rates how consistently the files use it (high, medium, low) and lists other translations used. No AI.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="check restricted list">
+  <td class="num">26</td>
   <td class="node"><span class="nm">Check restricted list</span><span class="type t-n8n">Code</span></td>
   <td class="what">The compliance gate. AI review is allowed only if it was requested, client approval was ticked, and the client is not on the restricted list written into this node.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="ai review approved?">
-  <td class="num">26</td>
+  <td class="num">27</td>
   <td class="node"><span class="nm">AI review approved?</span><span class="type t-dec">If</span></td>
   <td class="what">Allowed: terms go to the AI review. Not allowed: straight to <i>Terms to items (no AI)</i>.</td>
   <td class="setup"><span class="none">None</span></td>
@@ -322,34 +327,142 @@
   <div class="table-wrap"><table>
     <thead><tr><th class="num">#</th><th>Node and type</th><th>What it does</th><th>Setup you do</th></tr></thead>
     <tbody><tr data-setup="0" data-google="0" data-stops="0" data-name="terms to items">
-  <td class="num">27</td>
+  <td class="num">28</td>
   <td class="node"><span class="nm">Terms to items</span><span class="type t-n8n">Code</span></td>
   <td class="what">One item per term, ready for batching.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="batch terms">
-  <td class="num">28</td>
+  <td class="num">29</td>
   <td class="node"><span class="nm">Batch terms</span><span class="type t-dec">Loop Over Items</span></td>
   <td class="what">Sends terms on in batches of 25 and loops until all are done, then passes everything to <i>Final rows</i>.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="build ai request">
-  <td class="num">29</td>
+  <td class="num">30</td>
   <td class="node"><span class="nm">Build AI request</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Builds one prompt per batch: each term, its counts and 2 example segments. Never whole files. Asks for keep or drop, a reason and a one-line definition, as JSON.</td>
+  <td class="what">Builds one prompt per batch: each term, its counts and 2 example segments. Never whole files. Adds the brief from the page: the type of terminology, the subject area and any extra instructions. Asks for keep or drop, a reason and a one-line definition, as JSON, plus the term&#x27;s correct case when <i>lower case</i> is on. With translations on, adds the files&#x27; suggestion and 1–2 source/target example pairs, and asks the AI to confirm or correct it; terms with no suggestion are translated only if the page asked for that.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="1" data-google="0" data-stops="1" data-name="ai review">
-  <td class="num">30</td>
+  <td class="num">31</td>
   <td class="node"><span class="nm">AI review</span><span class="type t-ai">Google Gemini · Message a Model</span></td>
   <td class="what">Sends each batch's prompt to Gemini through n8n's Google Gemini node, with <i>Output Content as JSON</i> on, and passes the reply on. Keep <i>Maximum Number of Tokens</i> at about 16000: the node's default of 16 cuts every reply off.<div class="stops"><span class="stop-label">Can stop the job</span> API error or outage</div></td>
   <td class="setup"><span class="need">Google Gemini credential (billing-enabled key)</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="parse ai response">
-  <td class="num">31</td>
+  <td class="num">32</td>
   <td class="node"><span class="nm">Parse AI response</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Adds the verdicts and definitions to the terms. If a reply was cut off, blocked or can't be read, that batch is marked <code>ai_error</code> with the reason and the job carries on.</td>
+  <td class="what">Adds the verdicts and definitions to the terms. Takes the model&#x27;s case for a term only when the letters are otherwise identical, and notes the change in <code>case_note</code>. If a reply was cut off, blocked or can't be read, that batch is marked <code>ai_error</code> with the reason and the job carries on.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="terms to items (no ai)">
-  <td class="num">32</td>
+  <td class="num">33</td>
   <td class="node"><span class="nm">Terms to items (no AI)</span><span class="type t-n8n">Code</span></td>
   <td class="what">The route when AI review is off or not allowed: the same terms, with the AI columns left empty.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr></tbody>
+  </table></div>
+  <p class="empty-phase" hidden>No nodes in this stage match.</p>
+</section>
+<section class="phase" id="wildcards" aria-labelledby="h-wildcards">
+  <div class="phase-head"><h2 id="h-wildcards">memoQ wildcards</h2><p>Optional in extraction jobs; the whole of a wildcards-only job</p><span class="count">20 nodes</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th class="num">#</th><th>Node and type</th><th>What it does</th><th>Setup you do</th></tr></thead>
+    <tbody><tr data-setup="0" data-google="0" data-stops="0" data-name="wildcards only?">
+  <td class="num">34</td>
+  <td class="node"><span class="nm">Wildcards only?</span><span class="type t-dec">If</span></td>
+  <td class="what">Wildcards-only jobs go to <i>Glossary terms</i>; extraction jobs to stage 1.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="1" data-name="glossary terms">
+  <td class="num">35</td>
+  <td class="node"><span class="nm">Glossary terms</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Wildcards-only jobs. Reads the glossary, finds the target-term column (named on the page, or from the language name), and lists each target term with its source term. Several terms in one cell, separated by ";", are handled one by one; wildcards already there are worked out again. TMX/XLIFF files in the job only supply their target-language words, to spot false hits.<div class="stops"><span class="stop-label">Can stop the job</span> No glossary, no target column found, an empty column, or more than 5,000 rows</div></td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="wildcards only? (after gate)">
+  <td class="num">36</td>
+  <td class="node"><span class="nm">Wildcards only? (after gate)</span><span class="type t-dec">If</span></td>
+  <td class="what">After <i>Check restricted list</i>: wildcards-only jobs skip the AI review of terms and go straight to <i>Wildcard plan</i>.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="wildcard plan">
+  <td class="num">37</td>
+  <td class="node"><span class="nm">Wildcard plan</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Decides the route: <b>ai</b> (the AI lists forms and checks), <b>code</b> (AI not allowed: forms from the files only, marked not validated), <b>no_inflection</b> (Chinese, Thai and other languages that don&#x27;t inflect: terms returned unchanged, no AI) or <b>none</b> (wildcards not asked for). Only target terms: the checked translation, or the files&#x27; suggestion if the AI didn&#x27;t run.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="ai for wildcards?">
+  <td class="num">38</td>
+  <td class="node"><span class="nm">AI for wildcards?</span><span class="type t-dec">If</span></td>
+  <td class="what">Route <b>ai</b>: terms go through the forms loop. Otherwise straight to <i>Propose wildcards</i>.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="wildcard items">
+  <td class="num">39</td>
+  <td class="node"><span class="nm">Wildcard items</span><span class="type t-n8n">Code</span></td>
+  <td class="what">One item per target term, ready for batching.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="batch wildcard forms">
+  <td class="num">40</td>
+  <td class="node"><span class="nm">Batch wildcard forms</span><span class="type t-dec">Loop Over Items</span></td>
+  <td class="what">Sends terms on in batches of 25 and loops until all are done.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="build forms request">
+  <td class="num">41</td>
+  <td class="node"><span class="nm">Build forms request</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Asks the AI for each target term&#x27;s forms (cases, number, agreement). Sends the target term and its source term only.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="1" data-google="0" data-stops="1" data-name="ai forms">
+  <td class="num">42</td>
+  <td class="node"><span class="nm">AI forms</span><span class="type t-ai">Google Gemini · Message a Model</span></td>
+  <td class="what">Same settings as <i>AI review</i>.<div class="stops"><span class="stop-label">Can stop the job</span> API error or outage</div></td>
+  <td class="setup"><span class="need">Google Gemini credential (billing-enabled key)</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="parse forms">
+  <td class="num">43</td>
+  <td class="node"><span class="nm">Parse forms</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Adds the AI&#x27;s forms to each term. A reply that can&#x27;t be read is noted and the job carries on with the files&#x27; forms.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="propose wildcards">
+  <td class="num">44</td>
+  <td class="node"><span class="nm">Propose wildcards</span><span class="type t-n8n">Code</span></td>
+  <td class="what">The rules of <i>Wildcards Logic</i> and <i>Word Matching Logic</i>: a pipe where endings change, an asterisk for additions over 50%, none at or under 50%, and any varying word but the last always marked. Also lists words in the client&#x27;s files that a proposal would also catch.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="ai check wildcards?">
+  <td class="num">45</td>
+  <td class="node"><span class="nm">AI check wildcards?</span><span class="type t-dec">If</span></td>
+  <td class="what">Route <b>ai</b>: proposals go to the AI for checking. Otherwise straight to <i>Apply wildcards</i>.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="batch wildcard checks">
+  <td class="num">46</td>
+  <td class="node"><span class="nm">Batch wildcard checks</span><span class="type t-dec">Loop Over Items</span></td>
+  <td class="what">Sends proposals on in batches of 25 and loops until all are done.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="build check request">
+  <td class="num">47</td>
+  <td class="node"><span class="nm">Build check request</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Asks the AI to confirm or correct each proposal, with the rules (<code>RULES</code>, editable in the node), the forms, the code&#x27;s reasoning and the words it would also catch.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="1" data-google="0" data-stops="1" data-name="ai wildcard check">
+  <td class="num">48</td>
+  <td class="node"><span class="nm">AI wildcard check</span><span class="type t-ai">Google Gemini · Message a Model</span></td>
+  <td class="what">Same settings as <i>AI review</i>.<div class="stops"><span class="stop-label">Can stop the job</span> API error or outage</div></td>
+  <td class="setup"><span class="need">Google Gemini credential (billing-enabled key)</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="parse wildcard check">
+  <td class="num">49</td>
+  <td class="node"><span class="nm">Parse wildcard check</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Reads the verdicts. A reply that can&#x27;t be read leaves that batch with the code&#x27;s proposals, marked not validated.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="apply wildcards">
+  <td class="num">50</td>
+  <td class="node"><span class="nm">Apply wildcards</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Uses the AI&#x27;s version only if it keeps the term&#x27;s letters and uses the wildcards validly; otherwise keeps the code&#x27;s. Notes forms the result misses and words it also catches. Extraction jobs: adds <code>memoq_term</code>, <code>wildcard_check</code>, <code>wildcard_note</code> to the terms. Wildcards-only jobs: the glossary&#x27;s rows with the same three columns added.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="wildcards only? (output)">
+  <td class="num">51</td>
+  <td class="node"><span class="nm">Wildcards only? (output)</span><span class="type t-dec">If</span></td>
+  <td class="what">Wildcards-only jobs: the glossary rows go to <i>Wildcard spreadsheet</i>. Extraction jobs: the terms go to <i>Final rows</i>.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="wildcard spreadsheet">
+  <td class="num">52</td>
+  <td class="node"><span class="nm">Wildcard spreadsheet</span><span class="type t-n8n">Convert to File</span></td>
+  <td class="what">Builds <code>wildcards_….xlsx</code>: the glossary as uploaded, with the wildcard columns added.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="wildcard manifest">
+  <td class="num">53</td>
+  <td class="node"><span class="nm">Wildcard manifest</span><span class="type t-n8n">Code</span></td>
+  <td class="what">The run record for a wildcards-only job, and the two files ready for <i>Upload to job folder</i>.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr></tbody>
   </table></div>
@@ -360,32 +473,32 @@
   <div class="table-wrap"><table>
     <thead><tr><th class="num">#</th><th>Node and type</th><th>What it does</th><th>Setup you do</th></tr></thead>
     <tbody><tr data-setup="0" data-google="0" data-stops="0" data-name="final rows">
-  <td class="num">33</td>
+  <td class="num">54</td>
   <td class="node"><span class="nm">Final rows</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Lays out the glossary columns: rank, term, score, counts, variants, AI verdict, definition and examples.</td>
+  <td class="what">Lays out the glossary columns: rank, term, original form, case note, score, counts, variants, AI verdict, definition and examples. With translations on, also the translation, where it came from (<code>translation_check</code>) and what the files suggested; with wildcards on, the memoQ columns.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="final spreadsheet">
-  <td class="num">34</td>
+  <td class="num">55</td>
   <td class="node"><span class="nm">Final spreadsheet</span><span class="type t-n8n">Convert to File</span></td>
   <td class="what">Builds the glossary <code>.xlsx</code>.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="run manifest">
-  <td class="num">35</td>
+  <td class="num">56</td>
   <td class="node"><span class="nm">Run manifest</span><span class="type t-n8n">Code</span></td>
   <td class="what">Writes the run record: settings, files read, segments, counts and the AI decision. Outputs the three files, named <code>…_client_language_jobID</code> so nothing is overwritten.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="1" data-google="1" data-stops="0" data-name="upload to job folder">
-  <td class="num">36</td>
+  <td class="num">57</td>
   <td class="node"><span class="nm">Upload to job folder</span><span class="type t-google">Google Drive</span></td>
   <td class="what">Uploads the glossary, stage 1 spreadsheet and manifest to the results folder.</td>
   <td class="setup"><span class="need">Google Drive credential</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="job done">
-  <td class="num">37</td>
+  <td class="num">58</td>
   <td class="node"><span class="nm">Job done</span><span class="type t-n8n">Code</span></td>
   <td class="what">Builds the log update: links to the three files, the term count, and a short note (for example "AI review skipped" or "2 other files were ignored").</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="1" data-google="1" data-stops="0" data-name="mark job done">
-  <td class="num">38</td>
+  <td class="num">59</td>
   <td class="node"><span class="nm">Mark job done</span><span class="type t-google">Google Sheets</span></td>
   <td class="what">Updates the job's row, matched on <code>job_id</code>, to <code>done</code> with the links. The page picks this up within 15 seconds.</td>
   <td class="setup"><span class="need">Google Sheets credential</span><span class="need">Log sheet ID</span></td>
@@ -423,7 +536,7 @@
 </section>
 
   <footer>
-    38 nodes in <code>Terminology_extraction_webhook_v4.json</code> (plus a setup note) and 4 in <code>Terminology_job_errors.json</code>.
+    59 nodes in <code>Terminology_extraction_webhook_v4.json</code> (plus a setup note) and 4 in <code>Terminology_job_errors.json</code>.
     Repository: lucatinnirello-hub/terminology-extraction.
   </footer>
 </div>
