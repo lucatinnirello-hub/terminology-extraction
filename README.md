@@ -169,7 +169,7 @@ How each target term gets its wildcards (batches of 25):
 
 `wildcard_check` says what happened: *AI confirmed*, *AI corrected* (check these first), *Code proposal kept (AI reply invalid)*, or *Code only, not validated* (the AI didn't run). The job's note on the page counts each.
 
-**Editing the rules.** The AI's copy of the rules is `RULES` in *Build check request*. The code's rules are in *Propose wildcards* and *Apply wildcards* (the same block in both; keep them identical). `PIPE_MATCHES_STEM_ALONE` there sets whether a pipe also matches the stem on its own: the documents say it doesn't ("will match any term that begins with the stem but not the stem itself"), so where the stem is itself a form the code uses an asterisk instead.
+**Editing the rules.** The AI's copy of the rules is `RULES` in *Build check request*. The code's rules are in *Propose wildcards* and *Apply wildcards* (the same block in both; keep them identical). `PIPE_MATCHES_STEM_ALONE` there sets whether a pipe also matches the stem on its own. It does in memoQ (`program|ming instruction|s` matches *program instruction*), so it's on, although *Wildcards Logic* says otherwise; switch it off and the code uses an asterisk wherever the stem is itself a form.
 
 **Cost.** Two small AI requests per 25 terms: the terms and their forms only, no example segments.
 

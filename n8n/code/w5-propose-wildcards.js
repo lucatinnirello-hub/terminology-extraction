@@ -9,9 +9,10 @@
 //   forms only ADD letters, addition > 50%            -> asterisk: run*
 //   multi-word: additions measured against the whole term; a word other
 //   than the last that varies always gets a wildcard (Símbolo* de Premio).
-// Whether a pipe also matches the stem on its own (program|mer -> "program").
-// The documents say it doesn't; two of their examples say it does.
-const PIPE_MATCHES_STEM_ALONE = false;
+// Whether a pipe also matches the stem on its own. It does in memoQ:
+// "program|ming instruction|s" matches "program instruction" (tested).
+// ("Wildcards Logic" says it doesn't; its own examples, and memoQ, say it does.)
+const PIPE_MATCHES_STEM_ALONE = true;
 // A shared beginning shorter than this can't be a useful stem (Mutter/Mütter).
 const MIN_STEM = 3;
 

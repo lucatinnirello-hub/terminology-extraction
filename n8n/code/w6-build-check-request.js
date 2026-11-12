@@ -8,7 +8,7 @@
 // it here if those documents change.
 const RULES = [
   'memoQ wildcard rules for target terms:',
-  '1. | (pipe) inside a word marks the end of the stem: memoQ then matches words that begin with the stem. Use it when the ENDING CHANGES between forms: period|o (periodo, periodi), amig|o (amigo, amiga), talletu|s (talletus, talletuksen).',
+  '1. | (pipe) inside a word marks the end of the stem: memoQ then matches words that begin with the stem, including the stem on its own (program|ming matches program, programming, programmer). Use it when the ENDING CHANGES between forms: period|o (periodo, periodi), amig|o (amigo, amiga), talletu|s (talletus, talletuksen).',
   '2. * (asterisk) at the end of a word matches the word itself and anything added after it. Use it when forms only ADD letters and the addition is more than 50% of the length of the term: run* (running), text* (texting), child* (children).',
   '3. No wildcard when forms only ADD letters and the addition is at most 50% of the length of the term (cat/cats, bank/banks): memoQ\'s 50% prefix matching covers them.',
   '4. The stem is the longest beginning shared by all forms, not necessarily the grammatical stem.',
