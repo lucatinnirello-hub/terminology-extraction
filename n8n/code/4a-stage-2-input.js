@@ -2,9 +2,9 @@
 // Paste this whole file into that node, replacing everything in it.
 // (Copy of the code in Terminology_extraction_webhook_v4.json.)
 
-// Hands stage 1's terms and the job's language to "Stage 2 NLP" as one item.
-// That node is Python, and Python Code nodes only read their own input, not
-// other nodes by name. Its direct input here would be the stage 1 spreadsheet.
+// Bundles what the stage 2 server needs (stage 1's terms and the job's
+// language) into one item, which "Stage 2 NLP" sends as the request body.
+// Its direct input here would be the stage 1 spreadsheet.
 const settings = $('Settings').first().json;
 return [{
   json: {

@@ -31,7 +31,7 @@ to the job log sheet, which the page shows.
 | `n8n/Terminology_job_errors.json` | Error workflow: marks the failed job's log row, matched by execution ID |
 | `docs/terminology-job-flow.html` | The diagrams |
 | `n8n/code/` | Plain copies of Code nodes changed since first setup (XLIFF support, Gemini AI review, spaCy stage 2), for pasting into an existing workflow |
-| `n8n/runners/` | Task runner image with spaCy, for the Python *Stage 2 NLP* node |
+| `local-server/` | The stage 2 server (spaCy) you run on your machine, and how to set it up |
 | `docs/workflow-nodes.html` | Every n8n node: what it does, what to set up on it, whether it can stop a job |
 | `n8n/superseded/` | The earlier scheduled-check version, for reference only |
 
@@ -54,58 +54,14 @@ to the job log sheet, which the page shows.
    The Google account you use here is "n8n's account": folders must be shared with it.
 4. Publish (activate) *Terminology job errors*. Current n8n versions grey out unpublished workflows in the error workflow list.
    Then: main workflow → **Settings** → **Error workflow** → *Terminology job errors*.
-5. Set up the Python task runner for *Stage 2 NLP* (next section). Until it's running, jobs fail at that node.
+5. Set up the stage 2 server (next section). Until it's running, jobs finish without stage 2.
 6. Activate the main workflow and copy the Webhook node's **production** URL. Make sure Cloudflare routes it, the same way as your other webhooks.
 
-### 1b. Python task runner (stage 2)
+### 1b. Stage 2 server (spaCy, on your machine)
 
-Stage 1 stays JavaScript. *Stage 2 NLP* is a Python Code node that refines stage 1's candidates with spaCy:
+Stage 1 stays JavaScript in n8n. Stage 2 cleans up its candidates with spaCy (drops verb phrases, merges "valve" / "valves", fills `lemma`). n8n can't run spaCy, so stage 2 runs on your own machine: the *Stage 2 NLP* node sends it the terms through a free Cloudflare tunnel and gets the cleaned-up list back.
 
-- drops ones that aren't term-shaped: no noun ("inspected annually"), a finite verb or auxiliary inside ("motor drives", "panel is installed"), or a leading verb ("replace filter cartridge");
-- groups inflected forms ("valve" / "valves") and adds up their counts;
-- fills the glossary's `lemma` column.
-
-What it dropped, and why, is listed under `stage_2` in the run manifest. A language with no spaCy model (Czech, Slovak, Hungarian, Estonian, Latvian, Turkish, Indonesian) passes through unchanged, and the manifest says so.
-
-Python Code nodes run in n8n's separate task runner container, which has no spaCy by default. Self-hosted only: n8n Cloud can't install Python packages.
-
-1. Build the runner image from `n8n/runners/`, with the tag matching your n8n version **exactly**:
-
-   ```bash
-   docker build -t n8n-runners-spacy:2.45.5 --build-arg N8N_VERSION=2.45.5 n8n/runners
-   ```
-
-   It installs spaCy and one small model per language, and allow-lists `spacy` for Code nodes. To save space, trim `SPACY_MODELS` in the Dockerfile to the languages you use.
-2. Run n8n with external task runners, using that image for the runner. With Docker Compose, roughly:
-
-   ```yaml
-   services:
-     n8n:
-       image: n8nio/n8n:2.45.5
-       environment:
-         - N8N_RUNNERS_ENABLED=true
-         - N8N_RUNNERS_MODE=external
-         - N8N_RUNNERS_BROKER_LISTEN_ADDRESS=0.0.0.0
-         - N8N_RUNNERS_AUTH_TOKEN=<long random value>
-     task-runners:
-       image: n8n-runners-spacy:2.45.5
-       environment:
-         - N8N_RUNNERS_TASK_BROKER_URI=http://n8n:5679
-         - N8N_RUNNERS_AUTH_TOKEN=<same value>
-       depends_on: [n8n]
-   ```
-
-   If you already run an `n8nio/runners` container, only its image changes.
-3. Rebuild the image whenever you upgrade n8n.
-
-If *Stage 2 NLP* fails with an import error, the runner isn't using this image, or the allow-list step didn't apply: check that `N8N_RUNNERS_EXTERNAL_ALLOW` for the Python runner in `/etc/n8n-task-runners.json` inside the container includes `spacy`.
-A job with a very large *top N* takes longer here, because every candidate's example segments are tagged. If it times out, raise `N8N_RUNNERS_TASK_TIMEOUT` (seconds) on the runner.
-
-**Updating an existing workflow** instead of re-importing it:
-
-1. Rename *Stage 2 NLP stub* to *Stage 2 NLP*. n8n updates the three nodes that refer to it by name.
-2. Set its **Language** to Python and paste `n8n/code/4b-stage-2-nlp.py`.
-3. Add a JavaScript Code node *Stage 2 input* between *Stage 1 spreadsheet* and *Stage 2 NLP*, with `n8n/code/4a-stage-2-input.js`.
+Setup and day-to-day use: [`local-server/README.md`](local-server/README.md). If your machine is off, jobs still finish without stage 2, and the job's note says so.
 
 ### 2. Apps Script
 
@@ -172,7 +128,7 @@ An XLIFF file that declares a different source language from the job's is skippe
   - Problems after the reply (no usable files, no terms, Drive or Gemini errors) are written to the job's log row, with a link to the n8n execution.
   - If n8n restarts mid-job, nothing can report back, so the page flags a job still running after 45 minutes.
 - **AI review** still needs both ticks on the page, and the client must not be on the restricted list in n8n (*Check restricted list*). The page can't override that list.
-- **Stage 2** (spaCy) runs on every job, before the AI review. It never sends text anywhere: the models run inside the runner container.
+- **Stage 2** (spaCy) runs before the AI review, on your machine, whenever the stage 2 server is up. Otherwise it's skipped and the job's note says so.
 - **Languages** offered are the Latin-script ones, because the stage 1 tokeniser only reads Latin script. Each language maps to its TMX code, e.g. Czech is `cz` in the stopword lists and `cs-CZ` in TMX files.
 
 ## Log sheet columns
