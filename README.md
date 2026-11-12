@@ -30,7 +30,7 @@ to the job log sheet, which the page shows.
 | `n8n/Terminology_extraction_webhook_v4.json` | Main workflow: Webhook → checks → reply → extraction → log |
 | `n8n/Terminology_job_errors.json` | Error workflow: marks the failed job's log row, matched by execution ID |
 | `docs/terminology-job-flow.html` | The diagrams |
-| `n8n/code/` | Plain copies of Code nodes changed since first setup (XLIFF support, Gemini AI review, translation suggestions), for pasting into an existing workflow |
+| `n8n/code/` | Plain copies of Code nodes changed since first setup (XLIFF support, Gemini AI review, translation suggestions, memoQ wildcards), for pasting into an existing workflow |
 | `docs/workflow-nodes.html` | Every n8n node: what it does, what to set up on it, whether it can stop a job |
 | `n8n/superseded/` | The earlier scheduled-check version, for reference only |
 
@@ -46,7 +46,7 @@ to the job log sheet, which the page shows.
 3. Attach credentials:
    - **Google Drive** on *Get folder (as n8n)*, *n8n account*, *List job files*, *Download job files* and *Upload to job folder*;
    - **Google Sheets** on *Log job started* and *Mark job done*, plus the two Sheets nodes in the error workflow;
-   - **Google Gemini** credential on *AI review*, only needed for AI review. *AI review* is n8n's Google Gemini node (*Message a Model*).
+   - **Google Gemini** credential on *AI review*, *AI forms* and *AI wildcard check*, only needed for AI review and memoQ wildcards. All three are n8n's Google Gemini node (*Message a Model*), with the same settings.
      - Get the API key from Google AI Studio, in a project **with billing enabled**. Google may use content sent through free-tier keys to improve its products, which isn't acceptable for client material.
      - On the node: pick a current Gemini model, keep *Output Content as JSON* on, and keep *Maximum Number of Tokens* at about 16000. The node's default of 16 makes every reply useless.
 
@@ -100,6 +100,7 @@ to the job log sheet, which the page shows.
 | memoQ XLIFF | `.mqxliff` | As XLIFF |
 | memoQ compressed export | `.mqxlz` | The `.mqxliff` inside the package (memoQ's *Export bilingual → memoQ XLIFF* with "Save a compressed file" ticked) |
 | Plain text | `.txt`, `.md` | Split into sentences |
+| Glossary (wildcards-only jobs) | `.xlsx`, `.csv` | The first worksheet; the first non-empty row is the header. CSV may use commas, semicolons or tabs |
 
 `.xml` files are recognised as TMX or XLIFF from their content. Formatting codes such as `{}` or `<b>` are removed, so they never become terms.
 An XLIFF file that declares a different source language from the job's is skipped, and the job's results note says so. TMX files are only read on the job's language side anyway.
@@ -149,6 +150,28 @@ The job's note on the page counts each kind, e.g. *"Translations into Serbian (L
 **Languages.** Any target language with a stopword list in *Stopword lists* works, including Cyrillic and Greek; Serbian (Latin) borrows the Croatian list plus a few Serbian words, and accepts both `sr` and `sh` as its code in TMX files. For strongly inflected languages, *Match translations* can also strip word endings so case forms count together (`SUFFIXES` at the top of the node; set up for Serbian and Croatian). Plain-text files have no target side, so their terms only get AI translations, and only when chosen.
 
 **Cost.** With translations on, each AI request is about twice the size (about 4,300 tokens per 25 terms, against 1,900 without).
+
+## memoQ wildcards
+
+Wildcards go on **target terms only**. memoQ reads any entry with a `|` or `*` as Custom matching; entries without one keep the term base's default matching.
+
+Two ways to use it, both optional:
+
+- **In an extraction job**: with *Suggest translations* on, tick *Add memoQ wildcards to the target terms*. The glossary gains `memoq_term`, `wildcard_check` and `wildcard_note`.
+- **On a finished glossary**: choose *Add memoQ wildcards to a glossary* at the top of the page and upload one `.xlsx` or `.csv` (or point to a folder holding one), plus the client's TMX/XLIFF files if you have them. Pick the target language; name the target-term column if its header isn't the language name. You get the glossary back as `wildcards_….xlsx`, with the same three columns added after the existing ones. Several terms in one cell, separated by `;`, are handled one by one. This needs AI review with the client's approval: without the AI there are no forms to work from.
+
+How each target term gets its wildcards (batches of 25):
+
+1. **The AI lists the term's forms**: cases, singular and plural, agreeing adjectives. In extraction jobs, the forms the TM actually uses are added to these.
+2. **Code applies the rules** of the *Wildcards Logic* and *Word Matching Logic* documents: a pipe after the shared stem where endings change (`period|o`, `besplatn|a okretanj|a`); an asterisk when forms only add letters and the addition is over 50% of the term (`run*`); no wildcard at or under 50% (`cat` → *cats*: memoQ's 50% prefix covers it); any word but the last that varies always marked (`Símbolo* de Premio`). Words changing near their start (*Mutter/Mütter*) are left alone and noted.
+3. **The AI checks each proposal** against the rules, the forms, and the words in the client's TMX/XLIFF that the proposal would also catch (*Wassert|urm* → *Wassertropfen*). It confirms it or corrects it.
+4. **Code checks the AI's answer**: it's used only if it keeps the term's letters and uses the wildcards validly. The note lists any forms the result misses and other words it catches.
+
+`wildcard_check` says what happened: *AI confirmed*, *AI corrected* (check these first), *Code proposal kept (AI reply invalid)*, or *Code only, not validated* (the AI didn't run). The job's note on the page counts each.
+
+**Editing the rules.** The AI's copy of the rules is `RULES` in *Build check request*. The code's rules are in *Propose wildcards* and *Apply wildcards* (the same block in both; keep them identical). `PIPE_MATCHES_STEM_ALONE` there sets whether a pipe also matches the stem on its own: the documents say it doesn't ("will match any term that begins with the stem but not the stem itself"), so where the stem is itself a form the code uses an asterisk instead.
+
+**Cost.** Two small AI requests per 25 terms: the terms and their forms only, no example segments.
 
 ## Log sheet columns
 

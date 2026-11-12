@@ -201,7 +201,7 @@
 
 <main>
   <section class="card" aria-labelledby="new-job-h">
-    <h2 id="new-job-h">New extraction</h2>
+    <h2 id="new-job-h">New job</h2>
     <div class="card-body">
       <div id="form-notice" class="notice" role="status" hidden></div>
       <form id="job-form" novalidate>
@@ -211,10 +211,19 @@
           <div class="hint">Used for file names and to check whether AI review is allowed for this client.</div>
         </div>
 
+        <fieldset class="field group">
+          <legend>What to do</legend>
+          <div class="choice">
+            <label><input type="radio" name="job_mode" id="mode_extract" value="extract" checked> Extract terms</label>
+            <label><input type="radio" name="job_mode" id="mode_wildcards" value="wildcards"> Add memoQ wildcards to a glossary</label>
+          </div>
+          <div class="hint" id="mode-hint"></div>
+        </fieldset>
+
         <div class="field">
           <label for="source_lang">Source language</label>
           <select id="source_lang" name="source_lang" required></select>
-          <div class="hint">For TMX files, the source-language side of each unit is extracted. Only Latin-script languages are supported for now.</div>
+          <div class="hint" id="source-lang-hint"></div>
         </div>
 
         <fieldset class="field group">
@@ -237,7 +246,7 @@
               <input id="input_folder" type="text" autocomplete="off" spellcheck="false" placeholder="https://drive.google.com/drive/folders/…">
               <button type="button" class="small" id="input_folder_check">Check</button>
             </div>
-            <div class="hint">Uses the TMX, XLIFF (including memoQ .mqxliff and .mqxlz) and .txt/.md files directly inside the folder, not subfolders. No size limit.</div>
+            <div class="hint" id="folder-hint"></div>
             <div id="input_folder_result" class="check-result" aria-live="polite" hidden></div>
           </div>
         </fieldset>
@@ -259,7 +268,20 @@
           </div>
         </fieldset>
 
-        <details>
+        <div class="ai-box" id="wildcards-box" hidden>
+          <div class="field">
+            <label for="wc_target_lang">Target language of the glossary</label>
+            <select id="wc_target_lang"><option value="">Choose…</option></select>
+          </div>
+          <div class="field">
+            <label for="target_column">Target term column (optional)</label>
+            <input id="target_column" type="text" autocomplete="off" maxlength="80" placeholder="e.g. Serbian">
+            <div class="hint">The header of the column holding the target terms. Leave it empty to find it from the language name.</div>
+          </div>
+          <div class="hint">Only target terms get wildcards. The glossary comes back with a column added next to the others; terms that need no wildcard are left as they are. Several terms in one cell, separated by ";", are handled one by one.</div>
+        </div>
+
+        <details id="extraction-settings">
           <summary>Extraction settings</summary>
           <div class="inner">
             <div class="grid2" id="tuning"></div>
@@ -273,15 +295,15 @@
         </details>
 
         <div class="ai-box">
-          <label class="check"><input type="checkbox" id="run_ai_review"> Run AI review of candidate terms (Google Gemini)</label>
-          <div class="hint">Adds a keep/drop verdict and a one-line definition to each term.</div>
+          <label class="check"><input type="checkbox" id="run_ai_review"> <span id="ai-label">Run AI review of candidate terms (Google Gemini)</span></label>
+          <div class="hint" id="ai-hint"></div>
           <div class="ai-approve" id="ai-approve" hidden>
             <label class="check"><input type="checkbox" id="ai_review_approved"> The client has approved sending term excerpts to Google's Gemini API</label>
-            <div class="hint">What is sent: each term, its counts and up to 2 example segments, with their translations if translations are on. Whole files are never sent. Clients on the restricted list are blocked in n8n regardless of this setting.</div>
+            <div class="hint" id="ai-approve-hint"></div>
           </div>
         </div>
 
-        <div class="ai-box">
+        <div class="ai-box" id="translations-box">
           <label class="check"><input type="checkbox" id="suggest_translations"> Suggest translations of the terms</label>
           <div class="hint">Found in the target side of TMX and XLIFF files, without AI. With AI review on, the AI checks each one; without it, they're listed as unchecked suggestions.</div>
           <div class="sub-panel" id="translation-panel" hidden>
@@ -289,7 +311,9 @@
               <label for="target_lang">Target language</label>
               <select id="target_lang"><option value="">Choose…</option></select>
             </div>
-            <label class="check off" id="ai-translate-label"><input type="checkbox" id="ai_translate_missing" disabled> Where the files have no translation for a term, let the AI translate it</label>
+            <label class="check"><input type="checkbox" id="add_wildcards"> Add memoQ wildcards to the target terms</label>
+            <div class="hint">In a separate column. With AI review, the AI lists each term's forms and checks the wildcards; without it, only forms seen in the files are used, marked not validated.</div>
+            <label class="check off" id="ai-translate-label" style="margin-top:10px"><input type="checkbox" id="ai_translate_missing" disabled> Where the files have no translation for a term, let the AI translate it</label>
             <div class="hint" id="ai-translate-hint">Needs AI review, above. These translations aren't based on the client's own translations, and are marked "AI translated (not from the files)" in the glossary.</div>
           </div>
         </div>
@@ -418,6 +442,7 @@
 
       cfg.targetLanguages.forEach(function (l) {
         $('target_lang').appendChild(el('option', { value: l.code, text: l.label }));
+        $('wc_target_lang').appendChild(el('option', { value: l.code, text: l.label }));
       });
 
       var sel = $('source_lang');
@@ -444,9 +469,7 @@
       });
       $('dedupe_help_slot').appendChild(helpTip('dedupe_segments', 'Collapse identical segments', cfg.dedupeSegmentsHelp, false));
 
-      $('files-hint').textContent = cfg.limits.extensions.map(function (e) { return '.' + e; }).join(', ') +
-        ' · up to ' + cfg.limits.maxFileMb + ' MB each · max ' + cfg.limits.maxFiles + ' files';
-      $('file-input').accept = cfg.limits.extensions.map(function (e) { return '.' + e; }).join(',');
+      syncMode();
 
       loadJobs();
     }).catch(function (e) {
@@ -463,7 +486,7 @@
     var errors = [];
     Array.prototype.forEach.call(list, function (f) {
       var ext = (f.name.split('.').pop() || '').toLowerCase();
-      if (config.limits.extensions.indexOf(ext) === -1) { errors.push(f.name + ': unsupported type'); return; }
+      if (extensions().indexOf(ext) === -1) { errors.push(f.name + ': not used for this job type'); return; }
       if (f.size > config.limits.maxFileMb * 1024 * 1024) { errors.push(f.name + ': larger than ' + config.limits.maxFileMb + ' MB'); return; }
       if (f.size === 0) { errors.push(f.name + ': empty file'); return; }
       if (files.some(function (x) { return x.file.name === f.name && x.file.size === f.size; })) return;
@@ -515,6 +538,59 @@
     syncTranslations();
   });
 
+  // ---------------------------------------------------------------- job type
+  function mode() { return $('mode_wildcards').checked ? 'wildcards' : 'extract'; }
+  function extensions() { return mode() === 'wildcards' ? config.limits.wildcardExtensions : config.limits.extensions; }
+  var MODE_TEXT = {
+    extract: {
+      mode: 'Finds terms in TMX, XLIFF and text files, and can suggest their translations.',
+      source: 'For TMX files, the source-language side of each unit is extracted. Only Latin-script languages are supported for now.',
+      folder: 'Uses the TMX, XLIFF (including memoQ .mqxliff and .mqxlz) and .txt/.md files directly inside the folder, not subfolders. No size limit.',
+      aiLabel: 'Run AI review of candidate terms (Google Gemini)',
+      ai: 'Adds a keep/drop verdict and a one-line definition to each term.',
+      approve: 'What is sent: each term, its counts and up to 2 example segments, with their translations if translations are on. Whole files are never sent. Clients on the restricted list are blocked in n8n regardless of this setting.',
+    },
+    wildcards: {
+      mode: 'Adds memoQ wildcards to the target terms of a finished glossary (.xlsx or .csv). Add the client\'s TMX or XLIFF files too if you have them: they show which other words a wildcard would also catch.',
+      source: 'The language of the glossary\'s source terms. They are sent to the AI as context.',
+      folder: 'Uses the one .xlsx or .csv glossary directly inside the folder, plus any TMX and XLIFF files. Google Sheets must be downloaded as .xlsx first.',
+      aiLabel: 'Use AI for the wildcards (Google Gemini)',
+      ai: 'Needed for glossaries: the AI lists each term\'s forms, the wildcards are worked out from them, and the AI checks the result.',
+      approve: 'What is sent: each target term and its source term. Nothing from the TMX/XLIFF files is sent. Clients on the restricted list are blocked in n8n regardless of this setting.',
+    },
+  };
+  function syncMode() {
+    var m = mode();
+    var text = MODE_TEXT[m];
+    $('mode-hint').textContent = text.mode;
+    $('source-lang-hint').textContent = text.source;
+    $('folder-hint').textContent = text.folder;
+    $('ai-hint').textContent = text.ai;
+    $('ai-label').textContent = text.aiLabel;
+    $('ai-approve-hint').textContent = text.approve;
+    $('wildcards-box').hidden = m !== 'wildcards';
+    $('extraction-settings').hidden = m === 'wildcards';
+    $('translations-box').hidden = m === 'wildcards';
+    if (!config) return;
+    var exts = extensions();
+    $('files-hint').textContent = exts.map(function (e) { return '.' + e; }).join(', ') +
+      ' · up to ' + config.limits.maxFileMb + ' MB each · max ' + config.limits.maxFiles + ' files';
+    $('file-input').accept = exts.map(function (e) { return '.' + e; }).join(',');
+    // Files chosen for the other job type that don't fit this one.
+    var dropped = files.filter(function (x) { return exts.indexOf((x.file.name.split('.').pop() || '').toLowerCase()) === -1; });
+    if (dropped.length) {
+      files = files.filter(function (x) { return dropped.indexOf(x) === -1; });
+      renderFiles();
+      notice('err', 'Removed, not used for this job type: ' + dropped.map(function (x) { return x.file.name; }).join(', '));
+    }
+    // Which files in the source folder count depends on the job type.
+    lastChecked.input = '';
+    if ($('input_folder').value.trim()) checkFolderUI('input'); else showCheck('input', null);
+  }
+  $('mode_extract').addEventListener('change', syncMode);
+  $('mode_wildcards').addEventListener('change', syncMode);
+  syncMode();
+
   // ---------------------------------------------------------------- translations
   // AI translation of terms the files don't translate is opt-in, and only
   // possible with AI review ticked.
@@ -563,7 +639,7 @@
     if (value === lastChecked[purpose]) return;
     lastChecked[purpose] = value;
     showCheck(purpose, 'busy', function (b) { b.textContent = 'Checking access…'; });
-    call('checkFolder', value, purpose).then(function (r) {
+    call('checkFolder', value, purpose, mode()).then(function (r) {
       if ($(purpose + '_folder').value.trim() !== value) return;   // changed meanwhile
       var link = el('a', { href: r.url, target: '_blank', rel: 'noopener', text: r.name });
       // You can use the folder, but n8n's Google account can't (or n8n is unreachable).
@@ -654,8 +730,23 @@
     if (inputMode === 'upload' && !files.length) { notice('err', 'Add at least one file.'); drop.focus(); return; }
     if (inputMode === 'folder' && !$('input_folder').value.trim()) { notice('err', 'Paste the link to the folder with the source files.'); $('input_folder').focus(); return; }
     if (outputMode === 'folder' && !$('output_folder').value.trim()) { notice('err', 'Paste the link to the folder for the results.'); $('output_folder').focus(); return; }
-    if ($('suggest_translations').checked && !$('target_lang').value) { notice('err', 'Choose the target language for the translations.'); $('target_lang').focus(); return; }
-    if ($('suggest_translations').checked && $('target_lang').value === $('source_lang').value) { notice('err', 'The target language must differ from the source language.'); $('target_lang').focus(); return; }
+    var wildcardsOnly = mode() === 'wildcards';
+    var targetLang = wildcardsOnly ? $('wc_target_lang').value : $('target_lang').value;
+    if (wildcardsOnly) {
+      if (!targetLang) { notice('err', 'Choose the target language of the glossary.'); $('wc_target_lang').focus(); return; }
+      if (targetLang === $('source_lang').value) { notice('err', 'The target language must differ from the source language.'); $('wc_target_lang').focus(); return; }
+      if (inputMode === 'upload') {
+        var glossaries = files.filter(function (x) { return config.limits.glossaryExtensions.indexOf((x.file.name.split('.').pop() || '').toLowerCase()) !== -1; });
+        if (glossaries.length !== 1) { notice('err', glossaries.length ? 'Add only one glossary (.xlsx or .csv).' : 'Add the glossary (.xlsx or .csv).'); drop.focus(); return; }
+      }
+      if (!$('run_ai_review').checked || !$('ai_review_approved').checked) {
+        notice('err', 'Adding wildcards to a glossary needs AI review, with the client\'s approval: without it there are no forms to work from.');
+        $('run_ai_review').focus();
+        return;
+      }
+    }
+    if (!wildcardsOnly && $('suggest_translations').checked && !$('target_lang').value) { notice('err', 'Choose the target language for the translations.'); $('target_lang').focus(); return; }
+    if (!wildcardsOnly && $('suggest_translations').checked && $('target_lang').value === $('source_lang').value) { notice('err', 'The target language must differ from the source language.'); $('target_lang').focus(); return; }
     if ($('run_ai_review').checked && !$('ai_review_approved').checked) {
       if (!confirm('AI review is ticked but client approval is not, so the AI stage will be skipped. Submit anyway?')) return;
     }
@@ -671,9 +762,12 @@
       dedupe_segments: $('dedupe_segments').checked,
       run_ai_review: $('run_ai_review').checked,
       ai_review_approved: $('ai_review_approved').checked,
-      suggest_translations: $('suggest_translations').checked,
-      target_lang: $('target_lang').value,
+      mode: mode(),
+      suggest_translations: !wildcardsOnly && $('suggest_translations').checked,
+      target_lang: targetLang,
       ai_translate_missing: $('ai_translate_missing').checked,
+      add_wildcards: $('add_wildcards').checked,
+      target_column: wildcardsOnly ? $('target_column').value.trim() : '',
     };
     Object.keys(config.tuning).forEach(function (k) { form[k] = $(k).value; });
 
@@ -782,6 +876,7 @@
     res.jobs.forEach(function (j) {
       var langLabel = (config.languages.filter(function (l) { return l.code === j.source_lang; })[0] || {}).label || j.source_lang;
       if (j.target_label) langLabel += ' → ' + j.target_label;
+      if (j.mode === 'wildcards') langLabel = 'memoQ wildcards · ' + langLabel;
       var subBits = [langLabel, j.file_count + ' file' + (Number(j.file_count) === 1 ? '' : 's')];
       if (j.terms_returned !== '' && j.terms_returned !== undefined) subBits.push(j.terms_returned + ' terms');
       if (j.ai && j.ai !== 'off') subBits.push('AI review ' + j.ai);
