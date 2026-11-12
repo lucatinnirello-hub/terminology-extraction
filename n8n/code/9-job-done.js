@@ -29,7 +29,7 @@ if (manifest.translations && manifest.translations.requested) {
     ['Code suggestion, not validated', 'suggested from the files, not validated'],
     ['No match in the files', 'no match in the files'],
   ].filter(([k]) => c[k]).map(([k, label]) => `${c[k]} ${label}`);
-  notes.push(`Translations (${manifest.translations.target_label}): ${parts.join(', ') || 'none'}.`);
+  notes.push(`Translations into ${manifest.translations.target_label}: ${parts.join(', ') || 'none'}.`);
   if (manifest.translations.note) notes.push(manifest.translations.note);
 }
 const skipped = (manifest.coverage.skipped || []).filter((s) => !['below_min_chars', 'duplicate_segment'].includes(s.reason));

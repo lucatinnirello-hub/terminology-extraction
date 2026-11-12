@@ -101,6 +101,10 @@
   .ai-box { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 14px; }
   .ai-approve { margin-top: 10px; padding: 10px; border-radius: 7px; background: var(--warn-soft); }
   .ai-approve[hidden] { display: none; }
+  .sub-panel { margin-top: 10px; }
+  .sub-panel[hidden] { display: none; }
+  .sub-panel .field { margin-bottom: 10px; }
+  .check.off { color: var(--muted); }
   button {
     font: inherit; border-radius: 7px; border: 1px solid var(--border); background: var(--surface);
     color: var(--text); padding: 7px 12px; cursor: pointer;
@@ -273,7 +277,20 @@
           <div class="hint">Adds a keep/drop verdict and a one-line definition to each term.</div>
           <div class="ai-approve" id="ai-approve" hidden>
             <label class="check"><input type="checkbox" id="ai_review_approved"> The client has approved sending term excerpts to Google's Gemini API</label>
-            <div class="hint">What is sent: each term, its counts and up to 2 example segments. Whole files are never sent. Clients on the restricted list are blocked in n8n regardless of this setting.</div>
+            <div class="hint">What is sent: each term, its counts and up to 2 example segments, with their translations if translations are on. Whole files are never sent. Clients on the restricted list are blocked in n8n regardless of this setting.</div>
+          </div>
+        </div>
+
+        <div class="ai-box">
+          <label class="check"><input type="checkbox" id="suggest_translations"> Suggest translations of the terms</label>
+          <div class="hint">Found in the target side of TMX and XLIFF files, without AI. With AI review on, the AI checks each one; without it, they're listed as unchecked suggestions.</div>
+          <div class="sub-panel" id="translation-panel" hidden>
+            <div class="field">
+              <label for="target_lang">Target language</label>
+              <select id="target_lang"><option value="">Choose…</option></select>
+            </div>
+            <label class="check off" id="ai-translate-label"><input type="checkbox" id="ai_translate_missing" disabled> Where the files have no translation for a term, let the AI translate it</label>
+            <div class="hint" id="ai-translate-hint">Needs AI review, above. These translations aren't based on the client's own translations, and are marked "AI translated (not from the files)" in the glossary.</div>
           </div>
         </div>
 
@@ -399,6 +416,10 @@
       $('folder-link').href = cfg.workFolderUrl; $('folder-link').hidden = false;
       $('sheet-link').href = cfg.logSheetUrl; $('sheet-link').hidden = false;
 
+      cfg.targetLanguages.forEach(function (l) {
+        $('target_lang').appendChild(el('option', { value: l.code, text: l.label }));
+      });
+
       var sel = $('source_lang');
       cfg.languages.forEach(function (l) {
         sel.appendChild(el('option', { value: l.code, text: l.label }));
@@ -491,7 +512,24 @@
   $('run_ai_review').addEventListener('change', function (e) {
     $('ai-approve').hidden = !e.target.checked;
     if (!e.target.checked) $('ai_review_approved').checked = false;
+    syncTranslations();
   });
+
+  // ---------------------------------------------------------------- translations
+  // AI translation of terms the files don't translate is opt-in, and only
+  // possible with AI review ticked.
+  function syncTranslations() {
+    var on = $('suggest_translations').checked;
+    var aiOk = on && $('run_ai_review').checked;
+    $('translation-panel').hidden = !on;
+    $('ai_translate_missing').disabled = busy || !aiOk;
+    if (!aiOk) $('ai_translate_missing').checked = false;
+    $('ai-translate-label').classList.toggle('off', !aiOk);
+    $('ai-translate-hint').textContent = aiOk
+      ? 'These translations aren\'t based on the client\'s own translations, and are marked "AI translated (not from the files)" in the glossary.'
+      : 'Needs AI review, above. These translations aren\'t based on the client\'s own translations, and are marked "AI translated (not from the files)" in the glossary.';
+  }
+  $('suggest_translations').addEventListener('change', syncTranslations);
 
   // ---------------------------------------------------------------- Drive folders
   function radio(name) {
@@ -595,6 +633,7 @@
     busy = b;
     $('submit-btn').disabled = b;
     Array.prototype.forEach.call($('job-form').elements, function (x) { if (x.id !== 'submit-btn') x.disabled = b; });
+    syncTranslations();
     $('progress').hidden = !b;
     renderFiles();
   }
@@ -615,6 +654,8 @@
     if (inputMode === 'upload' && !files.length) { notice('err', 'Add at least one file.'); drop.focus(); return; }
     if (inputMode === 'folder' && !$('input_folder').value.trim()) { notice('err', 'Paste the link to the folder with the source files.'); $('input_folder').focus(); return; }
     if (outputMode === 'folder' && !$('output_folder').value.trim()) { notice('err', 'Paste the link to the folder for the results.'); $('output_folder').focus(); return; }
+    if ($('suggest_translations').checked && !$('target_lang').value) { notice('err', 'Choose the target language for the translations.'); $('target_lang').focus(); return; }
+    if ($('suggest_translations').checked && $('target_lang').value === $('source_lang').value) { notice('err', 'The target language must differ from the source language.'); $('target_lang').focus(); return; }
     if ($('run_ai_review').checked && !$('ai_review_approved').checked) {
       if (!confirm('AI review is ticked but client approval is not, so the AI stage will be skipped. Submit anyway?')) return;
     }
@@ -630,6 +671,9 @@
       dedupe_segments: $('dedupe_segments').checked,
       run_ai_review: $('run_ai_review').checked,
       ai_review_approved: $('ai_review_approved').checked,
+      suggest_translations: $('suggest_translations').checked,
+      target_lang: $('target_lang').value,
+      ai_translate_missing: $('ai_translate_missing').checked,
     };
     Object.keys(config.tuning).forEach(function (k) { form[k] = $(k).value; });
 
@@ -675,6 +719,7 @@
       $('run_ai_review').checked = false;
       $('ai_review_approved').checked = false;
       $('ai-approve').hidden = true;
+      syncTranslations();
       scope = 'mine'; syncScope();
       loadJobs();
     }).catch(function (err) {
@@ -736,7 +781,8 @@
     }
     res.jobs.forEach(function (j) {
       var langLabel = (config.languages.filter(function (l) { return l.code === j.source_lang; })[0] || {}).label || j.source_lang;
-      var subBits = [langLabel, j.file_count + ' file' + (j.file_count === '1' ? '' : 's')];
+      if (j.target_label) langLabel += ' → ' + j.target_label;
+      var subBits = [langLabel, j.file_count + ' file' + (Number(j.file_count) === 1 ? '' : 's')];
       if (j.terms_returned !== '' && j.terms_returned !== undefined) subBits.push(j.terms_returned + ' terms');
       if (j.ai && j.ai !== 'off') subBits.push('AI review ' + j.ai);
       if (scope === 'all') subBits.push(j.submitted_by);

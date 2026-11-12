@@ -78,6 +78,19 @@ const LANGUAGES = [
   { code: 'id', tmx: 'id', label: 'Indonesian' },
 ];
 
+// Target languages for translation suggestions. `code` must be a stopword
+// list in n8n's "Stopword lists" node (or borrow one there: Serbian uses
+// Croatian); `tmx` is what the language is called inside TMX/XLIFF files.
+// Unlike source languages, non-Latin scripts work here: the translation
+// matching reads any alphabet with spaces between words.
+const TARGET_LANGUAGES = LANGUAGES.concat([
+  { code: 'sr', tmx: 'sr,sh', label: 'Serbian (Latin)' },
+  { code: 'bg', tmx: 'bg', label: 'Bulgarian' },
+  { code: 'el', tmx: 'el', label: 'Greek' },
+  { code: 'ru', tmx: 'ru', label: 'Russian' },
+  { code: 'uk', tmx: 'uk', label: 'Ukrainian' },
+]).sort(function (a, b) { return a.label.localeCompare(b.label); });
+
 // Tuning settings: defaults match n8n; min/max are enforced here and in n8n.
 // `help` is shown in the question-mark tooltip next to each setting.
 const TUNING = {
@@ -133,6 +146,7 @@ function getAppConfig() {
     title: APP_TITLE,
     user: currentUser_(),
     languages: LANGUAGES.map(function (l) { return { code: l.code, label: l.label }; }),
+    targetLanguages: TARGET_LANGUAGES.map(function (l) { return { code: l.code, label: l.label }; }),
     tuning: TUNING,
     dedupeSegmentsHelp: DEDUPE_SEGMENTS_HELP,
     limits: { maxFileMb: MAX_FILE_MB, maxFiles: MAX_FILES_PER_JOB, extensions: ALLOWED_EXTENSIONS },
@@ -231,7 +245,16 @@ function submitJob(form, jobId) {
     dedupe_segments: form.dedupe_segments !== false,
     run_ai_review: form.run_ai_review === true,
     ai_review_approved: form.run_ai_review === true && form.ai_review_approved === true,
+    suggest_translations: form.suggest_translations === true,
   };
+  if (settings.suggest_translations) {
+    const target = targetLanguageOf_(form.target_lang, lang.code);
+    settings.target_lang = target.code;
+    settings.target_tmx = target.tmx;
+    settings.target_label = target.label;
+    // AI translation of terms the files don't translate: only on request, and only with AI review.
+    settings.ai_translate_missing = settings.run_ai_review && form.ai_translate_missing === true;
+  }
   Object.keys(TUNING).forEach(function (key) { settings[key] = clampNumber_(form[key], TUNING[key]); });
 
   const reply = callN8n_({
@@ -293,6 +316,7 @@ function listJobs(scope) {
         folder_url: r.job_folder_id ? folderUrl_(r.job_folder_id) : '',
         message: r.message,
         ai: aiSummary_(s),
+        target_label: s.suggest_translations ? s.target_label || s.target_lang : '',
       };
     }),
   };
@@ -541,7 +565,15 @@ function validateForm_(form) {
   const client = String((form && form.client) || '').trim();
   if (!client) throw new Error('Client is required.');
   if (client.length > 80) throw new Error('Client name is too long.');
-  languageOf_(form.source_lang);
+  const lang = languageOf_(form.source_lang);
+  if (form.suggest_translations === true) targetLanguageOf_(form.target_lang, lang.code);
+}
+
+function targetLanguageOf_(code, sourceCode) {
+  const lang = TARGET_LANGUAGES.filter(function (l) { return l.code === code; })[0];
+  if (!lang) throw new Error('Choose a target language for the translations.');
+  if (lang.code === sourceCode) throw new Error('The target language must differ from the source language.');
+  return lang;
 }
 
 function languageOf_(code) {

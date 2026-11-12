@@ -30,7 +30,7 @@ to the job log sheet, which the page shows.
 | `n8n/Terminology_extraction_webhook_v4.json` | Main workflow: Webhook → checks → reply → extraction → log |
 | `n8n/Terminology_job_errors.json` | Error workflow: marks the failed job's log row, matched by execution ID |
 | `docs/terminology-job-flow.html` | The diagrams |
-| `n8n/code/` | Plain copies of Code nodes changed since first setup (XLIFF support, Gemini AI review), for pasting into an existing workflow |
+| `n8n/code/` | Plain copies of Code nodes changed since first setup (XLIFF support, Gemini AI review, translation suggestions), for pasting into an existing workflow |
 | `docs/workflow-nodes.html` | Every n8n node: what it does, what to set up on it, whether it can stop a job |
 | `n8n/superseded/` | The earlier scheduled-check version, for reference only |
 
@@ -121,6 +121,34 @@ An XLIFF file that declares a different source language from the job's is skippe
   - If n8n restarts mid-job, nothing can report back, so the page flags a job still running after 45 minutes.
 - **AI review** still needs both ticks on the page, and the client must not be on the restricted list in n8n (*Check restricted list*). The page can't override that list.
 - **Languages** offered are the Latin-script ones, because the stage 1 tokeniser only reads Latin script. Each language maps to its TMX code, e.g. Czech is `cz` in the stopword lists and `cs-CZ` in TMX files.
+
+## Translations
+
+Tick **Suggest translations of the terms** on the page and pick the target language.
+
+1. **From the files, without AI.** *Match translations* reads the target side of the TMX and XLIFF files. For each term it finds the target phrase that appears in the translations of the term's segments and rarely elsewhere, checks that it is built from the translations of the term's own words, and rates it:
+   - **high**: found in most of the term's segments (at least 3);
+   - **medium**: found in at least half of them (at least 2);
+   - **low**: a weak match, often a rare term.
+
+   The rating measures how *consistently* the files translate a term, not whether the translation is right. Other translations the files use for the same term are listed too, e.g. *multiplikatora (18)*: useful for spotting inconsistencies.
+2. **Checked by the AI**, if AI review runs. Each term goes with its suggestion and 1 source/target example pair (2 for medium or low confidence). The AI confirms the suggestion, or corrects it with a short note, and gives the translation in its dictionary form.
+3. **Terms with no match in the files** are translated by the AI only if *Where the files have no translation for a term, let the AI translate it* is ticked. It needs AI review, and is greyed out without it.
+
+Glossary columns added for translation jobs:
+
+| Column | What it holds |
+|---|---|
+| `translation` | The checked translation. Empty unless the AI confirmed, corrected or translated it: nothing unchecked goes here. |
+| `translation_check` | *AI confirmed* · *AI corrected* (the AI disagreed with the files: check these first) · *AI translated (not from the files)* · *Code suggestion, not validated* (the AI didn't run) · *No match in the files* |
+| `translation_note` | Why the AI corrected it |
+| `code_suggestion`, `code_confidence`, `code_alternatives` | What the files suggested, how consistently (e.g. *high (29/32)*), and other translations used |
+
+The job's note on the page counts each kind, e.g. *"Translations into Serbian (Latin): 456 confirmed by AI, 41 corrected by AI, 3 AI-translated, not from the files."*
+
+**Languages.** Any target language with a stopword list in *Stopword lists* works, including Cyrillic and Greek; Serbian (Latin) borrows the Croatian list plus a few Serbian words, and accepts both `sr` and `sh` as its code in TMX files. For strongly inflected languages, *Match translations* can also strip word endings so case forms count together (`SUFFIXES` at the top of the node; set up for Serbian and Croatian). Plain-text files have no target side, so their terms only get AI translations, and only when chosen.
+
+**Cost.** With translations on, each AI request is about twice the size (about 4,300 tokens per 25 terms, against 1,900 without).
 
 ## Log sheet columns
 

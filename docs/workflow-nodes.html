@@ -132,7 +132,7 @@
     </div>
   </header>
 
-  <nav class="strip" aria-label="Stages"><a href="#request" class="seg s-main"><b>Request</b><span>13</span></a><a href="#prepare" class="seg s-main"><b>Prepare</b><span>2</span></a><a href="#fetch" class="seg s-main"><b>Fetch input</b><span>5</span></a><a href="#extract" class="seg s-main"><b>Extract</b><span>6</span></a><a href="#ai" class="seg s-main"><b>AI review</b><span>6</span></a><a href="#deliver" class="seg s-main"><b>Deliver</b><span>6</span></a><a href="#errors" class="seg s-error"><b>Error workflow</b><span>4</span></a></nav>
+  <nav class="strip" aria-label="Stages"><a href="#request" class="seg s-main"><b>Request</b><span>13</span></a><a href="#prepare" class="seg s-main"><b>Prepare</b><span>2</span></a><a href="#fetch" class="seg s-main"><b>Fetch input</b><span>5</span></a><a href="#extract" class="seg s-main"><b>Extract</b><span>7</span></a><a href="#ai" class="seg s-main"><b>AI review</b><span>6</span></a><a href="#deliver" class="seg s-main"><b>Deliver</b><span>6</span></a><a href="#errors" class="seg s-error"><b>Error workflow</b><span>4</span></a></nav>
 
   <section class="setup-box" aria-labelledby="setup-h">
     <h2 id="setup-h">What to set on which nodes</h2>
@@ -145,7 +145,7 @@
 
   <div class="controls">
     <div class="filters" role="group" aria-label="Show">
-      <button type="button" id="f-all" data-filter="all" aria-pressed="true">All 42</button>
+      <button type="button" id="f-all" data-filter="all" aria-pressed="true">All 43</button>
       <button type="button" id="f-setup" data-filter="setup" aria-pressed="false">Needs setup</button>
       <button type="button" id="f-google" data-filter="google" aria-pressed="false">Uses Google</button>
       <button type="button" id="f-stops" data-filter="stops" aria-pressed="false">Can stop a job</button>
@@ -240,7 +240,7 @@
 </tr><tr data-setup="0" data-google="0" data-stops="1" data-name="stopword lists">
   <td class="num">15</td>
   <td class="node"><span class="nm">Stopword lists</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Picks the word list for the source language (34 languages, from YAKE), plus extra boundary words and the "connector" words that may sit inside a term, such as <i>di</i> in <i>valvola di sicurezza</i>.<div class="stops"><span class="stop-label">Can stop the job</span> Language not in the list</div></td>
+  <td class="what">Picks the word list for the source language (34 languages, from YAKE), plus extra boundary words and the "connector" words that may sit inside a term, such as <i>di</i> in <i>valvola di sicurezza</i>. With translations on, also the target language&#x27;s list (Serbian borrows Croatian&#x27;s).<div class="stops"><span class="stop-label">Can stop the job</span> Language not in the list</div></td>
   <td class="setup"><span class="none">None</span></td>
 </tr></tbody>
   </table></div>
@@ -280,7 +280,7 @@
   <p class="empty-phase" hidden>No nodes in this stage match.</p>
 </section>
 <section class="phase" id="extract" aria-labelledby="h-extract">
-  <div class="phase-head"><h2 id="h-extract">Extract</h2><p>Finding and scoring candidate terms</p><span class="count">6 nodes</span></div>
+  <div class="phase-head"><h2 id="h-extract">Extract</h2><p>Finding and scoring candidate terms</p><span class="count">7 nodes</span></div>
   <div class="table-wrap"><table>
     <thead><tr><th class="num">#</th><th>Node and type</th><th>What it does</th><th>Setup you do</th></tr></thead>
     <tbody><tr data-setup="0" data-google="0" data-stops="0" data-name="stage 1 statistical extraction">
@@ -303,13 +303,18 @@
   <td class="node"><span class="nm">Stage 2 NLP stub</span><span class="type t-n8n">Code</span></td>
   <td class="what">Placeholder for future lemmatising (valve / valves) and dropping verb phrases. Passes terms through unchanged for now.</td>
   <td class="setup"><span class="none">None</span></td>
-</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="check restricted list">
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="match translations">
   <td class="num">25</td>
+  <td class="node"><span class="nm">Match translations</span><span class="type t-n8n">Code</span></td>
+  <td class="what">Only with translations on. Reads the target side of the TMX and XLIFF files and suggests a translation for each term: the target phrase found in the translations of the term&#x27;s segments and rarely elsewhere, built from the translations of its words. Rates how consistently the files use it (high, medium, low) and lists other translations used. No AI.</td>
+  <td class="setup"><span class="none">None</span></td>
+</tr><tr data-setup="0" data-google="0" data-stops="0" data-name="check restricted list">
+  <td class="num">26</td>
   <td class="node"><span class="nm">Check restricted list</span><span class="type t-n8n">Code</span></td>
   <td class="what">The compliance gate. AI review is allowed only if it was requested, client approval was ticked, and the client is not on the restricted list written into this node.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="ai review approved?">
-  <td class="num">26</td>
+  <td class="num">27</td>
   <td class="node"><span class="nm">AI review approved?</span><span class="type t-dec">If</span></td>
   <td class="what">Allowed: terms go to the AI review. Not allowed: straight to <i>Terms to items (no AI)</i>.</td>
   <td class="setup"><span class="none">None</span></td>
@@ -322,32 +327,32 @@
   <div class="table-wrap"><table>
     <thead><tr><th class="num">#</th><th>Node and type</th><th>What it does</th><th>Setup you do</th></tr></thead>
     <tbody><tr data-setup="0" data-google="0" data-stops="0" data-name="terms to items">
-  <td class="num">27</td>
+  <td class="num">28</td>
   <td class="node"><span class="nm">Terms to items</span><span class="type t-n8n">Code</span></td>
   <td class="what">One item per term, ready for batching.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="batch terms">
-  <td class="num">28</td>
+  <td class="num">29</td>
   <td class="node"><span class="nm">Batch terms</span><span class="type t-dec">Loop Over Items</span></td>
   <td class="what">Sends terms on in batches of 25 and loops until all are done, then passes everything to <i>Final rows</i>.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="build ai request">
-  <td class="num">29</td>
+  <td class="num">30</td>
   <td class="node"><span class="nm">Build AI request</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Builds one prompt per batch: each term, its counts and 2 example segments. Never whole files. Asks for keep or drop, a reason and a one-line definition, as JSON.</td>
+  <td class="what">Builds one prompt per batch: each term, its counts and 2 example segments. Never whole files. Asks for keep or drop, a reason and a one-line definition, as JSON. With translations on, adds the files&#x27; suggestion and 1–2 source/target example pairs, and asks the AI to confirm or correct it; terms with no suggestion are translated only if the page asked for that.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="1" data-google="0" data-stops="1" data-name="ai review">
-  <td class="num">30</td>
+  <td class="num">31</td>
   <td class="node"><span class="nm">AI review</span><span class="type t-ai">Google Gemini · Message a Model</span></td>
   <td class="what">Sends each batch's prompt to Gemini through n8n's Google Gemini node, with <i>Output Content as JSON</i> on, and passes the reply on. Keep <i>Maximum Number of Tokens</i> at about 16000: the node's default of 16 cuts every reply off.<div class="stops"><span class="stop-label">Can stop the job</span> API error or outage</div></td>
   <td class="setup"><span class="need">Google Gemini credential (billing-enabled key)</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="parse ai response">
-  <td class="num">31</td>
+  <td class="num">32</td>
   <td class="node"><span class="nm">Parse AI response</span><span class="type t-n8n">Code</span></td>
   <td class="what">Adds the verdicts and definitions to the terms. If a reply was cut off, blocked or can't be read, that batch is marked <code>ai_error</code> with the reason and the job carries on.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="terms to items (no ai)">
-  <td class="num">32</td>
+  <td class="num">33</td>
   <td class="node"><span class="nm">Terms to items (no AI)</span><span class="type t-n8n">Code</span></td>
   <td class="what">The route when AI review is off or not allowed: the same terms, with the AI columns left empty.</td>
   <td class="setup"><span class="none">None</span></td>
@@ -360,32 +365,32 @@
   <div class="table-wrap"><table>
     <thead><tr><th class="num">#</th><th>Node and type</th><th>What it does</th><th>Setup you do</th></tr></thead>
     <tbody><tr data-setup="0" data-google="0" data-stops="0" data-name="final rows">
-  <td class="num">33</td>
+  <td class="num">34</td>
   <td class="node"><span class="nm">Final rows</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Lays out the glossary columns: rank, term, score, counts, variants, AI verdict, definition and examples.</td>
+  <td class="what">Lays out the glossary columns: rank, term, score, counts, variants, AI verdict, definition and examples. With translations on, also the translation, where it came from (<code>translation_check</code>) and what the files suggested.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="final spreadsheet">
-  <td class="num">34</td>
+  <td class="num">35</td>
   <td class="node"><span class="nm">Final spreadsheet</span><span class="type t-n8n">Convert to File</span></td>
   <td class="what">Builds the glossary <code>.xlsx</code>.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="run manifest">
-  <td class="num">35</td>
+  <td class="num">36</td>
   <td class="node"><span class="nm">Run manifest</span><span class="type t-n8n">Code</span></td>
   <td class="what">Writes the run record: settings, files read, segments, counts and the AI decision. Outputs the three files, named <code>…_client_language_jobID</code> so nothing is overwritten.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="1" data-google="1" data-stops="0" data-name="upload to job folder">
-  <td class="num">36</td>
+  <td class="num">37</td>
   <td class="node"><span class="nm">Upload to job folder</span><span class="type t-google">Google Drive</span></td>
   <td class="what">Uploads the glossary, stage 1 spreadsheet and manifest to the results folder.</td>
   <td class="setup"><span class="need">Google Drive credential</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="job done">
-  <td class="num">37</td>
+  <td class="num">38</td>
   <td class="node"><span class="nm">Job done</span><span class="type t-n8n">Code</span></td>
   <td class="what">Builds the log update: links to the three files, the term count, and a short note (for example "AI review skipped" or "2 other files were ignored").</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="1" data-google="1" data-stops="0" data-name="mark job done">
-  <td class="num">38</td>
+  <td class="num">39</td>
   <td class="node"><span class="nm">Mark job done</span><span class="type t-google">Google Sheets</span></td>
   <td class="what">Updates the job's row, matched on <code>job_id</code>, to <code>done</code> with the links. The page picks this up within 15 seconds.</td>
   <td class="setup"><span class="need">Google Sheets credential</span><span class="need">Log sheet ID</span></td>
@@ -423,7 +428,7 @@
 </section>
 
   <footer>
-    38 nodes in <code>Terminology_extraction_webhook_v4.json</code> (plus a setup note) and 4 in <code>Terminology_job_errors.json</code>.
+    39 nodes in <code>Terminology_extraction_webhook_v4.json</code> (plus a setup note) and 4 in <code>Terminology_job_errors.json</code>.
     Repository: lucatinnirello-hub/terminology-extraction.
   </footer>
 </div>
