@@ -9,11 +9,24 @@
 //                 wildcards (your Wildcards Logic rules), the AI checks them
 //   route 'code'  the code proposes from the forms seen in the files only:
 //                 AI review not ticked, not approved, or client restricted
+//   route 'no_inflection'  the target language doesn't inflect (NO_INFLECTION):
+//                 terms come back unchanged, the AI isn't asked
 //   route 'none'  wildcards not asked for, or no target terms
 //
 // Only target terms get wildcards. Reached from the AI review loop or the
 // no-AI path (extraction jobs), or from "Glossary terms" (wildcards-only jobs).
 // ===========================================================================
+
+// --- EDITABLE: target languages that don't inflect --------------------------
+// Their terms never need wildcards, so the AI isn't asked (it might list
+// longer phrases as "forms" and earn a wrong asterisk). Codes as on the page.
+// Japanese is a judgement call: its nouns, most glossary terms, don't
+// inflect, but verbs and adjectives do. Remove 'ja' to treat it like any
+// other language. Korean is deliberately not here: particles attach to
+// nouns (상금 심볼 → 상금 심볼이), which memoQ's 50% prefix has to cover.
+const NO_INFLECTION = ['zh', 'ja', 'th', 'lo', 'km', 'my', 'vi'];
+// ---------------------------------------------------------------------------
+
 const settings = $('Settings').first().json;
 const gate = $('Check restricted list').first().json.gate || {};
 const wildcardsOnly = settings.mode === 'wildcards';
@@ -49,5 +62,8 @@ if (wildcardsOnly) {
 }
 
 const wanted = wildcardsOnly || settings.add_wildcards === true;
-const route = !wanted || !items.length ? 'none' : gate.may_run_ai ? 'ai' : 'code';
-return [{ json: { route, wildcards_only: wildcardsOnly, items, vocabulary, terms, ai_note: gate.reason || '' } }];
+const route = !wanted || !items.length ? 'none'
+  : NO_INFLECTION.includes(settings.target_lang) ? 'no_inflection'
+    : gate.may_run_ai ? 'ai' : 'code';
+const aiNote = route === 'no_inflection' ? `${settings.target_label} doesn't inflect` : gate.reason || '';
+return [{ json: { route, wildcards_only: wildcardsOnly, items, vocabulary, terms, ai_note: aiNote } }];

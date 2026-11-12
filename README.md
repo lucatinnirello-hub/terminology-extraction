@@ -167,7 +167,9 @@ How each target term gets its wildcards (batches of 25):
 3. **The AI checks each proposal** against the rules, the forms, and the words in the client's TMX/XLIFF that the proposal would also catch (*Wassert|urm* → *Wassertropfen*). It confirms it or corrects it.
 4. **Code checks the AI's answer**: it's used only if it keeps the term's letters and uses the wildcards validly. The note lists any forms the result misses and other words it catches.
 
-`wildcard_check` says what happened: *AI confirmed*, *AI corrected* (check these first), *Code proposal kept (AI reply invalid)*, or *Code only, not validated* (the AI didn't run). The job's note on the page counts each.
+`wildcard_check` says what happened: *AI confirmed*, *AI corrected* (check these first), *Code proposal kept (AI reply invalid)*, *Code only, not validated* (the AI didn't run), or *No wildcards needed* (see below). The job's note on the page counts each.
+
+**Languages that don't inflect.** Chinese, Japanese, Thai, Lao, Khmer, Burmese and Vietnamese terms never need wildcards, so the AI isn't asked and every term comes back unchanged, marked *No wildcards needed* (`NO_INFLECTION` in *Wildcard plan*). Japanese is a judgement call: its nouns don't inflect but its verbs and adjectives do; remove `'ja'` to treat it like other languages. Korean is deliberately not on the list: particles attach to nouns. Chinese, Japanese and Thai are offered for wildcards-only jobs only: they're written without spaces, which the translation matching needs to find words.
 
 **Editing the rules.** The AI's copy of the rules is `RULES` in *Build check request*. The code's rules are in *Propose wildcards* and *Apply wildcards* (the same block in both; keep them identical). `PIPE_MATCHES_STEM_ALONE` there sets whether a pipe also matches the stem on its own. It does in memoQ (`program|ming instruction|s` matches *program instruction*), so it's on, although *Wildcards Logic* says otherwise; switch it off and the code uses an asterisk wherever the stem is itself a form.
 

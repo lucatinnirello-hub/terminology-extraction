@@ -33,7 +33,7 @@ const manifest = {
     approved: gate.approved || false,
     restricted: gate.restricted || false,
     ran: plan.route === 'ai',
-    note: gate.reason || '',
+    note: plan.ai_note,
   },
   rows_by_check: byCheck,
 };

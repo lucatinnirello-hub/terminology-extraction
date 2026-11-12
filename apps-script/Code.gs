@@ -94,6 +94,16 @@ const TARGET_LANGUAGES = LANGUAGES.concat([
   { code: 'uk', tmx: 'uk', label: 'Ukrainian' },
 ]).sort(function (a, b) { return a.label.localeCompare(b.label); });
 
+// Written without spaces between words: offered for wildcards-only jobs, not
+// for translation suggestions (the matching finds words by their spaces).
+// `inflects: false`: their terms never need wildcards, so no AI is needed;
+// keep in step with NO_INFLECTION in n8n's "Wildcard plan".
+const WILDCARD_TARGET_LANGUAGES = TARGET_LANGUAGES.concat([
+  { code: 'zh', tmx: 'zh', label: 'Chinese', inflects: false },
+  { code: 'ja', tmx: 'ja', label: 'Japanese', inflects: false },
+  { code: 'th', tmx: 'th', label: 'Thai', inflects: false },
+]).sort(function (a, b) { return a.label.localeCompare(b.label); });
+
 // Tuning settings: defaults match n8n; min/max are enforced here and in n8n.
 // `help` is shown in the question-mark tooltip next to each setting.
 const TUNING = {
@@ -150,6 +160,7 @@ function getAppConfig() {
     user: currentUser_(),
     languages: LANGUAGES.map(function (l) { return { code: l.code, label: l.label }; }),
     targetLanguages: TARGET_LANGUAGES.map(function (l) { return { code: l.code, label: l.label }; }),
+    wildcardTargetLanguages: WILDCARD_TARGET_LANGUAGES.map(function (l) { return { code: l.code, label: l.label, inflects: l.inflects !== false }; }),
     tuning: TUNING,
     dedupeSegmentsHelp: DEDUPE_SEGMENTS_HELP,
     limits: { maxFileMb: MAX_FILE_MB, maxFiles: MAX_FILES_PER_JOB, extensions: ALLOWED_EXTENSIONS, wildcardExtensions: WILDCARD_EXTENSIONS, glossaryExtensions: GLOSSARY_EXTENSIONS },
@@ -262,7 +273,7 @@ function submitJob(form, jobId) {
     suggest_translations: mode === 'extract' && form.suggest_translations === true,
   };
   if (settings.suggest_translations || mode === 'wildcards') {
-    const target = targetLanguageOf_(form.target_lang, lang.code);
+    const target = targetLanguageOf_(form.target_lang, lang.code, mode);
     settings.target_lang = target.code;
     settings.target_tmx = target.tmx;
     settings.target_label = target.label;
@@ -584,14 +595,15 @@ function validateForm_(form) {
   if (!client) throw new Error('Client is required.');
   if (client.length > 80) throw new Error('Client name is too long.');
   const lang = languageOf_(form.source_lang);
-  if (form.suggest_translations === true || modeOf_(form) === 'wildcards') targetLanguageOf_(form.target_lang, lang.code);
+  if (form.suggest_translations === true || modeOf_(form) === 'wildcards') targetLanguageOf_(form.target_lang, lang.code, modeOf_(form));
 }
 
 function modeOf_(form) { return form && form.mode === 'wildcards' ? 'wildcards' : 'extract'; }
 function extensionsFor_(mode) { return mode === 'wildcards' ? WILDCARD_EXTENSIONS : ALLOWED_EXTENSIONS; }
 
-function targetLanguageOf_(code, sourceCode) {
-  const lang = TARGET_LANGUAGES.filter(function (l) { return l.code === code; })[0];
+function targetLanguageOf_(code, sourceCode, mode) {
+  const list = mode === 'wildcards' ? WILDCARD_TARGET_LANGUAGES : TARGET_LANGUAGES;
+  const lang = list.filter(function (l) { return l.code === code; })[0];
   if (!lang) throw new Error('Choose a target language for the translations.');
   if (lang.code === sourceCode) throw new Error('The target language must differ from the source language.');
   return lang;

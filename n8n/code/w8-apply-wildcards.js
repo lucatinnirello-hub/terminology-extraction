@@ -119,9 +119,10 @@ const sortVocabulary = (v) => (v || []).map(([w, n]) => [lower(w), n]).sort((a, 
 //   AI corrected                          the AI changed it: check these first
 //   Code proposal kept (AI reply invalid) the AI's version broke the term
 //   Code only, not validated              the AI didn't run (or failed)
+//   No wildcards needed                   the target language doesn't inflect
 const plan = $('Wildcard plan').first().json;
 const settings = $('Settings').first().json;
-const proposals = plan.route === 'none' ? [] : $('Propose wildcards').all().map((i) => i.json);
+const proposals = plan.route === 'ai' || plan.route === 'code' ? $('Propose wildcards').all().map((i) => i.json) : [];
 const verdicts = plan.route === 'ai' ? new Map($input.all().map((i) => [String(i.json.id), i.json])) : new Map();
 const vocabulary = sortVocabulary(plan.vocabulary);
 
@@ -176,6 +177,17 @@ for (const p of proposals) {
   if (also.length) notes.push(`also matches in the files: ${also.join(', ')}`);
   if (p.had_wildcards) notes.push(`the glossary had: ${p.had_wildcards}`);
   results.set(String(p.id), { memoq_term: final, wildcard_check: check, wildcard_note: notes.join('; ') });
+}
+
+// Languages that don't inflect: every term as it is.
+if (plan.route === 'no_inflection') {
+  for (const it of plan.items) {
+    results.set(String(it.id), {
+      memoq_term: it.base,
+      wildcard_check: 'No wildcards needed',
+      wildcard_note: `${settings.target_label} doesn't inflect: no wildcards needed${it.had_wildcards ? `; the glossary had: ${it.had_wildcards}` : ''}`,
+    });
+  }
 }
 
 // ---- extraction jobs: back onto the terms

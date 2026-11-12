@@ -114,7 +114,7 @@ const sortVocabulary = (v) => (v || []).map(([w, n]) => [lower(w), n]).sort((a, 
 // Pools each term's forms (the files' and the AI's), applies the rules, and
 // lists words in the files that the proposal would also catch.
 const plan = $('Wildcard plan').first().json;
-if (plan.route === 'none') return [{ json: { skip: true } }];
+if (plan.route !== 'ai' && plan.route !== 'code') return [{ json: { skip: true } }];
 const list = plan.route === 'ai' ? $input.all().map((i) => i.json) : plan.items;
 const vocabulary = sortVocabulary(plan.vocabulary);
 

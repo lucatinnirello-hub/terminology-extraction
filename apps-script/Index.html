@@ -442,6 +442,8 @@
 
       cfg.targetLanguages.forEach(function (l) {
         $('target_lang').appendChild(el('option', { value: l.code, text: l.label }));
+      });
+      cfg.wildcardTargetLanguages.forEach(function (l) {
         $('wc_target_lang').appendChild(el('option', { value: l.code, text: l.label }));
       });
 
@@ -739,7 +741,8 @@
         var glossaries = files.filter(function (x) { return config.limits.glossaryExtensions.indexOf((x.file.name.split('.').pop() || '').toLowerCase()) !== -1; });
         if (glossaries.length !== 1) { notice('err', glossaries.length ? 'Add only one glossary (.xlsx or .csv).' : 'Add the glossary (.xlsx or .csv).'); drop.focus(); return; }
       }
-      if (!$('run_ai_review').checked || !$('ai_review_approved').checked) {
+      var inflects = (config.wildcardTargetLanguages.filter(function (l) { return l.code === targetLang; })[0] || {}).inflects !== false;
+      if (inflects && (!$('run_ai_review').checked || !$('ai_review_approved').checked)) {
         notice('err', 'Adding wildcards to a glossary needs AI review, with the client\'s approval: without it there are no forms to work from.');
         $('run_ai_review').focus();
         return;
