@@ -17,7 +17,9 @@
 //
 // Adds to each term: code_suggestion, code_confidence (high / medium / low /
 // none), code_found_in, code_segments, code_alternatives, tm_pairs (up to 2
-// source/target example pairs for the AI review).
+// source/target example pairs for the AI review), code_forms (the forms of
+// the suggestion seen in the files, for memoQ wildcards). With wildcards on,
+// also target_vocabulary: every target-language word in the files, counted.
 // ===========================================================================
 
 // --- EDITABLE: word endings stripped when counting -------------------------
@@ -183,7 +185,7 @@ for (const item of $('Documents in').all()) {
 log.pairs = pairs.length;
 
 const terms = input.terms || [];
-const blank = { code_suggestion: '', code_confidence: 'none', code_found_in: 0, code_segments: 0, code_alternatives: [], tm_pairs: [] };
+const blank = { code_suggestion: '', code_confidence: 'none', code_found_in: 0, code_segments: 0, code_alternatives: [], tm_pairs: [], code_forms: [] };
 
 if (!pairs.length) {
   log.note = 'No target text found in the files.';
@@ -340,8 +342,18 @@ const out = terms.map((t, ti) => {
     code_segments: n,
     code_alternatives: alternatives,
     tm_pairs: tmPairs,
+    code_forms: [...best.surfaces.keys()].slice(0, 20),
   };
 });
 
 log.by_confidence = byConfidence;
-return [{ json: { ...input, terms: out, log: { ...input.log, translations: log } } }];
+
+// Target-language words, for memoQ wildcards: which other words a wildcard
+// would also catch.
+let vocabulary;
+if (settings.add_wildcards) {
+  const counts = new Map();
+  for (const p of prepared) for (const w of tokens(p.target)) { const k = w.toLowerCase(); counts.set(k, (counts.get(k) || 0) + 1); }
+  vocabulary = [...counts.entries()];
+}
+return [{ json: { ...input, terms: out, target_vocabulary: vocabulary, log: { ...input.log, translations: log } } }];

@@ -46,6 +46,9 @@ if (!/^T\d{8}-\d{6}-[0-9a-f]{4}$/.test(job.job_id || '')) return reject('Missing
 if (!String(job.client || '').trim()) return reject('Client is required.');
 if (!/^[a-z]{2}$/.test(job.source_lang || '')) return reject('source_lang must be a two-letter stopword-list key.');
 if (!isId(job.input_folder_id) || !isId(job.output_folder_id)) return reject('Input and output folder IDs are required.');
+// 'extract': find terms in TMX/XLIFF/text. 'wildcards': add memoQ wildcards
+// to the target terms of a finished glossary (.xlsx/.csv).
+const mode = job.mode === 'wildcards' ? 'wildcards' : 'extract';
 if (!/^[^@\s]+@[^@\s]+$/.test(job.submitted_by || '')) return reject('submitted_by must be an email address.');
 
 const fromPage = body.settings || {};
@@ -64,8 +67,9 @@ settings.ai_review_approved = settings.run_ai_review && fromPage.ai_review_appro
 // 'it', or 'sr', which uses the Croatian list), and what it's called inside
 // TMX/XLIFF files ('sr,sh'). AI translation of terms with no target text
 // only when the person chose it, and only with AI review.
-settings.suggest_translations = fromPage.suggest_translations === true;
-if (settings.suggest_translations) {
+settings.mode = mode;
+settings.suggest_translations = mode === 'extract' && fromPage.suggest_translations === true;
+if (settings.suggest_translations || mode === 'wildcards') {
   const t = fromPage.target_lang;
   if (!/^[a-z]{2}$/.test(t || '')) return reject('target_lang must be a two-letter language key.');
   if (t === job.source_lang) return reject('The target language must differ from the source language.');
@@ -74,6 +78,12 @@ if (settings.suggest_translations) {
   settings.target_label = String(fromPage.target_label || t).slice(0, 40);
 }
 settings.ai_translate_missing = settings.suggest_translations && settings.run_ai_review && fromPage.ai_translate_missing === true;
+
+// memoQ wildcards on the target terms: an option of extraction jobs with
+// translations, and the whole point of wildcards-only jobs. The target
+// column of a wildcards-only glossary may be named; otherwise it's detected.
+settings.add_wildcards = mode === 'wildcards' || (settings.suggest_translations && fromPage.add_wildcards === true);
+if (mode === 'wildcards') settings.target_column = String(fromPage.target_column || '').trim().slice(0, 80);
 
 Object.assign(settings, {
   client: String(job.client).trim(),

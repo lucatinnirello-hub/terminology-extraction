@@ -33,7 +33,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ===========================================================================\n// Turns Google Drive downloads into the shape stage 1 expects: TMX, XLIFF\n// (including memoQ .mqxliff and .mqxlz packages) or plain text.\n//\n// Expects each incoming item to carry the downloaded file as binary property\n// 'data'. If your Drive node names it differently, change BINARY_PROPERTY.\n// ===========================================================================\n\nconst BINARY_PROPERTY = 'data';\n\n// .xml can be TMX or XLIFF: decided from the content below.\n// .mqxlz is memoQ's compressed bilingual export: a ZIP holding the .mqxliff.\nconst EXT_TO_TYPE = {\n  tmx: 'tmx', xml: 'xml', txt: 'text', md: 'text',\n  xlf: 'xliff', xliff: 'xliff', mqxliff: 'xliff', mqxlz: 'package',\n};\nconst XLIFF_IN_PACKAGE = /\\.(mqxliff|xliff|xlf)$/i;\n\n// TMX exports (MemoQ, Trados) are often UTF-16, not UTF-8. Reading UTF-16 as\n// UTF-8 interleaves NUL characters through the text and every regex in\n// stage 1 then finds nothing. Detect by byte-order mark first, then by the\n// pattern of zero bytes for files saved without one.\nfunction detectEncoding(buf) {\n  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) return 'utf8-bom';\n  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return 'utf16le';\n  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) return 'utf16be';\n  const sample = Math.min(buf.length, 4096);\n  let evenZeros = 0;\n  let oddZeros = 0;\n  for (let i = 0; i < sample; i += 1) {\n    if (buf[i] === 0) { if (i % 2 === 0) evenZeros += 1; else oddZeros += 1; }\n  }\n  const half = sample / 2 || 1;\n  if (oddZeros / half > 0.3 && evenZeros / half < 0.05) return 'utf16le';\n  if (evenZeros / half > 0.3 && oddZeros / half < 0.05) return 'utf16be';\n  return 'utf8';\n}\n\nfunction decodeText(buf) {\n  const enc = detectEncoding(buf);\n  if (enc === 'utf8-bom') return buf.subarray(3).toString('utf8');\n  if (enc === 'utf16le') return buf.toString('utf16le').replace(/^\\uFEFF/, '');\n  if (enc === 'utf16be') {\n    const even = buf.length - (buf.length % 2);\n    const swapped = Buffer.from(buf.subarray(0, even));\n    swapped.swap16();\n    return swapped.toString('utf16le').replace(/^\\uFEFF/, '');\n  }\n  return buf.toString('utf8');\n}\n\n// --- ZIP reading for memoQ .mqxlz packages ---------------------------------\n// n8n's Code node can't load zlib by default, so this is a small, complete\n// DEFLATE decoder (RFC 1951, after zlib's \"puff\") plus a ZIP directory reader.\nconst LBASE = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258];\nconst LEXT = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0];\nconst DBASE = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577];\nconst DEXT = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];\nconst CL_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];\n\nfunction inflateRaw(src, sizeHint) {\n  let pos = 0;\n  let bitBuf = 0;\n  let bitCnt = 0;\n  let out = new Uint8Array(Math.max(1024, sizeHint || src.length * 4));\n  let outLen = 0;\n  const ensure = (n) => {\n    if (outLen + n <= out.length) return;\n    const bigger = new Uint8Array(Math.max(out.length * 2, outLen + n));\n    bigger.set(out.subarray(0, outLen));\n    out = bigger;\n  };\n  const bits = (n) => {\n    while (bitCnt < n) {\n      if (pos >= src.length) throw new Error('Damaged package: data ends early.');\n      bitBuf |= src[pos++] << bitCnt;\n      bitCnt += 8;\n    }\n    const v = bitBuf & ((1 << n) - 1);\n    bitBuf >>>= n;\n    bitCnt -= n;\n    return v;\n  };\n  const build = (lengths) => {\n    const count = new Uint16Array(16);\n    const symbol = new Uint16Array(lengths.length);\n    for (let s = 0; s < lengths.length; s += 1) count[lengths[s]] += 1;\n    count[0] = 0;\n    const offs = new Uint16Array(16);\n    for (let l = 1; l < 16; l += 1) offs[l] = offs[l - 1] + count[l - 1];\n    for (let s = 0; s < lengths.length; s += 1) if (lengths[s]) symbol[offs[lengths[s]]++] = s;\n    return { count, symbol };\n  };\n  const decode = (h) => {\n    let code = 0;\n    let first = 0;\n    let index = 0;\n    for (let len = 1; len < 16; len += 1) {\n      code |= bits(1);\n      const count = h.count[len];\n      if (code - count < first) return h.symbol[index + (code - first)];\n      index += count;\n      first += count;\n      first <<= 1;\n      code <<= 1;\n    }\n    throw new Error('Damaged package: invalid compressed data.');\n  };\n  const codes = (lc, dc) => {\n    for (;;) {\n      let sym = decode(lc);\n      if (sym < 256) {\n        ensure(1);\n        out[outLen++] = sym;\n      } else if (sym === 256) {\n        return;\n      } else {\n        sym -= 257;\n        if (sym >= 29) throw new Error('Damaged package: invalid length code.');\n        const len = LBASE[sym] + bits(LEXT[sym]);\n        const ds = decode(dc);\n        if (ds >= 30) throw new Error('Damaged package: invalid distance code.');\n        const dist = DBASE[ds] + bits(DEXT[ds]);\n        if (dist > outLen) throw new Error('Damaged package: distance too far back.');\n        ensure(len);\n        for (let i = 0; i < len; i += 1) { out[outLen] = out[outLen - dist]; outLen += 1; }\n      }\n    }\n  };\n  let fixed = null;\n  let last;\n  do {\n    last = bits(1);\n    const type = bits(2);\n    if (type === 0) {\n      bitBuf = 0; bitCnt = 0;                       // skip to the byte boundary\n      if (pos + 4 > src.length) throw new Error('Damaged package: data ends early.');\n      const len = src[pos] | (src[pos + 1] << 8);\n      const nlen = src[pos + 2] | (src[pos + 3] << 8);\n      if (len !== (~nlen & 0xffff)) throw new Error('Damaged package: bad stored block.');\n      pos += 4;\n      if (pos + len > src.length) throw new Error('Damaged package: data ends early.');\n      ensure(len);\n      out.set(src.subarray(pos, pos + len), outLen);\n      outLen += len;\n      pos += len;\n    } else if (type === 1) {\n      if (!fixed) {\n        const l = new Uint8Array(288);\n        l.fill(8, 0, 144); l.fill(9, 144, 256); l.fill(7, 256, 280); l.fill(8, 280, 288);\n        fixed = [build(l), build(new Uint8Array(30).fill(5))];\n      }\n      codes(fixed[0], fixed[1]);\n    } else if (type === 2) {\n      const nlen = bits(5) + 257;\n      const ndist = bits(5) + 1;\n      const ncode = bits(4) + 4;\n      const cl = new Uint8Array(19);\n      for (let i = 0; i < ncode; i += 1) cl[CL_ORDER[i]] = bits(3);\n      const clh = build(cl);\n      const lengths = new Uint8Array(nlen + ndist);\n      for (let i = 0; i < nlen + ndist;) {\n        const sym = decode(clh);\n        if (sym < 16) { lengths[i++] = sym; continue; }\n        let rep;\n        let val = 0;\n        if (sym === 16) {\n          if (i === 0) throw new Error('Damaged package: bad code lengths.');\n          val = lengths[i - 1];\n          rep = 3 + bits(2);\n        } else if (sym === 17) {\n          rep = 3 + bits(3);\n        } else {\n          rep = 11 + bits(7);\n        }\n        if (i + rep > nlen + ndist) throw new Error('Damaged package: bad code lengths.');\n        while (rep--) lengths[i++] = val;\n      }\n      codes(build(lengths.subarray(0, nlen)), build(lengths.subarray(nlen)));\n    } else {\n      throw new Error('Damaged package: invalid block type.');\n    }\n  } while (!last);\n  return Buffer.from(out.buffer, out.byteOffset, outLen);\n}\n\n// Lists and extracts entries from a ZIP buffer. Returns [{ name, data }].\nfunction unzip(buf, wanted) {\n  const u32 = (o) => buf.readUInt32LE(o);\n  const u16 = (o) => buf.readUInt16LE(o);\n  let eocd = -1;\n  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 65535); i -= 1) {\n    if (u32(i) === 0x06054b50) { eocd = i; break; }\n  }\n  if (eocd < 0) throw new Error('Not a ZIP package (or it is damaged).');\n  const entries = u16(eocd + 10);\n  let p = u32(eocd + 16);\n  const found = [];\n  for (let e = 0; e < entries; e += 1) {\n    if (u32(p) !== 0x02014b50) throw new Error('Damaged package: bad directory.');\n    const flags = u16(p + 8);\n    const method = u16(p + 10);\n    const compSize = u32(p + 20);\n    const size = u32(p + 24);\n    const nameLen = u16(p + 28);\n    const extraLen = u16(p + 30);\n    const commentLen = u16(p + 32);\n    const local = u32(p + 42);\n    const name = buf.subarray(p + 46, p + 46 + nameLen).toString('utf8');\n    p += 46 + nameLen + extraLen + commentLen;\n    if (name.endsWith('/') || !wanted(name)) continue;\n    if (flags & 1) throw new Error(`\"${name}\" in the package is password-protected.`);\n    if (u32(local) !== 0x04034b50) throw new Error('Damaged package: bad file header.');\n    const start = local + 30 + u16(local + 26) + u16(local + 28);\n    const raw = buf.subarray(start, start + compSize);\n    let data;\n    if (method === 0) data = Buffer.from(raw);\n    else if (method === 8) data = inflateRaw(raw, size);\n    else throw new Error(`\"${name}\" uses an unsupported compression method (${method}).`);\n    found.push({ name, data });\n  }\n  return found;\n}\n\nconst items = $input.all();\nconst out = [];\n\nfor (let i = 0; i < items.length; i += 1) {\n  const item = items[i];\n  const binary = (item.binary || {})[BINARY_PROPERTY];\n\n  const name = (binary && binary.fileName) || item.json.name || `file_${i + 1}`;\n  const ext = (name.split('.').pop() || '').toLowerCase();\n  const sourceType = EXT_TO_TYPE[ext];\n\n  if (!sourceType) {\n    // PDF and DOCX need an Extract from File node first; skipped, not failed.\n    out.push({ json: { file_name: name, source_type: 'unsupported', content: '', skipped: `unsupported_extension:${ext}` } });\n    continue;\n  }\n\n  if (!binary) {\n    throw new Error(\n      `Item ${i + 1} (\"${name}\") has no binary property \"${BINARY_PROPERTY}\". ` +\n      `Check the Drive node is set to download the file, not just list it.`\n    );\n  }\n\n  const buffer = await this.helpers.getBinaryDataBuffer(i, BINARY_PROPERTY);\n\n  if (sourceType === 'package') {\n    let entries;\n    try {\n      entries = unzip(buffer, (entryName) => XLIFF_IN_PACKAGE.test(entryName));\n    } catch (e) {\n      out.push({ json: { file_name: name, source_type: 'unsupported', content: '', skipped: `package_unreadable:${e.message}` } });\n      continue;\n    }\n    if (!entries.length) {\n      out.push({ json: { file_name: name, source_type: 'unsupported', content: '', skipped: 'package_has_no_xliff' } });\n      continue;\n    }\n    for (const entry of entries) {\n      out.push({ json: { file_name: `${name} > ${entry.name}`, source_type: 'xliff', content: decodeText(entry.data), encoding: detectEncoding(entry.data) } });\n    }\n    continue;\n  }\n\n  const content = decodeText(buffer);\n  const type = sourceType === 'xml' ? (/<xliff\\b/i.test(content.slice(0, 5000)) ? 'xliff' : 'tmx') : sourceType;\n  out.push({ json: { file_name: name, source_type: type, content, encoding: detectEncoding(buffer) } });\n}\n\nreturn out;\n"
+        "jsCode": "// ===========================================================================\n// Turns Google Drive downloads into the shape stage 1 expects: TMX, XLIFF\n// (including memoQ .mqxliff and .mqxlz packages) or plain text. Glossaries\n// (.xlsx, .csv) for wildcards-only jobs become rows: { columns, rows }.\n//\n// Expects each incoming item to carry the downloaded file as binary property\n// 'data'. If your Drive node names it differently, change BINARY_PROPERTY.\n// ===========================================================================\n\nconst BINARY_PROPERTY = 'data';\n\n// .xml can be TMX or XLIFF: decided from the content below.\n// .mqxlz is memoQ's compressed bilingual export: a ZIP holding the .mqxliff.\nconst EXT_TO_TYPE = {\n  tmx: 'tmx', xml: 'xml', txt: 'text', md: 'text',\n  xlf: 'xliff', xliff: 'xliff', mqxliff: 'xliff', mqxlz: 'package',\n  xlsx: 'xlsx', csv: 'csv',\n};\nconst XLIFF_IN_PACKAGE = /\\.(mqxliff|xliff|xlf)$/i;\n\n// TMX exports (MemoQ, Trados) are often UTF-16, not UTF-8. Reading UTF-16 as\n// UTF-8 interleaves NUL characters through the text and every regex in\n// stage 1 then finds nothing. Detect by byte-order mark first, then by the\n// pattern of zero bytes for files saved without one.\nfunction detectEncoding(buf) {\n  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) return 'utf8-bom';\n  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return 'utf16le';\n  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) return 'utf16be';\n  const sample = Math.min(buf.length, 4096);\n  let evenZeros = 0;\n  let oddZeros = 0;\n  for (let i = 0; i < sample; i += 1) {\n    if (buf[i] === 0) { if (i % 2 === 0) evenZeros += 1; else oddZeros += 1; }\n  }\n  const half = sample / 2 || 1;\n  if (oddZeros / half > 0.3 && evenZeros / half < 0.05) return 'utf16le';\n  if (evenZeros / half > 0.3 && oddZeros / half < 0.05) return 'utf16be';\n  return 'utf8';\n}\n\nfunction decodeText(buf) {\n  const enc = detectEncoding(buf);\n  if (enc === 'utf8-bom') return buf.subarray(3).toString('utf8');\n  if (enc === 'utf16le') return buf.toString('utf16le').replace(/^\\uFEFF/, '');\n  if (enc === 'utf16be') {\n    const even = buf.length - (buf.length % 2);\n    const swapped = Buffer.from(buf.subarray(0, even));\n    swapped.swap16();\n    return swapped.toString('utf16le').replace(/^\\uFEFF/, '');\n  }\n  return buf.toString('utf8');\n}\n\n// --- ZIP reading for memoQ .mqxlz packages ---------------------------------\n// n8n's Code node can't load zlib by default, so this is a small, complete\n// DEFLATE decoder (RFC 1951, after zlib's \"puff\") plus a ZIP directory reader.\nconst LBASE = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258];\nconst LEXT = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0];\nconst DBASE = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577];\nconst DEXT = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];\nconst CL_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];\n\nfunction inflateRaw(src, sizeHint) {\n  let pos = 0;\n  let bitBuf = 0;\n  let bitCnt = 0;\n  let out = new Uint8Array(Math.max(1024, sizeHint || src.length * 4));\n  let outLen = 0;\n  const ensure = (n) => {\n    if (outLen + n <= out.length) return;\n    const bigger = new Uint8Array(Math.max(out.length * 2, outLen + n));\n    bigger.set(out.subarray(0, outLen));\n    out = bigger;\n  };\n  const bits = (n) => {\n    while (bitCnt < n) {\n      if (pos >= src.length) throw new Error('Damaged package: data ends early.');\n      bitBuf |= src[pos++] << bitCnt;\n      bitCnt += 8;\n    }\n    const v = bitBuf & ((1 << n) - 1);\n    bitBuf >>>= n;\n    bitCnt -= n;\n    return v;\n  };\n  const build = (lengths) => {\n    const count = new Uint16Array(16);\n    const symbol = new Uint16Array(lengths.length);\n    for (let s = 0; s < lengths.length; s += 1) count[lengths[s]] += 1;\n    count[0] = 0;\n    const offs = new Uint16Array(16);\n    for (let l = 1; l < 16; l += 1) offs[l] = offs[l - 1] + count[l - 1];\n    for (let s = 0; s < lengths.length; s += 1) if (lengths[s]) symbol[offs[lengths[s]]++] = s;\n    return { count, symbol };\n  };\n  const decode = (h) => {\n    let code = 0;\n    let first = 0;\n    let index = 0;\n    for (let len = 1; len < 16; len += 1) {\n      code |= bits(1);\n      const count = h.count[len];\n      if (code - count < first) return h.symbol[index + (code - first)];\n      index += count;\n      first += count;\n      first <<= 1;\n      code <<= 1;\n    }\n    throw new Error('Damaged package: invalid compressed data.');\n  };\n  const codes = (lc, dc) => {\n    for (;;) {\n      let sym = decode(lc);\n      if (sym < 256) {\n        ensure(1);\n        out[outLen++] = sym;\n      } else if (sym === 256) {\n        return;\n      } else {\n        sym -= 257;\n        if (sym >= 29) throw new Error('Damaged package: invalid length code.');\n        const len = LBASE[sym] + bits(LEXT[sym]);\n        const ds = decode(dc);\n        if (ds >= 30) throw new Error('Damaged package: invalid distance code.');\n        const dist = DBASE[ds] + bits(DEXT[ds]);\n        if (dist > outLen) throw new Error('Damaged package: distance too far back.');\n        ensure(len);\n        for (let i = 0; i < len; i += 1) { out[outLen] = out[outLen - dist]; outLen += 1; }\n      }\n    }\n  };\n  let fixed = null;\n  let last;\n  do {\n    last = bits(1);\n    const type = bits(2);\n    if (type === 0) {\n      bitBuf = 0; bitCnt = 0;                       // skip to the byte boundary\n      if (pos + 4 > src.length) throw new Error('Damaged package: data ends early.');\n      const len = src[pos] | (src[pos + 1] << 8);\n      const nlen = src[pos + 2] | (src[pos + 3] << 8);\n      if (len !== (~nlen & 0xffff)) throw new Error('Damaged package: bad stored block.');\n      pos += 4;\n      if (pos + len > src.length) throw new Error('Damaged package: data ends early.');\n      ensure(len);\n      out.set(src.subarray(pos, pos + len), outLen);\n      outLen += len;\n      pos += len;\n    } else if (type === 1) {\n      if (!fixed) {\n        const l = new Uint8Array(288);\n        l.fill(8, 0, 144); l.fill(9, 144, 256); l.fill(7, 256, 280); l.fill(8, 280, 288);\n        fixed = [build(l), build(new Uint8Array(30).fill(5))];\n      }\n      codes(fixed[0], fixed[1]);\n    } else if (type === 2) {\n      const nlen = bits(5) + 257;\n      const ndist = bits(5) + 1;\n      const ncode = bits(4) + 4;\n      const cl = new Uint8Array(19);\n      for (let i = 0; i < ncode; i += 1) cl[CL_ORDER[i]] = bits(3);\n      const clh = build(cl);\n      const lengths = new Uint8Array(nlen + ndist);\n      for (let i = 0; i < nlen + ndist;) {\n        const sym = decode(clh);\n        if (sym < 16) { lengths[i++] = sym; continue; }\n        let rep;\n        let val = 0;\n        if (sym === 16) {\n          if (i === 0) throw new Error('Damaged package: bad code lengths.');\n          val = lengths[i - 1];\n          rep = 3 + bits(2);\n        } else if (sym === 17) {\n          rep = 3 + bits(3);\n        } else {\n          rep = 11 + bits(7);\n        }\n        if (i + rep > nlen + ndist) throw new Error('Damaged package: bad code lengths.');\n        while (rep--) lengths[i++] = val;\n      }\n      codes(build(lengths.subarray(0, nlen)), build(lengths.subarray(nlen)));\n    } else {\n      throw new Error('Damaged package: invalid block type.');\n    }\n  } while (!last);\n  return Buffer.from(out.buffer, out.byteOffset, outLen);\n}\n\n// Lists and extracts entries from a ZIP buffer. Returns [{ name, data }].\nfunction unzip(buf, wanted) {\n  const u32 = (o) => buf.readUInt32LE(o);\n  const u16 = (o) => buf.readUInt16LE(o);\n  let eocd = -1;\n  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 65535); i -= 1) {\n    if (u32(i) === 0x06054b50) { eocd = i; break; }\n  }\n  if (eocd < 0) throw new Error('Not a ZIP package (or it is damaged).');\n  const entries = u16(eocd + 10);\n  let p = u32(eocd + 16);\n  const found = [];\n  for (let e = 0; e < entries; e += 1) {\n    if (u32(p) !== 0x02014b50) throw new Error('Damaged package: bad directory.');\n    const flags = u16(p + 8);\n    const method = u16(p + 10);\n    const compSize = u32(p + 20);\n    const size = u32(p + 24);\n    const nameLen = u16(p + 28);\n    const extraLen = u16(p + 30);\n    const commentLen = u16(p + 32);\n    const local = u32(p + 42);\n    const name = buf.subarray(p + 46, p + 46 + nameLen).toString('utf8');\n    p += 46 + nameLen + extraLen + commentLen;\n    if (name.endsWith('/') || !wanted(name)) continue;\n    if (flags & 1) throw new Error(`\"${name}\" in the package is password-protected.`);\n    if (u32(local) !== 0x04034b50) throw new Error('Damaged package: bad file header.');\n    const start = local + 30 + u16(local + 26) + u16(local + 28);\n    const raw = buf.subarray(start, start + compSize);\n    let data;\n    if (method === 0) data = Buffer.from(raw);\n    else if (method === 8) data = inflateRaw(raw, size);\n    else throw new Error(`\"${name}\" uses an unsupported compression method (${method}).`);\n    found.push({ name, data });\n  }\n  return found;\n}\n\n// --- Glossaries: .xlsx (a ZIP of XML files) and .csv ---------------------\nconst xmlText = (s) => decodeEntities(String(s || '').replace(/<[^>]+>/g, ''));\nfunction decodeEntities(s) {\n  return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"').replace(/&apos;/g, \"'\")\n    .replace(/&#(\\d+);/g, (_, d) => String.fromCodePoint(+d))\n    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))\n    .replace(/&amp;/g, '&');\n}\n// Header row first; one object per row, keyed by header. Empty rows dropped.\nfunction toRecords(table) {\n  const start = table.findIndex((r) => r.some((c) => String(c).trim()));\n  if (start < 0) return { columns: [], rows: [] };\n  // Every column that holds data anywhere, named \"Column N\" if it has no header.\n  const width = Math.max(...table.slice(start).map((r) => r.length));\n  const columns = Array.from({ length: width }, (_, i) => String(table[start][i] || '').trim() || `Column ${i + 1}`);\n  const rows = table.slice(start + 1)\n    .filter((r) => r.some((c) => String(c).trim()))\n    .map((r) => Object.fromEntries(columns.map((c, i) => [c, r[i] === undefined ? '' : String(r[i])])));\n  return { columns, rows };\n}\n// The first worksheet of an .xlsx file.\nfunction readXlsx(buf) {\n  const files = Object.fromEntries(unzip(buf, (n) => /^xl\\/(workbook\\.xml|_rels\\/workbook\\.xml\\.rels|sharedStrings\\.xml|worksheets\\/[^/]+\\.xml)$/.test(n))\n    .map((e) => [e.name, e.data.toString('utf8')]));\n  const shared = (files['xl/sharedStrings.xml'] || '').match(/<si\\b[\\s\\S]*?<\\/si>/g) || [];\n  const strings = shared.map((si) => (si.match(/<t\\b[^>]*>[\\s\\S]*?<\\/t>/g) || []).map(xmlText).join(''));\n  const firstSheet = ((files['xl/workbook.xml'] || '').match(/<sheet\\b[^>]*>/) || [''])[0];\n  const relId = (firstSheet.match(/r:id=\"([^\"]+)\"/) || [, ''])[1];\n  const rel = ((files['xl/_rels/workbook.xml.rels'] || '').match(new RegExp(`<Relationship\\\\b[^>]*Id=\"${relId}\"[^>]*>`)) || [''])[0];\n  let target = (rel.match(/Target=\"([^\"]+)\"/) || [, ''])[1].replace(/^\\/?(xl\\/)?/, '');\n  if (!files['xl/' + target]) target = Object.keys(files).filter((n) => n.startsWith('xl/worksheets/')).sort()[0].slice(3);\n  const sheet = files['xl/' + target];\n  if (!sheet) throw new Error('No worksheet found.');\n  const table = [];\n  for (const row of sheet.match(/<row\\b[\\s\\S]*?<\\/row>/g) || []) {\n    const cells = [];\n    let next = 0;\n    for (const c of row.match(/<c\\b[^>]*?(?:\\/>|>[\\s\\S]*?<\\/c>)/g) || []) {\n      const open = c.match(/<c\\b[^>]*/)[0];\n      const ref = (open.match(/\\br=\"([A-Z]+)\\d+\"/) || [, ''])[1];\n      const col = ref ? [...ref].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1 : next;\n      next = col + 1;\n      const type = (open.match(/\\bt=\"([^\"]+)\"/) || [, ''])[1];\n      const v = (c.match(/<v>([\\s\\S]*?)<\\/v>/) || [, ''])[1];\n      cells[col] = type === 's' ? strings[+v] || ''\n        : type === 'inlineStr' ? (c.match(/<t\\b[^>]*>[\\s\\S]*?<\\/t>/g) || []).map(xmlText).join('')\n          : xmlText(v);\n    }\n    table.push(Array.from(cells, (x) => (x === undefined ? '' : x)));\n  }\n  return toRecords(table);\n}\n// CSV with a header row; comma, semicolon or tab, whichever the header uses most.\nfunction readCsv(text) {\n  const firstLine = text.split(/\\r?\\n/, 1)[0];\n  const delim = [',', ';', '\\t'].sort((a, b) => firstLine.split(b).length - firstLine.split(a).length)[0];\n  const table = [];\n  let row = [];\n  let cell = '';\n  let quoted = false;\n  for (let i = 0; i < text.length; i += 1) {\n    const ch = text[i];\n    if (quoted) {\n      if (ch === '\"' && text[i + 1] === '\"') { cell += '\"'; i += 1; } else if (ch === '\"') quoted = false; else cell += ch;\n    } else if (ch === '\"' && !cell) quoted = true;\n    else if (ch === delim) { row.push(cell); cell = ''; }\n    else if (ch === '\\n' || ch === '\\r') {\n      if (ch === '\\r' && text[i + 1] === '\\n') i += 1;\n      row.push(cell); table.push(row); row = []; cell = '';\n    } else cell += ch;\n  }\n  if (cell || row.length) { row.push(cell); table.push(row); }\n  return toRecords(table);\n}\n\nconst items = $input.all();\nconst out = [];\n\nfor (let i = 0; i < items.length; i += 1) {\n  const item = items[i];\n  const binary = (item.binary || {})[BINARY_PROPERTY];\n\n  const name = (binary && binary.fileName) || item.json.name || `file_${i + 1}`;\n  const ext = (name.split('.').pop() || '').toLowerCase();\n  const sourceType = EXT_TO_TYPE[ext];\n\n  if (!sourceType) {\n    // PDF and DOCX need an Extract from File node first; skipped, not failed.\n    out.push({ json: { file_name: name, source_type: 'unsupported', content: '', skipped: `unsupported_extension:${ext}` } });\n    continue;\n  }\n\n  if (!binary) {\n    throw new Error(\n      `Item ${i + 1} (\"${name}\") has no binary property \"${BINARY_PROPERTY}\". ` +\n      `Check the Drive node is set to download the file, not just list it.`\n    );\n  }\n\n  const buffer = await this.helpers.getBinaryDataBuffer(i, BINARY_PROPERTY);\n\n  if (sourceType === 'xlsx' || sourceType === 'csv') {\n    try {\n      const g = sourceType === 'xlsx' ? readXlsx(buffer) : readCsv(decodeText(buffer));\n      if (!g.rows.length) throw new Error('no rows under the header');\n      out.push({ json: { file_name: name, source_type: 'glossary', content: '', columns: g.columns, rows: g.rows } });\n    } catch (e) {\n      out.push({ json: { file_name: name, source_type: 'unsupported', content: '', skipped: `glossary_unreadable:${e.message}` } });\n    }\n    continue;\n  }\n\n  if (sourceType === 'package') {\n    let entries;\n    try {\n      entries = unzip(buffer, (entryName) => XLIFF_IN_PACKAGE.test(entryName));\n    } catch (e) {\n      out.push({ json: { file_name: name, source_type: 'unsupported', content: '', skipped: `package_unreadable:${e.message}` } });\n      continue;\n    }\n    if (!entries.length) {\n      out.push({ json: { file_name: name, source_type: 'unsupported', content: '', skipped: 'package_has_no_xliff' } });\n      continue;\n    }\n    for (const entry of entries) {\n      out.push({ json: { file_name: `${name} > ${entry.name}`, source_type: 'xliff', content: decodeText(entry.data), encoding: detectEncoding(entry.data) } });\n    }\n    continue;\n  }\n\n  const content = decodeText(buffer);\n  const type = sourceType === 'xml' ? (/<xliff\\b/i.test(content.slice(0, 5000)) ? 'xliff' : 'tmx') : sourceType;\n  out.push({ json: { file_name: name, source_type: type, content, encoding: detectEncoding(buffer) } });\n}\n\nreturn out;\n"
       },
       "id": "29cf1ed1-70dd-4a27-a36f-28b11b0e283e",
       "name": "Normalise Drive files",
@@ -48,7 +48,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ===========================================================================\n// The handoff point. Everything upstream of here just has to produce items\n// shaped like:\n//\n//   { file_name: 'acme.tmx', source_type: 'tmx' | 'text', content: '<string>' }\n//\n// If you rebuild the Drive nodes by hand, connect them into this node and\n// nothing downstream needs changing.\n// ===========================================================================\n\nconst items = $input.all();\nif (!items.length) {\n  throw new Error('No documents arrived. Check Settings.input_mode and the branch it selects.');\n}\n\nconst usable = items.filter((i) => i.json.source_type !== 'unsupported' && (i.json.content || '').length > 0);\n\nif (!usable.length) {\n  const reasons = items.map((i) => i.json.skipped || 'empty content').join(', ');\n  throw new Error(`No usable documents. Reasons: ${reasons}`);\n}\n\nreturn usable.map((i) => ({ json: i.json }));\n"
+        "jsCode": "// ===========================================================================\n// The handoff point. Everything upstream of here just has to produce items\n// shaped like:\n//\n//   { file_name: 'acme.tmx', source_type: 'tmx' | 'text', content: '<string>' }\n//\n// or, for a wildcards-only job's glossary:\n//\n//   { file_name: 'terms.xlsx', source_type: 'glossary', columns: [...], rows: [...] }\n//\n// If you rebuild the Drive nodes by hand, connect them into this node and\n// nothing downstream needs changing.\n// ===========================================================================\n\nconst items = $input.all();\nif (!items.length) {\n  throw new Error('No documents arrived. Check Settings.input_mode and the branch it selects.');\n}\n\nconst usable = items.filter((i) => i.json.source_type !== 'unsupported'\n  && ((i.json.content || '').length > 0 || (i.json.source_type === 'glossary' && (i.json.rows || []).length > 0)));\n\nif (!usable.length) {\n  const reasons = items.map((i) => i.json.skipped || 'empty content').join(', ');\n  throw new Error(`No usable documents. Reasons: ${reasons}`);\n}\n\nreturn usable.map((i) => ({ json: i.json }));\n"
       },
       "id": "e361b204-b7d4-454a-8d4d-7820c7599832",
       "name": "Documents in",
@@ -70,7 +70,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -10528,
+        -10304,
         2608
       ],
       "notesInFlow": true,
@@ -85,7 +85,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -10304,
+        -10080,
         2608
       ]
     },
@@ -102,7 +102,7 @@
       "type": "n8n-nodes-base.convertToFile",
       "typeVersion": 1.1,
       "position": [
-        -10080,
+        -9856,
         2608
       ]
     },
@@ -115,7 +115,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -9856,
+        -9632,
         2608
       ],
       "notesInFlow": true,
@@ -123,14 +123,14 @@
     },
     {
       "parameters": {
-        "jsCode": "// ===========================================================================\n// TRANSLATION SUGGESTIONS FROM THE FILES THEMSELVES. No AI.\n//\n// Only runs when the job asks for translations. For each term it looks at\n// the target side of the segments whose source contains the term, and finds\n// the target phrase that appears in those targets and rarely elsewhere\n// (Dice coefficient). A suggestion must also be built from the translations\n// of the term's own words, which stops \"remain locked\" being offered for\n// \"golden symbols\" just because they happen to share segments.\n//\n// Confidence measures how CONSISTENTLY the files translate the term, not\n// whether the translation is right: the AI review judges that.\n//\n// Adds to each term: code_suggestion, code_confidence (high / medium / low /\n// none), code_found_in, code_segments, code_alternatives, tm_pairs (up to 2\n// source/target example pairs for the AI review).\n// ===========================================================================\n\n// --- EDITABLE: word endings stripped when counting -------------------------\n// So case endings don't split the counts (\"okretanja\" / \"okretanje\" /\n// \"okretanjima\"). Only affects how forms are grouped: suggestions are always\n// shown as written in the files. Keyed by target language code.\nconst SUFFIXES = {\n  sr: ['ima', 'ama', 'ega', 'emu', 'ome', 'oga', 'omu', 'ih', 'im', 'og', 'om', 'em', 'oj', 'a', 'e', 'i', 'u', 'o'],\n};\nSUFFIXES.hr = SUFFIXES.sr;\n\n// Segments looked at per term. Plenty for a reliable count; keeps big\n// memories fast.\nconst MAX_SEGMENTS_PER_TERM = 200;\n// ---------------------------------------------------------------------------\n\nconst settings = $('Settings').first().json;\nconst input = $input.first().json;\n\nif (!settings.suggest_translations) {\n  return [{ json: { ...input, log: { ...input.log, translations: { requested: false } } } }];\n}\n\nconst target = $('Stopword lists').first().json.target || {};\nconst targetLang = settings.target_lang;\n\n// --- reading source/target pairs (same cleaning as stage 1) -----------------\nfunction decodeEntities(s) {\n  return s\n    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"').replace(/&apos;/g, \"'\")\n    .replace(/&#(\\d+);/g, (_, d) => String.fromCharCode(+d))\n    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))\n    .replace(/&amp;/g, '&');\n}\nfunction cleanInline(s) {\n  return decodeEntities(\n    s.replace(/<(bpt|ept|ph|it)\\b[^>]*\\/>/gi, ' ')\n      .replace(/<(bpt|ept|ph|it)\\b[^>]*>[\\s\\S]*?<\\/\\1>/gi, ' ')\n      .replace(/<\\/?(g|mrk|pc)\\b[^>]*>/gi, '')\n      .replace(/<[^>]+>/g, ' ')\n  ).replace(/\\s+/g, ' ').trim();\n}\nconst ISO3 = {\n  en: ['eng'], it: ['ita'], fr: ['fre', 'fra'], de: ['ger', 'deu'], es: ['spa'], pt: ['por'], nl: ['dut', 'nld'],\n  da: ['dan'], sv: ['swe'], nb: ['nob', 'nor'], no: ['nor', 'nob'], nn: ['nno', 'nor'], fi: ['fin'], pl: ['pol'],\n  cs: ['cze', 'ces'], sk: ['slo', 'slk'], sl: ['slv'], hr: ['hrv'], ro: ['rum', 'ron'], hu: ['hun'], et: ['est'],\n  lv: ['lav'], lt: ['lit'], tr: ['tur'], id: ['ind'], sr: ['srp'], sh: ['hbs'], ru: ['rus'], uk: ['ukr'], bg: ['bul'], el: ['gre', 'ell'],\n};\nfunction langMatches(lang, wanted) {\n  const l = String(lang || '').toLowerCase().replace(/_/g, '-');\n  const wants = String(wanted || '').toLowerCase().split(',').map((w) => w.trim()).filter(Boolean);\n  return wants.some((w) => [w].concat(ISO3[w] || []).some((code) => l === code || l.startsWith(code + '-')));\n}\nconst attr = (tag, name) => (tag.match(new RegExp('\\\\s' + name + '\\\\s*=\\\\s*[\"\\']([^\"\\']*)[\"\\']', 'i')) || [, ''])[1];\n\nfunction tmxPairs(xml) {\n  const pairs = [];\n  for (const tu of xml.match(/<tu\\b[^>]*>[\\s\\S]*?<\\/tu>/gi) || []) {\n    let source = '';\n    let tgt = '';\n    for (const m of tu.matchAll(/<tuv\\b([^>]*)>([\\s\\S]*?)<\\/tuv>/gi)) {\n      const lang = (m[1].match(/(?:xml:)?lang\\s*=\\s*[\"']([^\"']+)[\"']/i) || [, ''])[1];\n      const seg = m[2].match(/<seg\\b[^>]*>([\\s\\S]*?)<\\/seg>/i);\n      if (!seg) continue;\n      if (!source && langMatches(lang, settings.tmx_lang)) source = cleanInline(seg[1]);\n      else if (!tgt && langMatches(lang, settings.target_tmx)) tgt = cleanInline(seg[1]);\n    }\n    if (source) pairs.push({ source, target: tgt });\n  }\n  return pairs;\n}\n\nfunction xliffPairs(xml) {\n  const rootTag = (xml.match(/<xliff\\b[^>]*>/i) || [''])[0];\n  const pairs = [];\n  if (/^2/.test(attr(rootTag, 'version'))) {\n    if (attr(rootTag, 'srcLang') && !langMatches(attr(rootTag, 'srcLang'), settings.tmx_lang)) return null;\n    if (attr(rootTag, 'trgLang') && !langMatches(attr(rootTag, 'trgLang'), settings.target_tmx)) return null;\n    for (const u of xml.matchAll(/<unit\\b([^>]*)>([\\s\\S]*?)<\\/unit>/gi)) {\n      if (/\\stranslate\\s*=\\s*[\"']no[\"']/i.test(u[1])) continue;\n      for (const s of u[2].matchAll(/<segment\\b[^>]*>([\\s\\S]*?)<\\/segment>/gi)) {\n        const src = s[1].match(/<source\\b[^>]*>([\\s\\S]*?)<\\/source>/i);\n        const tgt = s[1].match(/<target\\b[^>]*>([\\s\\S]*?)<\\/target>/i);\n        if (src) pairs.push({ source: cleanInline(src[1]), target: tgt ? cleanInline(tgt[1]) : '' });\n      }\n    }\n    return pairs;\n  }\n  const fileTag = (xml.match(/<file\\b[^>]*>/i) || [''])[0];\n  if (attr(fileTag, 'source-language') && !langMatches(attr(fileTag, 'source-language'), settings.tmx_lang)) return null;\n  if (attr(fileTag, 'target-language') && !langMatches(attr(fileTag, 'target-language'), settings.target_tmx)) return null;\n  for (const tu of xml.matchAll(/<trans-unit\\b([^>]*)>([\\s\\S]*?)<\\/trans-unit>/gi)) {\n    if (/\\stranslate\\s*=\\s*[\"']no[\"']/i.test(tu[1])) continue;\n    const body = tu[2].replace(/<alt-trans\\b[\\s\\S]*?<\\/alt-trans>/gi, '');\n    const src = body.match(/<source\\b[^>]*>([\\s\\S]*?)<\\/source>/i);\n    const tgt = body.match(/<target\\b[^>]*>([\\s\\S]*?)<\\/target>/i);\n    if (src) pairs.push({ source: cleanInline(src[1]), target: tgt ? cleanInline(tgt[1]) : '' });\n  }\n  return pairs;\n}\n\n// --- the matcher -------------------------------------------------------------\nconst SPLIT_PUNCT = /[.!?:;,()\\[\\]{}\"“”„«»…\\/|+=*#<>]+/;\nconst tokens = (text) => (text.match(/[\\p{L}\\p{M}][\\p{L}\\p{M}'’\\-]*|\\d+(?:[.,]\\d+)?/gu) || [])\n  .map((t) => t.replace(/^['’\\-]+|['’\\-]+$/g, ''))\n  .filter(Boolean);\nconst suffixes = SUFFIXES[targetLang] || [];\nconst stem = (w) => {\n  for (const s of suffixes) if (w.length - s.length >= 4 && w.endsWith(s)) return w.slice(0, -s.length);\n  return w;\n};\nconst stop = new Set((target.stopwords || []).map((w) => w.toLowerCase()));\nconst conn = new Set((target.connectors || []).map((w) => w.toLowerCase()));\nconst srcStop = new Set($('Stopword lists').first().json.stopwords.map((w) => w.toLowerCase()));\n\n// Candidate target phrases: runs of words between stopwords and punctuation,\n// 1..maxN words; connectors (\"u\", \"za\", \"di\") allowed only inside.\nfunction phrases(text, maxN) {\n  const out = [];\n  for (const chunk of text.split(SPLIT_PUNCT)) {\n    const runs = [];\n    let cur = [];\n    for (const tok of tokens(chunk)) {\n      const t = tok.toLowerCase();\n      if (conn.has(t)) { if (cur.length) cur.push(tok); continue; }\n      if (stop.has(t) || /^\\d/.test(t) || t.length < 2) { if (cur.length) runs.push(cur); cur = []; } else cur.push(tok);\n    }\n    if (cur.length) runs.push(cur);\n    for (const run of runs) {\n      for (let n = 1; n <= Math.min(maxN, run.length); n += 1) {\n        for (let i = 0; i + n <= run.length; i += 1) {\n          const p = run.slice(i, i + n);\n          if (conn.has(p[0].toLowerCase()) || conn.has(p[n - 1].toLowerCase())) continue;\n          out.push(p);\n        }\n      }\n    }\n  }\n  return out;\n}\nconst keyOf = (p) => p.map((w) => stem(w.toLowerCase())).join(' ');\n\n// ---- read every TMX / XLIFF file\nconst log = { requested: true, target_lang: targetLang, files_with_targets: 0, files_skipped: [], pairs: 0 };\nconst pairs = [];\nfor (const item of $('Documents in').all()) {\n  const doc = item.json;\n  if (doc.source_type !== 'tmx' && doc.source_type !== 'xliff') continue;\n  let found;\n  try {\n    found = doc.source_type === 'tmx' ? tmxPairs(doc.content) : xliffPairs(doc.content);\n  } catch (e) {\n    log.files_skipped.push(`${doc.file_name}: could not be read`);\n    continue;\n  }\n  if (found === null) { log.files_skipped.push(`${doc.file_name}: another language pair`); continue; }\n  const withTarget = found.filter((p) => p.source && p.target);\n  if (!withTarget.length) { log.files_skipped.push(`${doc.file_name}: no ${targetLang} target text`); continue; }\n  log.files_with_targets += 1;\n  pairs.push(...withTarget);\n}\nlog.pairs = pairs.length;\n\nconst terms = input.terms || [];\nconst blank = { code_suggestion: '', code_confidence: 'none', code_found_in: 0, code_segments: 0, code_alternatives: [], tm_pairs: [] };\n\nif (!pairs.length) {\n  log.note = 'No target text found in the files.';\n  log.by_confidence = { none: terms.length };\n  return [{ json: { ...input, terms: terms.map((t) => ({ ...t, ...blank })), log: { ...input.log, translations: log } } }];\n}\n\n// ---- index the source side: word -> pairs containing it\nconst prepared = pairs.map((p) => ({ srcWords: tokens(p.source).map((w) => w.toLowerCase()), ...p }));\nconst index = new Map();\nprepared.forEach((p, i) => {\n  for (const w of new Set(p.srcWords)) {\n    if (!index.has(w)) index.set(w, []);\n    index.get(w).push(i);\n  }\n});\nconst containsWords = (hay, needle) => {\n  outer: for (let i = 0; i + needle.length <= hay.length; i += 1) {\n    for (let j = 0; j < needle.length; j += 1) if (hay[i + j] !== needle[j]) continue outer;\n    return true;\n  }\n  return false;\n};\nconst segmentsWith = (words) => {\n  const lists = words.map((w) => index.get(w) || []).sort((a, b) => a.length - b.length);\n  if (!lists.length || !lists[0].length) return [];\n  const rest = lists.slice(1).map((l) => new Set(l));\n  const out = [];\n  for (const i of lists[0]) {\n    if (rest.every((s) => s.has(i)) && containsWords(prepared[i].srcWords, words)) out.push(i);\n    if (out.length >= MAX_SEGMENTS_PER_TERM) break;\n  }\n  return out;\n};\n\n// ---- pass 1: candidates in each term's targets. Single source words are\n// included too: their translations check what a suggestion is built from.\nconst termWords = terms.map((t) => tokens(t.term).map((w) => w.toLowerCase()));\nconst singles = [...new Set(termWords.flat())].filter((w) => !srcStop.has(w));\nconst units = [...termWords, ...singles.map((w) => [w])];\nconst perUnit = units.map((words) => {\n  const maxN = words.length === 1 ? 1 : Math.min(4, words.length + 2);\n  const segs = segmentsWith(words);\n  const cands = new Map();\n  for (const i of segs) {\n    const seenHere = new Set();\n    for (const p of phrases(prepared[i].target, maxN)) {\n      const key = keyOf(p);\n      let c = cands.get(key);\n      if (!c) { c = { key, n: p.length, both: 0, surfaces: new Map() }; cands.set(key, c); }\n      const surface = p.join(' ');\n      c.surfaces.set(surface, (c.surfaces.get(surface) || 0) + 1);\n      if (!seenHere.has(key)) { c.both += 1; seenHere.add(key); }\n    }\n  }\n  return { segs, cands };\n});\n\n// ---- pass 2: how many targets in all the files contain each candidate\nconst wanted = new Set();\nfor (const u of perUnit) for (const k of u.cands.keys()) wanted.add(k);\nconst df = new Map();\nfor (const p of prepared) {\n  const seenHere = new Set();\n  for (const ph of phrases(p.target, 4)) {\n    const key = keyOf(ph);\n    if (wanted.has(key) && !seenHere.has(key)) { df.set(key, (df.get(key) || 0) + 1); seenHere.add(key); }\n  }\n}\n\nconst ranked = (u) => {\n  const { segs, cands } = perUnit[u];\n  const n = segs.length;\n  return [...cands.values()]\n    .filter((c) => c.both >= Math.min(2, n))\n    .map((c) => ({ ...c, dice: (2 * c.both) / (n + (df.get(c.key) || c.both)) }))\n    .sort((a, b) => (b.dice - a.dice) || (b.n - a.n) || (b.both - a.both));\n};\n\n// Word-level translations: the top few target stems for each source word.\nconst wordStems = new Map();\nsingles.forEach((w, i) => {\n  wordStems.set(w, new Set(ranked(terms.length + i).filter((c) => c.dice >= 0.25).slice(0, 3).map((c) => c.key)));\n});\n\n// 1 when every word of the suggestion translates a word of the term (or is\n// the same word, e.g. \"bonus\") and every word of the term is covered.\nconst composition = (words, c) => {\n  const known = words.filter((w) => wordStems.get(w) && wordStems.get(w).size);\n  if (known.length < 2) return null;\n  const stems = c.key.split(' ');\n  const same = new Set(words.map(stem));\n  const explained = stems.filter((s) => same.has(s) || known.some((w) => wordStems.get(w).has(s))).length / stems.length;\n  const covered = known.filter((w) => stems.some((s) => wordStems.get(w).has(s) || s === stem(w))).length / known.length;\n  return (explained + covered) / 2;\n};\n\nconst isAllCaps = (s) => s === s.toUpperCase() && s !== s.toLowerCase();\nconst display = (c, sourceTerm) => {\n  const forms = [...c.surfaces.entries()].sort((a, b) => b[1] - a[1]);\n  const mixed = forms.find(([s]) => !isAllCaps(s));\n  if (mixed) return mixed[0];\n  return isAllCaps(sourceTerm) ? forms[0][0] : forms[0][0].toLowerCase();\n};\n\nconst byConfidence = {};\nconst out = terms.map((t, ti) => {\n  const words = termWords[ti];\n  const segs = perUnit[ti].segs;\n  const n = segs.length;\n  let scored = n ? ranked(ti) : [];\n  if (!scored.length) {\n    byConfidence.none = (byConfidence.none || 0) + 1;\n    return { ...t, ...blank, code_segments: n };\n  }\n  scored = scored.map((c) => {\n    const comp = words.length > 1 ? composition(words, c) : null;\n    return { ...c, comp, score: comp === null ? c.dice : c.dice * (0.4 + 0.6 * comp) };\n  }).sort((a, b) => (b.score - a.score) || (b.n - a.n) || (b.both - a.both));\n\n  // Prefer a longer phrase that scores almost as well (\"besplatna okretanja\"\n  // over \"okretanja\"), but never longer than the term needs.\n  let best = scored[0];\n  for (const c of scored) {\n    if (words.length > 1 && c.n > best.n && c.n <= words.length + 1 && c.score >= best.score * 0.9 && c.key.includes(best.key)) best = c;\n  }\n  const coverage = best.both / n;\n  const confidence =\n    best.both >= 3 && best.dice >= 0.6 && coverage >= 0.7 && (best.comp === null || best.comp >= 0.75) ? 'high'\n      : best.both >= 2 && best.dice >= 0.4 && coverage >= 0.5 && (best.comp === null || best.comp >= 0.5) ? 'medium' : 'low';\n  byConfidence[confidence] = (byConfidence[confidence] || 0) + 1;\n\n  // Other translations used for the term: no word in common with the best.\n  const bestStems = new Set(best.key.split(' '));\n  const alternatives = scored\n    .filter((c) => c !== best && c.both >= 2 && c.both / n >= 0.15 && (c.comp === null || c.comp >= 0.5) && !c.key.split(' ').some((w) => bestStems.has(w)))\n    .slice(0, 2)\n    .map((c) => `${display(c, t.term)} (${c.both})`);\n\n  // Example pairs for the AI review: ones that contain the suggestion.\n  const tmPairs = [];\n  for (const i of segs) {\n    if (phrases(prepared[i].target, best.n).some((p) => keyOf(p) === best.key)) {\n      tmPairs.push({ source: prepared[i].source, target: prepared[i].target });\n      if (tmPairs.length === 2) break;\n    }\n  }\n\n  return {\n    ...t,\n    code_suggestion: display(best, t.term),\n    code_confidence: confidence,\n    code_found_in: best.both,\n    code_segments: n,\n    code_alternatives: alternatives,\n    tm_pairs: tmPairs,\n  };\n});\n\nlog.by_confidence = byConfidence;\nreturn [{ json: { ...input, terms: out, log: { ...input.log, translations: log } } }];\n"
+        "jsCode": "// ===========================================================================\n// TRANSLATION SUGGESTIONS FROM THE FILES THEMSELVES. No AI.\n//\n// Only runs when the job asks for translations. For each term it looks at\n// the target side of the segments whose source contains the term, and finds\n// the target phrase that appears in those targets and rarely elsewhere\n// (Dice coefficient). A suggestion must also be built from the translations\n// of the term's own words, which stops \"remain locked\" being offered for\n// \"golden symbols\" just because they happen to share segments.\n//\n// Confidence measures how CONSISTENTLY the files translate the term, not\n// whether the translation is right: the AI review judges that.\n//\n// Adds to each term: code_suggestion, code_confidence (high / medium / low /\n// none), code_found_in, code_segments, code_alternatives, tm_pairs (up to 2\n// source/target example pairs for the AI review), code_forms (the forms of\n// the suggestion seen in the files, for memoQ wildcards). With wildcards on,\n// also target_vocabulary: every target-language word in the files, counted.\n// ===========================================================================\n\n// --- EDITABLE: word endings stripped when counting -------------------------\n// So case endings don't split the counts (\"okretanja\" / \"okretanje\" /\n// \"okretanjima\"). Only affects how forms are grouped: suggestions are always\n// shown as written in the files. Keyed by target language code.\nconst SUFFIXES = {\n  sr: ['ima', 'ama', 'ega', 'emu', 'ome', 'oga', 'omu', 'ih', 'im', 'og', 'om', 'em', 'oj', 'a', 'e', 'i', 'u', 'o'],\n};\nSUFFIXES.hr = SUFFIXES.sr;\n\n// Segments looked at per term. Plenty for a reliable count; keeps big\n// memories fast.\nconst MAX_SEGMENTS_PER_TERM = 200;\n// ---------------------------------------------------------------------------\n\nconst settings = $('Settings').first().json;\nconst input = $input.first().json;\n\nif (!settings.suggest_translations) {\n  return [{ json: { ...input, log: { ...input.log, translations: { requested: false } } } }];\n}\n\nconst target = $('Stopword lists').first().json.target || {};\nconst targetLang = settings.target_lang;\n\n// --- reading source/target pairs (same cleaning as stage 1) -----------------\nfunction decodeEntities(s) {\n  return s\n    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"').replace(/&apos;/g, \"'\")\n    .replace(/&#(\\d+);/g, (_, d) => String.fromCharCode(+d))\n    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))\n    .replace(/&amp;/g, '&');\n}\nfunction cleanInline(s) {\n  return decodeEntities(\n    s.replace(/<(bpt|ept|ph|it)\\b[^>]*\\/>/gi, ' ')\n      .replace(/<(bpt|ept|ph|it)\\b[^>]*>[\\s\\S]*?<\\/\\1>/gi, ' ')\n      .replace(/<\\/?(g|mrk|pc)\\b[^>]*>/gi, '')\n      .replace(/<[^>]+>/g, ' ')\n  ).replace(/\\s+/g, ' ').trim();\n}\nconst ISO3 = {\n  en: ['eng'], it: ['ita'], fr: ['fre', 'fra'], de: ['ger', 'deu'], es: ['spa'], pt: ['por'], nl: ['dut', 'nld'],\n  da: ['dan'], sv: ['swe'], nb: ['nob', 'nor'], no: ['nor', 'nob'], nn: ['nno', 'nor'], fi: ['fin'], pl: ['pol'],\n  cs: ['cze', 'ces'], sk: ['slo', 'slk'], sl: ['slv'], hr: ['hrv'], ro: ['rum', 'ron'], hu: ['hun'], et: ['est'],\n  lv: ['lav'], lt: ['lit'], tr: ['tur'], id: ['ind'], sr: ['srp'], sh: ['hbs'], ru: ['rus'], uk: ['ukr'], bg: ['bul'], el: ['gre', 'ell'],\n};\nfunction langMatches(lang, wanted) {\n  const l = String(lang || '').toLowerCase().replace(/_/g, '-');\n  const wants = String(wanted || '').toLowerCase().split(',').map((w) => w.trim()).filter(Boolean);\n  return wants.some((w) => [w].concat(ISO3[w] || []).some((code) => l === code || l.startsWith(code + '-')));\n}\nconst attr = (tag, name) => (tag.match(new RegExp('\\\\s' + name + '\\\\s*=\\\\s*[\"\\']([^\"\\']*)[\"\\']', 'i')) || [, ''])[1];\n\nfunction tmxPairs(xml) {\n  const pairs = [];\n  for (const tu of xml.match(/<tu\\b[^>]*>[\\s\\S]*?<\\/tu>/gi) || []) {\n    let source = '';\n    let tgt = '';\n    for (const m of tu.matchAll(/<tuv\\b([^>]*)>([\\s\\S]*?)<\\/tuv>/gi)) {\n      const lang = (m[1].match(/(?:xml:)?lang\\s*=\\s*[\"']([^\"']+)[\"']/i) || [, ''])[1];\n      const seg = m[2].match(/<seg\\b[^>]*>([\\s\\S]*?)<\\/seg>/i);\n      if (!seg) continue;\n      if (!source && langMatches(lang, settings.tmx_lang)) source = cleanInline(seg[1]);\n      else if (!tgt && langMatches(lang, settings.target_tmx)) tgt = cleanInline(seg[1]);\n    }\n    if (source) pairs.push({ source, target: tgt });\n  }\n  return pairs;\n}\n\nfunction xliffPairs(xml) {\n  const rootTag = (xml.match(/<xliff\\b[^>]*>/i) || [''])[0];\n  const pairs = [];\n  if (/^2/.test(attr(rootTag, 'version'))) {\n    if (attr(rootTag, 'srcLang') && !langMatches(attr(rootTag, 'srcLang'), settings.tmx_lang)) return null;\n    if (attr(rootTag, 'trgLang') && !langMatches(attr(rootTag, 'trgLang'), settings.target_tmx)) return null;\n    for (const u of xml.matchAll(/<unit\\b([^>]*)>([\\s\\S]*?)<\\/unit>/gi)) {\n      if (/\\stranslate\\s*=\\s*[\"']no[\"']/i.test(u[1])) continue;\n      for (const s of u[2].matchAll(/<segment\\b[^>]*>([\\s\\S]*?)<\\/segment>/gi)) {\n        const src = s[1].match(/<source\\b[^>]*>([\\s\\S]*?)<\\/source>/i);\n        const tgt = s[1].match(/<target\\b[^>]*>([\\s\\S]*?)<\\/target>/i);\n        if (src) pairs.push({ source: cleanInline(src[1]), target: tgt ? cleanInline(tgt[1]) : '' });\n      }\n    }\n    return pairs;\n  }\n  const fileTag = (xml.match(/<file\\b[^>]*>/i) || [''])[0];\n  if (attr(fileTag, 'source-language') && !langMatches(attr(fileTag, 'source-language'), settings.tmx_lang)) return null;\n  if (attr(fileTag, 'target-language') && !langMatches(attr(fileTag, 'target-language'), settings.target_tmx)) return null;\n  for (const tu of xml.matchAll(/<trans-unit\\b([^>]*)>([\\s\\S]*?)<\\/trans-unit>/gi)) {\n    if (/\\stranslate\\s*=\\s*[\"']no[\"']/i.test(tu[1])) continue;\n    const body = tu[2].replace(/<alt-trans\\b[\\s\\S]*?<\\/alt-trans>/gi, '');\n    const src = body.match(/<source\\b[^>]*>([\\s\\S]*?)<\\/source>/i);\n    const tgt = body.match(/<target\\b[^>]*>([\\s\\S]*?)<\\/target>/i);\n    if (src) pairs.push({ source: cleanInline(src[1]), target: tgt ? cleanInline(tgt[1]) : '' });\n  }\n  return pairs;\n}\n\n// --- the matcher -------------------------------------------------------------\nconst SPLIT_PUNCT = /[.!?:;,()\\[\\]{}\"“”„«»…\\/|+=*#<>]+/;\nconst tokens = (text) => (text.match(/[\\p{L}\\p{M}][\\p{L}\\p{M}'’\\-]*|\\d+(?:[.,]\\d+)?/gu) || [])\n  .map((t) => t.replace(/^['’\\-]+|['’\\-]+$/g, ''))\n  .filter(Boolean);\nconst suffixes = SUFFIXES[targetLang] || [];\nconst stem = (w) => {\n  for (const s of suffixes) if (w.length - s.length >= 4 && w.endsWith(s)) return w.slice(0, -s.length);\n  return w;\n};\nconst stop = new Set((target.stopwords || []).map((w) => w.toLowerCase()));\nconst conn = new Set((target.connectors || []).map((w) => w.toLowerCase()));\nconst srcStop = new Set($('Stopword lists').first().json.stopwords.map((w) => w.toLowerCase()));\n\n// Candidate target phrases: runs of words between stopwords and punctuation,\n// 1..maxN words; connectors (\"u\", \"za\", \"di\") allowed only inside.\nfunction phrases(text, maxN) {\n  const out = [];\n  for (const chunk of text.split(SPLIT_PUNCT)) {\n    const runs = [];\n    let cur = [];\n    for (const tok of tokens(chunk)) {\n      const t = tok.toLowerCase();\n      if (conn.has(t)) { if (cur.length) cur.push(tok); continue; }\n      if (stop.has(t) || /^\\d/.test(t) || t.length < 2) { if (cur.length) runs.push(cur); cur = []; } else cur.push(tok);\n    }\n    if (cur.length) runs.push(cur);\n    for (const run of runs) {\n      for (let n = 1; n <= Math.min(maxN, run.length); n += 1) {\n        for (let i = 0; i + n <= run.length; i += 1) {\n          const p = run.slice(i, i + n);\n          if (conn.has(p[0].toLowerCase()) || conn.has(p[n - 1].toLowerCase())) continue;\n          out.push(p);\n        }\n      }\n    }\n  }\n  return out;\n}\nconst keyOf = (p) => p.map((w) => stem(w.toLowerCase())).join(' ');\n\n// ---- read every TMX / XLIFF file\nconst log = { requested: true, target_lang: targetLang, files_with_targets: 0, files_skipped: [], pairs: 0 };\nconst pairs = [];\nfor (const item of $('Documents in').all()) {\n  const doc = item.json;\n  if (doc.source_type !== 'tmx' && doc.source_type !== 'xliff') continue;\n  let found;\n  try {\n    found = doc.source_type === 'tmx' ? tmxPairs(doc.content) : xliffPairs(doc.content);\n  } catch (e) {\n    log.files_skipped.push(`${doc.file_name}: could not be read`);\n    continue;\n  }\n  if (found === null) { log.files_skipped.push(`${doc.file_name}: another language pair`); continue; }\n  const withTarget = found.filter((p) => p.source && p.target);\n  if (!withTarget.length) { log.files_skipped.push(`${doc.file_name}: no ${targetLang} target text`); continue; }\n  log.files_with_targets += 1;\n  pairs.push(...withTarget);\n}\nlog.pairs = pairs.length;\n\nconst terms = input.terms || [];\nconst blank = { code_suggestion: '', code_confidence: 'none', code_found_in: 0, code_segments: 0, code_alternatives: [], tm_pairs: [], code_forms: [] };\n\nif (!pairs.length) {\n  log.note = 'No target text found in the files.';\n  log.by_confidence = { none: terms.length };\n  return [{ json: { ...input, terms: terms.map((t) => ({ ...t, ...blank })), log: { ...input.log, translations: log } } }];\n}\n\n// ---- index the source side: word -> pairs containing it\nconst prepared = pairs.map((p) => ({ srcWords: tokens(p.source).map((w) => w.toLowerCase()), ...p }));\nconst index = new Map();\nprepared.forEach((p, i) => {\n  for (const w of new Set(p.srcWords)) {\n    if (!index.has(w)) index.set(w, []);\n    index.get(w).push(i);\n  }\n});\nconst containsWords = (hay, needle) => {\n  outer: for (let i = 0; i + needle.length <= hay.length; i += 1) {\n    for (let j = 0; j < needle.length; j += 1) if (hay[i + j] !== needle[j]) continue outer;\n    return true;\n  }\n  return false;\n};\nconst segmentsWith = (words) => {\n  const lists = words.map((w) => index.get(w) || []).sort((a, b) => a.length - b.length);\n  if (!lists.length || !lists[0].length) return [];\n  const rest = lists.slice(1).map((l) => new Set(l));\n  const out = [];\n  for (const i of lists[0]) {\n    if (rest.every((s) => s.has(i)) && containsWords(prepared[i].srcWords, words)) out.push(i);\n    if (out.length >= MAX_SEGMENTS_PER_TERM) break;\n  }\n  return out;\n};\n\n// ---- pass 1: candidates in each term's targets. Single source words are\n// included too: their translations check what a suggestion is built from.\nconst termWords = terms.map((t) => tokens(t.term).map((w) => w.toLowerCase()));\nconst singles = [...new Set(termWords.flat())].filter((w) => !srcStop.has(w));\nconst units = [...termWords, ...singles.map((w) => [w])];\nconst perUnit = units.map((words) => {\n  const maxN = words.length === 1 ? 1 : Math.min(4, words.length + 2);\n  const segs = segmentsWith(words);\n  const cands = new Map();\n  for (const i of segs) {\n    const seenHere = new Set();\n    for (const p of phrases(prepared[i].target, maxN)) {\n      const key = keyOf(p);\n      let c = cands.get(key);\n      if (!c) { c = { key, n: p.length, both: 0, surfaces: new Map() }; cands.set(key, c); }\n      const surface = p.join(' ');\n      c.surfaces.set(surface, (c.surfaces.get(surface) || 0) + 1);\n      if (!seenHere.has(key)) { c.both += 1; seenHere.add(key); }\n    }\n  }\n  return { segs, cands };\n});\n\n// ---- pass 2: how many targets in all the files contain each candidate\nconst wanted = new Set();\nfor (const u of perUnit) for (const k of u.cands.keys()) wanted.add(k);\nconst df = new Map();\nfor (const p of prepared) {\n  const seenHere = new Set();\n  for (const ph of phrases(p.target, 4)) {\n    const key = keyOf(ph);\n    if (wanted.has(key) && !seenHere.has(key)) { df.set(key, (df.get(key) || 0) + 1); seenHere.add(key); }\n  }\n}\n\nconst ranked = (u) => {\n  const { segs, cands } = perUnit[u];\n  const n = segs.length;\n  return [...cands.values()]\n    .filter((c) => c.both >= Math.min(2, n))\n    .map((c) => ({ ...c, dice: (2 * c.both) / (n + (df.get(c.key) || c.both)) }))\n    .sort((a, b) => (b.dice - a.dice) || (b.n - a.n) || (b.both - a.both));\n};\n\n// Word-level translations: the top few target stems for each source word.\nconst wordStems = new Map();\nsingles.forEach((w, i) => {\n  wordStems.set(w, new Set(ranked(terms.length + i).filter((c) => c.dice >= 0.25).slice(0, 3).map((c) => c.key)));\n});\n\n// 1 when every word of the suggestion translates a word of the term (or is\n// the same word, e.g. \"bonus\") and every word of the term is covered.\nconst composition = (words, c) => {\n  const known = words.filter((w) => wordStems.get(w) && wordStems.get(w).size);\n  if (known.length < 2) return null;\n  const stems = c.key.split(' ');\n  const same = new Set(words.map(stem));\n  const explained = stems.filter((s) => same.has(s) || known.some((w) => wordStems.get(w).has(s))).length / stems.length;\n  const covered = known.filter((w) => stems.some((s) => wordStems.get(w).has(s) || s === stem(w))).length / known.length;\n  return (explained + covered) / 2;\n};\n\nconst isAllCaps = (s) => s === s.toUpperCase() && s !== s.toLowerCase();\nconst display = (c, sourceTerm) => {\n  const forms = [...c.surfaces.entries()].sort((a, b) => b[1] - a[1]);\n  const mixed = forms.find(([s]) => !isAllCaps(s));\n  if (mixed) return mixed[0];\n  return isAllCaps(sourceTerm) ? forms[0][0] : forms[0][0].toLowerCase();\n};\n\nconst byConfidence = {};\nconst out = terms.map((t, ti) => {\n  const words = termWords[ti];\n  const segs = perUnit[ti].segs;\n  const n = segs.length;\n  let scored = n ? ranked(ti) : [];\n  if (!scored.length) {\n    byConfidence.none = (byConfidence.none || 0) + 1;\n    return { ...t, ...blank, code_segments: n };\n  }\n  scored = scored.map((c) => {\n    const comp = words.length > 1 ? composition(words, c) : null;\n    return { ...c, comp, score: comp === null ? c.dice : c.dice * (0.4 + 0.6 * comp) };\n  }).sort((a, b) => (b.score - a.score) || (b.n - a.n) || (b.both - a.both));\n\n  // Prefer a longer phrase that scores almost as well (\"besplatna okretanja\"\n  // over \"okretanja\"), but never longer than the term needs.\n  let best = scored[0];\n  for (const c of scored) {\n    if (words.length > 1 && c.n > best.n && c.n <= words.length + 1 && c.score >= best.score * 0.9 && c.key.includes(best.key)) best = c;\n  }\n  const coverage = best.both / n;\n  const confidence =\n    best.both >= 3 && best.dice >= 0.6 && coverage >= 0.7 && (best.comp === null || best.comp >= 0.75) ? 'high'\n      : best.both >= 2 && best.dice >= 0.4 && coverage >= 0.5 && (best.comp === null || best.comp >= 0.5) ? 'medium' : 'low';\n  byConfidence[confidence] = (byConfidence[confidence] || 0) + 1;\n\n  // Other translations used for the term: no word in common with the best.\n  const bestStems = new Set(best.key.split(' '));\n  const alternatives = scored\n    .filter((c) => c !== best && c.both >= 2 && c.both / n >= 0.15 && (c.comp === null || c.comp >= 0.5) && !c.key.split(' ').some((w) => bestStems.has(w)))\n    .slice(0, 2)\n    .map((c) => `${display(c, t.term)} (${c.both})`);\n\n  // Example pairs for the AI review: ones that contain the suggestion.\n  const tmPairs = [];\n  for (const i of segs) {\n    if (phrases(prepared[i].target, best.n).some((p) => keyOf(p) === best.key)) {\n      tmPairs.push({ source: prepared[i].source, target: prepared[i].target });\n      if (tmPairs.length === 2) break;\n    }\n  }\n\n  return {\n    ...t,\n    code_suggestion: display(best, t.term),\n    code_confidence: confidence,\n    code_found_in: best.both,\n    code_segments: n,\n    code_alternatives: alternatives,\n    tm_pairs: tmPairs,\n    code_forms: [...best.surfaces.keys()].slice(0, 20),\n  };\n});\n\nlog.by_confidence = byConfidence;\n\n// Target-language words, for memoQ wildcards: which other words a wildcard\n// would also catch.\nlet vocabulary;\nif (settings.add_wildcards) {\n  const counts = new Map();\n  for (const p of prepared) for (const w of tokens(p.target)) { const k = w.toLowerCase(); counts.set(k, (counts.get(k) || 0) + 1); }\n  vocabulary = [...counts.entries()];\n}\nreturn [{ json: { ...input, terms: out, target_vocabulary: vocabulary, log: { ...input.log, translations: log } } }];\n"
       },
       "id": "dc8ca217-77ce-4e11-b56f-b8014c898dcc",
       "name": "Match translations",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -9632,
+        -9408,
         2608
       ],
       "notes": "Translation suggestions from the TMX/XLIFF targets. No AI.",
@@ -145,7 +145,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -9408,
+        -9184,
         2608
       ],
       "notesInFlow": true,
@@ -180,7 +180,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -9184,
+        -8736,
         2608
       ]
     },
@@ -193,7 +193,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -8960,
+        -8512,
         2448
       ]
     },
@@ -207,7 +207,7 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        -8736,
+        -8288,
         2448
       ]
     },
@@ -220,7 +220,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -8512,
+        -8064,
         2288
       ]
     },
@@ -253,7 +253,7 @@
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1,
       "position": [
-        -8288,
+        -7840,
         2288
       ],
       "id": "5a24f530-c664-4d17-96ed-d67f098ad8e9"
@@ -267,20 +267,20 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -8064,
+        -7616,
         2288
       ]
     },
     {
       "parameters": {
-        "jsCode": "// One row per term for the glossary.\n//\n// With translations on, `translation_check` says where each translation came\n// from, so reviewers know what to look at first:\n//   AI confirmed                       the files' translation, checked by the AI\n//   AI corrected                       the AI disagreed with the files: check these\n//   AI translated (not from the files) no match in the files; the AI translated it\n//   Code suggestion, not validated     the AI didn't run: see code_suggestion\n//   No match in the files              nothing found, and no AI translation asked for\n// Nothing unchecked ever goes in `translation` itself.\nconst settings = $('Settings').first().json;\nconst CHECK = {\n  confirmed: 'AI confirmed',\n  corrected: 'AI corrected',\n  translated: 'AI translated (not from the files)',\n};\n\nreturn $input.all().map((item) => {\n  const t = item.json;\n  const join = (v) => (Array.isArray(v) ? v.join(' | ') : v || '');\n  const row = {\n    rank: t.rank,\n    term: t.term,\n    word_count: t.word_count,\n    yake_score: t.yake_score,\n    occurrences: t.occurrences,\n    segments: t.segments,\n    source_types: join(t.source_types),\n    merged_variants: join(t.merged_variants),\n    lemma: t.lemma || '',\n    ai_keep: t.ai_keep === null || t.ai_keep === undefined ? '' : String(t.ai_keep),\n    ai_reason: t.ai_reason || '',\n    definition: t.definition || '',\n    translation: t.translation || '',\n  };\n  if (settings.suggest_translations) {\n    row.translation = CHECK[t.ai_translation_check] ? t.ai_translation : '';\n    row.translation_check = CHECK[t.ai_translation_check]\n      || (t.code_suggestion ? 'Code suggestion, not validated' : 'No match in the files');\n    row.translation_note = t.ai_translation_note || '';\n    row.code_suggestion = t.code_suggestion || '';\n    row.code_confidence = t.code_suggestion ? `${t.code_confidence} (${t.code_found_in}/${t.code_segments})` : '';\n    row.code_alternatives = join(t.code_alternatives);\n  }\n  row.examples = join(t.examples);\n  row.ai_error = t.ai_error || '';\n  return { json: row };\n});\n"
+        "jsCode": "// One row per term for the glossary.\n//\n// With translations on, `translation_check` says where each translation came\n// from, so reviewers know what to look at first:\n//   AI confirmed                       the files' translation, checked by the AI\n//   AI corrected                       the AI disagreed with the files: check these\n//   AI translated (not from the files) no match in the files; the AI translated it\n//   Code suggestion, not validated     the AI didn't run: see code_suggestion\n//   No match in the files              nothing found, and no AI translation asked for\n// Nothing unchecked ever goes in `translation` itself.\n//\n// With wildcards on, `memoq_term` is the target term with memoQ wildcards\n// (see \"Apply wildcards\" for `wildcard_check`).\nconst settings = $('Settings').first().json;\nconst CHECK = {\n  confirmed: 'AI confirmed',\n  corrected: 'AI corrected',\n  translated: 'AI translated (not from the files)',\n};\n\nreturn $input.all().map((item) => {\n  const t = item.json;\n  const join = (v) => (Array.isArray(v) ? v.join(' | ') : v || '');\n  const row = {\n    rank: t.rank,\n    term: t.term,\n    word_count: t.word_count,\n    yake_score: t.yake_score,\n    occurrences: t.occurrences,\n    segments: t.segments,\n    source_types: join(t.source_types),\n    merged_variants: join(t.merged_variants),\n    lemma: t.lemma || '',\n    ai_keep: t.ai_keep === null || t.ai_keep === undefined ? '' : String(t.ai_keep),\n    ai_reason: t.ai_reason || '',\n    definition: t.definition || '',\n    translation: t.translation || '',\n  };\n  if (settings.suggest_translations) {\n    row.translation = CHECK[t.ai_translation_check] ? t.ai_translation : '';\n    row.translation_check = CHECK[t.ai_translation_check]\n      || (t.code_suggestion ? 'Code suggestion, not validated' : 'No match in the files');\n    row.translation_note = t.ai_translation_note || '';\n    row.code_suggestion = t.code_suggestion || '';\n    row.code_confidence = t.code_suggestion ? `${t.code_confidence} (${t.code_found_in}/${t.code_segments})` : '';\n    row.code_alternatives = join(t.code_alternatives);\n  }\n  if (settings.add_wildcards) {\n    row.memoq_term = t.memoq_term || '';\n    row.wildcard_check = t.wildcard_check || '';\n    row.wildcard_note = t.wildcard_note || '';\n  }\n  row.examples = join(t.examples);\n  row.ai_error = t.ai_error || '';\n  return { json: row };\n});\n"
       },
       "id": "02f7673d-5bea-4876-afed-4cde282c175c",
       "name": "Final rows",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -8512,
+        -8064,
         2704
       ]
     },
@@ -297,20 +297,20 @@
       "type": "n8n-nodes-base.convertToFile",
       "typeVersion": 1.1,
       "position": [
-        -8288,
+        -7840,
         2704
       ]
     },
     {
       "parameters": {
-        "jsCode": "// The run record, plus the three output files ready for upload: one item per\n// file, each with its binary in 'data'. Keep the manifest with the glossary:\n// it is what lets someone reproduce or question a result later.\nconst stage = $('Match translations').first().json;\nconst gate = $('Check restricted list').first().json.gate || {};\nconst settings = $('Settings').first().json;\nconst finalRows = $('Final rows').all().map((i) => i.json);\n\nconst manifest = {\n  run_at: new Date().toISOString(),\n  job_id: settings.job_id,\n  submitted_by: settings.submitted_by,\n  client: settings.client || '',\n  source_lang: settings.source_lang,\n  tmx_lang: settings.tmx_lang,\n  language_used: stage.language,\n  stopwords: stage.stopwords,\n  settings_used: settings,\n  input_files: $('Documents in').all().map((i) => i.json.file_name),\n  coverage: {\n    files_seen: stage.log.files_seen,\n    files_parsed: stage.log.files_parsed,\n    by_source_type: stage.log.by_source_type,\n    segments: stage.log.segments_total,\n    skipped: stage.log.skipped,\n    unsupported_in_folder: ($('Check job files').first().json.skipped_in_folder || 0),\n  },\n  extraction: {\n    candidates_before_filter: stage.log.candidates_before_filter,\n    merges: stage.log.merges,\n    suppressed_subphrases: stage.log.suppressed_subphrases,\n    dropped_below_min_segments: stage.log.dropped_below_min_segments,\n    terms_returned: stage.log.terms_returned,\n  },\n  stage_2: stage.log.stage_2,\n  translations: settings.suggest_translations\n    ? {\n      ...stage.log.translations,\n      target_label: settings.target_label,\n      ai_translate_missing: settings.ai_translate_missing === true,\n      checks: finalRows.reduce((acc, r) => { acc[r.translation_check] = (acc[r.translation_check] || 0) + 1; return acc; }, {}),\n    }\n    : { requested: false },\n  ai_stage: {\n    requested: gate.requested || false,\n    approved: gate.approved || false,\n    restricted: gate.restricted || false,\n    ran: gate.may_run_ai || false,\n    note: gate.reason || '',\n    terms_with_parse_errors: finalRows.filter((r) => r.ai_error).length,\n  },\n};\n\nconst safe = (s) => String(s || '').replace(/[^\\w.\\-]+/g, '_').slice(0, 60);\nconst base = `${safe(settings.client)}_${settings.source_lang}_${settings.job_id}`;\n\nconst glossary = ($('Final spreadsheet').first().binary || {}).data;\nconst stage1 = ($('Stage 1 spreadsheet').first().binary || {}).data;\nif (!glossary || !stage1) throw new Error('A spreadsheet node produced no file.');\n\nconst manifestFile = await this.helpers.prepareBinaryData(\n  Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'),\n  `run_manifest_${base}.json`,\n  'application/json',\n);\n\nreturn [\n  { json: { kind: 'glossary', fileName: `glossary_${base}.xlsx`, manifest }, binary: { data: glossary } },\n  { json: { kind: 'stage1', fileName: `stage1_candidates_${base}.xlsx` }, binary: { data: stage1 } },\n  { json: { kind: 'manifest', fileName: `run_manifest_${base}.json` }, binary: { data: manifestFile } },\n];\n"
+        "jsCode": "// The run record, plus the three output files ready for upload: one item per\n// file, each with its binary in 'data'. Keep the manifest with the glossary:\n// it is what lets someone reproduce or question a result later.\nconst stage = $('Match translations').first().json;\nconst gate = $('Check restricted list').first().json.gate || {};\nconst settings = $('Settings').first().json;\nconst finalRows = $('Final rows').all().map((i) => i.json);\n\nconst manifest = {\n  run_at: new Date().toISOString(),\n  job_id: settings.job_id,\n  submitted_by: settings.submitted_by,\n  client: settings.client || '',\n  source_lang: settings.source_lang,\n  tmx_lang: settings.tmx_lang,\n  language_used: stage.language,\n  stopwords: stage.stopwords,\n  settings_used: settings,\n  input_files: $('Documents in').all().map((i) => i.json.file_name),\n  coverage: {\n    files_seen: stage.log.files_seen,\n    files_parsed: stage.log.files_parsed,\n    by_source_type: stage.log.by_source_type,\n    segments: stage.log.segments_total,\n    skipped: stage.log.skipped,\n    unsupported_in_folder: ($('Check job files').first().json.skipped_in_folder || 0),\n  },\n  extraction: {\n    candidates_before_filter: stage.log.candidates_before_filter,\n    merges: stage.log.merges,\n    suppressed_subphrases: stage.log.suppressed_subphrases,\n    dropped_below_min_segments: stage.log.dropped_below_min_segments,\n    terms_returned: stage.log.terms_returned,\n  },\n  stage_2: stage.log.stage_2,\n  translations: settings.suggest_translations\n    ? {\n      ...stage.log.translations,\n      target_label: settings.target_label,\n      ai_translate_missing: settings.ai_translate_missing === true,\n      checks: finalRows.reduce((acc, r) => { acc[r.translation_check] = (acc[r.translation_check] || 0) + 1; return acc; }, {}),\n    }\n    : { requested: false },\n  wildcards: settings.add_wildcards\n    ? {\n      requested: true,\n      ai_checked: $('Wildcard plan').first().json.route === 'ai',\n      terms_with_wildcards: finalRows.filter((r) => /[|*]/.test(r.memoq_term || '')).length,\n      checks: finalRows.reduce((acc, r) => { if (r.wildcard_check) acc[r.wildcard_check] = (acc[r.wildcard_check] || 0) + 1; return acc; }, {}),\n    }\n    : { requested: false },\n  ai_stage: {\n    requested: gate.requested || false,\n    approved: gate.approved || false,\n    restricted: gate.restricted || false,\n    ran: gate.may_run_ai || false,\n    note: gate.reason || '',\n    terms_with_parse_errors: finalRows.filter((r) => r.ai_error).length,\n  },\n};\n\nconst safe = (s) => String(s || '').replace(/[^\\w.\\-]+/g, '_').slice(0, 60);\nconst base = `${safe(settings.client)}_${settings.source_lang}_${settings.job_id}`;\n\nconst glossary = ($('Final spreadsheet').first().binary || {}).data;\nconst stage1 = ($('Stage 1 spreadsheet').first().binary || {}).data;\nif (!glossary || !stage1) throw new Error('A spreadsheet node produced no file.');\n\nconst manifestFile = await this.helpers.prepareBinaryData(\n  Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'),\n  `run_manifest_${base}.json`,\n  'application/json',\n);\n\nreturn [\n  { json: { kind: 'glossary', fileName: `glossary_${base}.xlsx`, manifest }, binary: { data: glossary } },\n  { json: { kind: 'stage1', fileName: `stage1_candidates_${base}.xlsx` }, binary: { data: stage1 } },\n  { json: { kind: 'manifest', fileName: `run_manifest_${base}.json` }, binary: { data: manifestFile } },\n];\n"
       },
       "id": "4bae6e1e-b4d5-4cc8-a6be-8e1073568b7c",
       "name": "Run manifest",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -8064,
+        -7616,
         2704
       ],
       "notesInFlow": true,
@@ -325,7 +325,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -8960,
+        -8512,
         2704
       ]
     },
@@ -356,7 +356,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// \"List job files\" always outputs at least one item, so an empty folder\n// reaches here and fails with a clear message instead of stopping silently.\n//\n// The input may be a folder the user chose, holding PDFs, Word files or\n// Google Docs. Only supported files are downloaded; the rest are listed in\n// the run manifest as skipped.\nconst SUPPORTED = ['tmx', 'xml', 'txt', 'md', 'xlf', 'xliff', 'mqxliff', 'mqxlz'];\n\nconst all = $input.all().map((i) => i.json).filter((f) => f && f.id);\nconst isSupported = (f) => {\n  const ext = String(f.name || '').split('.').pop().toLowerCase();\n  return SUPPORTED.includes(ext) && !String(f.mimeType || '').startsWith('application/vnd.google-apps');\n};\nconst keep = all.filter(isSupported);\n\nif (!keep.length) {\n  throw new Error(\n    all.length\n      ? `None of the ${all.length} files in the input folder can be used (needs TMX, XLIFF, memoQ .mqxliff/.mqxlz, or .txt/.md).`\n      : \"No files found in the job's input folder. Check the source folder and submit again.\"\n  );\n}\nreturn keep.map((f) => ({ json: { id: f.id, name: f.name, skipped_in_folder: all.length - keep.length } }));\n"
+        "jsCode": "// \"List job files\" always outputs at least one item, so an empty folder\n// reaches here and fails with a clear message instead of stopping silently.\n//\n// The input may be a folder the user chose, holding PDFs, Word files or\n// Google Docs. Only supported files are downloaded; the rest are listed in\n// the run manifest as skipped.\n//\n// Wildcards-only jobs need exactly one glossary (.xlsx or .csv); TMX and\n// XLIFF files alongside it are optional (used to spot false hits).\nconst MEMORIES = ['tmx', 'xml', 'xlf', 'xliff', 'mqxliff', 'mqxlz'];\nconst GLOSSARIES = ['xlsx', 'csv'];\nconst wildcardsOnly = $('Settings').first().json.mode === 'wildcards';\nconst SUPPORTED = wildcardsOnly ? [...GLOSSARIES, ...MEMORIES] : [...MEMORIES, 'txt', 'md'];\n\nconst all = $input.all().map((i) => i.json).filter((f) => f && f.id);\nconst ext = (f) => String(f.name || '').split('.').pop().toLowerCase();\nconst isSupported = (f) => SUPPORTED.includes(ext(f)) && !String(f.mimeType || '').startsWith('application/vnd.google-apps');\nconst keep = all.filter(isSupported);\n\nif (wildcardsOnly) {\n  const glossaries = keep.filter((f) => GLOSSARIES.includes(ext(f)));\n  const sheets = all.filter((f) => f.mimeType === 'application/vnd.google-apps.spreadsheet');\n  if (glossaries.length !== 1) {\n    throw new Error(glossaries.length\n      ? `Found ${glossaries.length} glossaries (${glossaries.map((f) => f.name).join(', ')}): a wildcards job takes exactly one .xlsx or .csv file.`\n      : `No glossary found: a wildcards job needs one .xlsx or .csv file.${sheets.length ? ' Google Sheets must be downloaded as .xlsx first.' : ''}`);\n  }\n} else if (!keep.length) {\n  throw new Error(\n    all.length\n      ? `None of the ${all.length} files in the input folder can be used (needs TMX, XLIFF, memoQ .mqxliff/.mqxlz, or .txt/.md).`\n      : \"No files found in the job's input folder. Check the source folder and submit again.\"\n  );\n}\nreturn keep.map((f) => ({ json: { id: f.id, name: f.name, skipped_in_folder: all.length - keep.length } }));\n"
       },
       "name": "Check job files",
       "type": "n8n-nodes-base.code",
@@ -407,20 +407,20 @@
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
       "position": [
-        -7840,
+        -7392,
         2704
       ],
       "id": "f4eff4e4-bf24-43e7-b02c-92cfaadf80fb"
     },
     {
       "parameters": {
-        "jsCode": "// Write the result back to the job's row: links, counts and a short note.\nconst uploads = $input.all();\nconst sent = $('Run manifest').all();\nconst urls = {};\nuploads.forEach((u, i) => {\n  const kind = sent[i].json.kind;\n  urls[kind] = u.json.webViewLink || `https://drive.google.com/file/d/${u.json.id}/view`;\n});\n\nconst manifest = sent[0].json.manifest;\nconst notes = [];\nif (manifest.ai_stage.ran) {\n  notes.push('AI review ran.');\n  if (manifest.ai_stage.terms_with_parse_errors) {\n    notes.push(`${manifest.ai_stage.terms_with_parse_errors} terms have no AI verdict (response could not be parsed).`);\n  }\n} else if (manifest.ai_stage.requested) {\n  notes.push(`AI review skipped: ${manifest.ai_stage.note}`);\n}\nif (manifest.translations && manifest.translations.requested) {\n  const c = manifest.translations.checks || {};\n  const parts = [\n    ['AI confirmed', 'confirmed by AI'], ['AI corrected', 'corrected by AI'],\n    ['AI translated (not from the files)', 'AI-translated, not from the files'],\n    ['Code suggestion, not validated', 'suggested from the files, not validated'],\n    ['No match in the files', 'no match in the files'],\n  ].filter(([k]) => c[k]).map(([k, label]) => `${c[k]} ${label}`);\n  notes.push(`Translations into ${manifest.translations.target_label}: ${parts.join(', ') || 'none'}.`);\n  if (manifest.translations.note) notes.push(manifest.translations.note);\n}\nconst skipped = (manifest.coverage.skipped || []).filter((s) => !['below_min_chars', 'duplicate_segment'].includes(s.reason));\nif (skipped.length) notes.push('Skipped: ' + skipped.map((s) => `${s.reason} x${s.count}`).join(', '));\nif (manifest.coverage.unsupported_in_folder) notes.push(`${manifest.coverage.unsupported_in_folder} other files in the folder were ignored.`);\nif (manifest.coverage.files_parsed < manifest.coverage.files_seen) {\n  notes.push(`${manifest.coverage.files_seen - manifest.coverage.files_parsed} of ${manifest.coverage.files_seen} files produced no text.`);\n}\n\nreturn [{\n  json: {\n    job_id: manifest.job_id,\n    status: 'done',\n    finished_at: new Date().toISOString(),\n    terms_returned: manifest.extraction.terms_returned,\n    glossary_url: urls.glossary || '',\n    stage1_url: urls.stage1 || '',\n    manifest_url: urls.manifest || '',\n    message: notes.join(' '),\n  },\n}];\n"
+        "jsCode": "// Write the result back to the job's row: links, counts and a short note.\nconst uploads = $input.all();\nconst wildcardsOnly = $('Settings').first().json.mode === 'wildcards';\nconst sent = $(wildcardsOnly ? 'Wildcard manifest' : 'Run manifest').all();\nconst urls = {};\nuploads.forEach((u, i) => {\n  const kind = sent[i].json.kind;\n  urls[kind] = u.json.webViewLink || `https://drive.google.com/file/d/${u.json.id}/view`;\n});\n\nconst manifest = sent[0].json.manifest;\nconst notes = [];\nconst countChecks = (byCheck) => [\n  ['AI confirmed', 'confirmed by AI'], ['AI corrected', 'corrected by AI'],\n  ['Code proposal kept (AI reply invalid)', 'code proposal kept'], ['Code only, not validated', 'not validated'],\n].filter(([k]) => byCheck[k]).map(([k, label]) => `${byCheck[k]} ${label}`).join(', ');\n\nif (wildcardsOnly) {\n  notes.push(`Wildcards added to ${manifest.terms_with_wildcards} of ${manifest.terms} terms (column \"${manifest.target_column}\").`);\n  const counts = countChecks(manifest.rows_by_check || {});\n  if (counts) notes.push(`Rows: ${counts}.`);\n  if (!manifest.ai.ran && manifest.ai.requested) notes.push(`AI check skipped: ${manifest.ai.note}`);\n  return [{\n    json: {\n      job_id: manifest.job_id,\n      status: 'done',\n      finished_at: new Date().toISOString(),\n      terms_returned: manifest.terms,\n      glossary_url: urls.glossary || '',\n      stage1_url: '',\n      manifest_url: urls.manifest || '',\n      message: notes.join(' '),\n    },\n  }];\n}\nif (manifest.ai_stage.ran) {\n  notes.push('AI review ran.');\n  if (manifest.ai_stage.terms_with_parse_errors) {\n    notes.push(`${manifest.ai_stage.terms_with_parse_errors} terms have no AI verdict (response could not be parsed).`);\n  }\n} else if (manifest.ai_stage.requested) {\n  notes.push(`AI review skipped: ${manifest.ai_stage.note}`);\n}\nif (manifest.translations && manifest.translations.requested) {\n  const c = manifest.translations.checks || {};\n  const parts = [\n    ['AI confirmed', 'confirmed by AI'], ['AI corrected', 'corrected by AI'],\n    ['AI translated (not from the files)', 'AI-translated, not from the files'],\n    ['Code suggestion, not validated', 'suggested from the files, not validated'],\n    ['No match in the files', 'no match in the files'],\n  ].filter(([k]) => c[k]).map(([k, label]) => `${c[k]} ${label}`);\n  notes.push(`Translations into ${manifest.translations.target_label}: ${parts.join(', ') || 'none'}.`);\n  if (manifest.translations.note) notes.push(manifest.translations.note);\n}\nif (manifest.wildcards && manifest.wildcards.requested) {\n  const counts = countChecks(manifest.wildcards.checks || {});\n  notes.push(`memoQ wildcards on ${manifest.wildcards.terms_with_wildcards} terms${counts ? ` (${counts})` : ''}.`);\n}\nconst skipped = (manifest.coverage.skipped || []).filter((s) => !['below_min_chars', 'duplicate_segment'].includes(s.reason));\nif (skipped.length) notes.push('Skipped: ' + skipped.map((s) => `${s.reason} x${s.count}`).join(', '));\nif (manifest.coverage.unsupported_in_folder) notes.push(`${manifest.coverage.unsupported_in_folder} other files in the folder were ignored.`);\nif (manifest.coverage.files_parsed < manifest.coverage.files_seen) {\n  notes.push(`${manifest.coverage.files_seen - manifest.coverage.files_parsed} of ${manifest.coverage.files_seen} files produced no text.`);\n}\n\nreturn [{\n  json: {\n    job_id: manifest.job_id,\n    status: 'done',\n    finished_at: new Date().toISOString(),\n    terms_returned: manifest.extraction.terms_returned,\n    glossary_url: urls.glossary || '',\n    stage1_url: urls.stage1 || '',\n    manifest_url: urls.manifest || '',\n    message: notes.join(' '),\n  },\n}];\n"
       },
       "name": "Job done",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -7616,
+        -7168,
         2704
       ],
       "id": "2f2e9b8e-2f1d-4cf3-89c5-7f42c7e41700"
@@ -455,7 +455,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
       "position": [
-        -7392,
+        -6944,
         2704
       ],
       "id": "dc9e3aa5-2878-434a-989e-f717f4762cdf"
@@ -480,7 +480,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ===========================================================================\n// THE REQUEST from the web page (Apps Script). Two actions:\n//\n//   check  Can n8n use these folders? Answered straight away.\n//          { action: 'check', folders: [{ purpose: 'input' | 'output', id }] }\n//\n//   start  Run a job. Answered with 'accepted' (or why not) within a second\n//          or two; the extraction then carries on and reports to the log\n//          sheet. Cloudflare drops requests that wait ~100 s, so the reply\n//          can't wait for the result.\n//          { action: 'start', job: {...}, settings: {...} }\n//\n// DEFAULTS and LIMITS also live in the web page; they are enforced again\n// here so a hand-made request can't push values out of range. The\n// restricted-client list is NOT here; it stays in \"Check restricted list\".\n// ===========================================================================\n\nconst DEFAULTS = {\n  ngram_max: 4, dedupe_threshold: 0.85, top_n: 500, min_segments: 2, min_chars: 15,\n  include_examples: 3, dedupe_segments: true, independence_ratio: 1.25,\n  run_ai_review: false, ai_review_approved: false,\n};\nconst LIMITS = {\n  ngram_max: [1, 6, true], dedupe_threshold: [0.5, 1, false], top_n: [10, 5000, true],\n  min_segments: [1, 50, true], min_chars: [0, 200, true], include_examples: [0, 10, true],\n  independence_ratio: [1, 5, false],\n};\n\nconst body = $input.first().json.body || {};\nconst reject = (error) => [{ json: { ok: false, action: String(body.action || ''), code: 400, reply: { ok: false, error } } }];\nconst isId = (s) => typeof s === 'string' && /^[-\\w]{10,}$/.test(s);\n\nif (body.action === 'check') {\n  const folders = (body.folders || []).filter((f) => f && isId(f.id) && ['input', 'output'].includes(f.purpose));\n  if (!folders.length) return reject('No valid folder to check.');\n  return [{ json: { ok: true, action: 'check', folders } }];\n}\nif (body.action !== 'start') return reject(`Unknown action \"${body.action}\".`);\n\nconst job = body.job || {};\nif (!/^T\\d{8}-\\d{6}-[0-9a-f]{4}$/.test(job.job_id || '')) return reject('Missing or malformed job_id.');\nif (!String(job.client || '').trim()) return reject('Client is required.');\nif (!/^[a-z]{2}$/.test(job.source_lang || '')) return reject('source_lang must be a two-letter stopword-list key.');\nif (!isId(job.input_folder_id) || !isId(job.output_folder_id)) return reject('Input and output folder IDs are required.');\nif (!/^[^@\\s]+@[^@\\s]+$/.test(job.submitted_by || '')) return reject('submitted_by must be an email address.');\n\nconst fromPage = body.settings || {};\nconst settings = { ...DEFAULTS };\nfor (const [key, [min, max, integer]] of Object.entries(LIMITS)) {\n  const n = Number(fromPage[key]);\n  if (fromPage[key] === undefined || fromPage[key] === '' || Number.isNaN(n)) continue;\n  const clamped = Math.min(max, Math.max(min, n));\n  settings[key] = integer ? Math.round(clamped) : clamped;\n}\nsettings.dedupe_segments = fromPage.dedupe_segments !== false;\nsettings.run_ai_review = fromPage.run_ai_review === true;\nsettings.ai_review_approved = settings.run_ai_review && fromPage.ai_review_approved === true;\n\n// Translation suggestions: target language as a stopword-list key (e.g.\n// 'it', or 'sr', which uses the Croatian list), and what it's called inside\n// TMX/XLIFF files ('sr,sh'). AI translation of terms with no target text\n// only when the person chose it, and only with AI review.\nsettings.suggest_translations = fromPage.suggest_translations === true;\nif (settings.suggest_translations) {\n  const t = fromPage.target_lang;\n  if (!/^[a-z]{2}$/.test(t || '')) return reject('target_lang must be a two-letter language key.');\n  if (t === job.source_lang) return reject('The target language must differ from the source language.');\n  settings.target_lang = t;\n  settings.target_tmx = String(fromPage.target_tmx || t).toLowerCase().replace(/[^a-z,\\-]/g, '');\n  settings.target_label = String(fromPage.target_label || t).slice(0, 40);\n}\nsettings.ai_translate_missing = settings.suggest_translations && settings.run_ai_review && fromPage.ai_translate_missing === true;\n\nObject.assign(settings, {\n  client: String(job.client).trim(),\n  source_lang: job.source_lang,\n  // What the language is called inside TMX files (Czech is 'cz' in the\n  // stopword lists but 'cs' in TMX). Comma-separated prefixes.\n  tmx_lang: String(job.tmx_lang || job.source_lang).toLowerCase(),\n  input_mode: job.input_mode === 'folder' ? 'folder' : 'upload',\n  output_mode: job.output_mode === 'folder' ? 'folder' : 'job',\n  job_id: job.job_id,\n  submitted_by: job.submitted_by,\n  submitted_at: job.submitted_at || new Date().toISOString(),\n  input_folder_id: job.input_folder_id,\n  output_folder_id: job.output_folder_id,\n  job_folder_id: job.job_folder_id || '',\n});\n\nreturn [{\n  json: {\n    ok: true,\n    action: 'start',\n    settings,\n    file_names: String(job.file_names || ''),\n    folders: [\n      { purpose: 'input', id: settings.input_folder_id },\n      { purpose: 'output', id: settings.output_folder_id },\n    ],\n  },\n}];\n"
+        "jsCode": "// ===========================================================================\n// THE REQUEST from the web page (Apps Script). Two actions:\n//\n//   check  Can n8n use these folders? Answered straight away.\n//          { action: 'check', folders: [{ purpose: 'input' | 'output', id }] }\n//\n//   start  Run a job. Answered with 'accepted' (or why not) within a second\n//          or two; the extraction then carries on and reports to the log\n//          sheet. Cloudflare drops requests that wait ~100 s, so the reply\n//          can't wait for the result.\n//          { action: 'start', job: {...}, settings: {...} }\n//\n// DEFAULTS and LIMITS also live in the web page; they are enforced again\n// here so a hand-made request can't push values out of range. The\n// restricted-client list is NOT here; it stays in \"Check restricted list\".\n// ===========================================================================\n\nconst DEFAULTS = {\n  ngram_max: 4, dedupe_threshold: 0.85, top_n: 500, min_segments: 2, min_chars: 15,\n  include_examples: 3, dedupe_segments: true, independence_ratio: 1.25,\n  run_ai_review: false, ai_review_approved: false,\n};\nconst LIMITS = {\n  ngram_max: [1, 6, true], dedupe_threshold: [0.5, 1, false], top_n: [10, 5000, true],\n  min_segments: [1, 50, true], min_chars: [0, 200, true], include_examples: [0, 10, true],\n  independence_ratio: [1, 5, false],\n};\n\nconst body = $input.first().json.body || {};\nconst reject = (error) => [{ json: { ok: false, action: String(body.action || ''), code: 400, reply: { ok: false, error } } }];\nconst isId = (s) => typeof s === 'string' && /^[-\\w]{10,}$/.test(s);\n\nif (body.action === 'check') {\n  const folders = (body.folders || []).filter((f) => f && isId(f.id) && ['input', 'output'].includes(f.purpose));\n  if (!folders.length) return reject('No valid folder to check.');\n  return [{ json: { ok: true, action: 'check', folders } }];\n}\nif (body.action !== 'start') return reject(`Unknown action \"${body.action}\".`);\n\nconst job = body.job || {};\nif (!/^T\\d{8}-\\d{6}-[0-9a-f]{4}$/.test(job.job_id || '')) return reject('Missing or malformed job_id.');\nif (!String(job.client || '').trim()) return reject('Client is required.');\nif (!/^[a-z]{2}$/.test(job.source_lang || '')) return reject('source_lang must be a two-letter stopword-list key.');\nif (!isId(job.input_folder_id) || !isId(job.output_folder_id)) return reject('Input and output folder IDs are required.');\n// 'extract': find terms in TMX/XLIFF/text. 'wildcards': add memoQ wildcards\n// to the target terms of a finished glossary (.xlsx/.csv).\nconst mode = job.mode === 'wildcards' ? 'wildcards' : 'extract';\nif (!/^[^@\\s]+@[^@\\s]+$/.test(job.submitted_by || '')) return reject('submitted_by must be an email address.');\n\nconst fromPage = body.settings || {};\nconst settings = { ...DEFAULTS };\nfor (const [key, [min, max, integer]] of Object.entries(LIMITS)) {\n  const n = Number(fromPage[key]);\n  if (fromPage[key] === undefined || fromPage[key] === '' || Number.isNaN(n)) continue;\n  const clamped = Math.min(max, Math.max(min, n));\n  settings[key] = integer ? Math.round(clamped) : clamped;\n}\nsettings.dedupe_segments = fromPage.dedupe_segments !== false;\nsettings.run_ai_review = fromPage.run_ai_review === true;\nsettings.ai_review_approved = settings.run_ai_review && fromPage.ai_review_approved === true;\n\n// Translation suggestions: target language as a stopword-list key (e.g.\n// 'it', or 'sr', which uses the Croatian list), and what it's called inside\n// TMX/XLIFF files ('sr,sh'). AI translation of terms with no target text\n// only when the person chose it, and only with AI review.\nsettings.mode = mode;\nsettings.suggest_translations = mode === 'extract' && fromPage.suggest_translations === true;\nif (settings.suggest_translations || mode === 'wildcards') {\n  const t = fromPage.target_lang;\n  if (!/^[a-z]{2}$/.test(t || '')) return reject('target_lang must be a two-letter language key.');\n  if (t === job.source_lang) return reject('The target language must differ from the source language.');\n  settings.target_lang = t;\n  settings.target_tmx = String(fromPage.target_tmx || t).toLowerCase().replace(/[^a-z,\\-]/g, '');\n  settings.target_label = String(fromPage.target_label || t).slice(0, 40);\n}\nsettings.ai_translate_missing = settings.suggest_translations && settings.run_ai_review && fromPage.ai_translate_missing === true;\n\n// memoQ wildcards on the target terms: an option of extraction jobs with\n// translations, and the whole point of wildcards-only jobs. The target\n// column of a wildcards-only glossary may be named; otherwise it's detected.\nsettings.add_wildcards = mode === 'wildcards' || (settings.suggest_translations && fromPage.add_wildcards === true);\nif (mode === 'wildcards') settings.target_column = String(fromPage.target_column || '').trim().slice(0, 80);\n\nObject.assign(settings, {\n  client: String(job.client).trim(),\n  source_lang: job.source_lang,\n  // What the language is called inside TMX files (Czech is 'cz' in the\n  // stopword lists but 'cs' in TMX). Comma-separated prefixes.\n  tmx_lang: String(job.tmx_lang || job.source_lang).toLowerCase(),\n  input_mode: job.input_mode === 'folder' ? 'folder' : 'upload',\n  output_mode: job.output_mode === 'folder' ? 'folder' : 'job',\n  job_id: job.job_id,\n  submitted_by: job.submitted_by,\n  submitted_at: job.submitted_at || new Date().toISOString(),\n  input_folder_id: job.input_folder_id,\n  output_folder_id: job.output_folder_id,\n  job_folder_id: job.job_folder_id || '',\n});\n\nreturn [{\n  json: {\n    ok: true,\n    action: 'start',\n    settings,\n    file_names: String(job.file_names || ''),\n    folders: [\n      { purpose: 'input', id: settings.input_folder_id },\n      { purpose: 'output', id: settings.output_folder_id },\n    ],\n  },\n}];\n"
       },
       "name": "Read request",
       "type": "n8n-nodes-base.code",
@@ -766,6 +766,420 @@
         2120
       ],
       "id": "3fe0cd84-04e3-465f-8fdc-7494978074da"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2be378e9e535",
+              "leftValue": "={{ $('Settings').first().json.mode }}",
+              "rightValue": "wildcards",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Wildcards only?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -10528,
+        2608
+      ],
+      "id": "a18b8406-2fb3-4e76-bfc0-cb6431beb8e6"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===========================================================================\n// WILDCARDS-ONLY JOBS: reads the glossary and lists its target terms.\n//\n// The target column is the one named on the page, or else the first column\n// whose header matches the target language (\"Serbian (Latin)\", \"Serbian\",\n// \"sr\", \"sr-Latn\"...) or reads \"translation\" / \"target\". The source term,\n// sent to the AI as context, is the first other column.\n//\n// A cell can hold several terms separated by \";\" (synonyms): each one gets\n// its own wildcards. Wildcards already in a cell are removed and worked out\n// again; the note says so.\n//\n// TMX/XLIFF files in the job are only used for their target-language words:\n// they show which other words a wildcard would also catch.\n// ===========================================================================\n\nconst MAX_ROWS = 5000;\n\nconst settings = $('Settings').first().json;\nconst docs = $input.all().map((i) => i.json);\nconst glossary = docs.find((d) => d.source_type === 'glossary');\nif (!glossary) throw new Error('No readable glossary in the job (needs one .xlsx or .csv file).');\nif (glossary.rows.length > MAX_ROWS) throw new Error(`The glossary has ${glossary.rows.length} rows; the limit is ${MAX_ROWS}. Split it and run it in parts.`);\n\n// ---- target column\nconst norm = (s) => String(s || '').toLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, ' ').trim();\nconst columns = glossary.columns;\nlet target;\nif (settings.target_column) {\n  target = columns.find((c) => norm(c) === norm(settings.target_column));\n  if (!target) throw new Error(`No column \"${settings.target_column}\" in ${glossary.file_name}. Its columns: ${columns.join(', ')}.`);\n} else {\n  const label = norm(settings.target_label);\n  const wanted = [\n    label, label.split(' ')[0], settings.target_lang,\n    ...String(settings.target_tmx || '').split(','),\n    'translation', 'target', 'target term',\n  ].map(norm).filter(Boolean);\n  for (const w of wanted) {\n    target = columns.find((c) => norm(c) === w) || columns.find((c) => norm(c).split(' ')[0] === w);\n    if (target) break;\n  }\n  if (!target) {\n    throw new Error(`Couldn't tell which column holds the ${settings.target_label} terms in ${glossary.file_name}. `\n      + `Type its header in \"Target term column\" on the page. Its columns: ${columns.join(', ')}.`);\n  }\n}\nconst sourceColumn = columns.find((c) => c !== target && glossary.rows.some((r) => String(r[c] || '').trim()));\n\n// ---- one item per target term (synonyms split)\nconst items = [];\nglossary.rows.forEach((row, r) => {\n  String(row[target] || '').split(';').map((t) => t.trim()).filter(Boolean).forEach((term, k) => {\n    const clean = term.replace(/[|*]/g, '');\n    items.push({\n      id: `${r}:${k}`,\n      source_term: sourceColumn ? String(row[sourceColumn] || '').trim() : '',\n      base: clean,\n      had_wildcards: clean !== term ? term : '',\n      tm_forms: [],\n    });\n  });\n});\nif (!items.length) throw new Error(`The \"${target}\" column of ${glossary.file_name} is empty.`);\n\n// ---- target-language words in the job's memories (for false hits)\nconst ISO3 = { en: ['eng'], it: ['ita'], fr: ['fre', 'fra'], de: ['ger', 'deu'], es: ['spa'], pt: ['por'], nl: ['dut', 'nld'],\n  da: ['dan'], sv: ['swe'], nb: ['nob', 'nor'], no: ['nor', 'nob'], fi: ['fin'], pl: ['pol'], cs: ['cze', 'ces'], sk: ['slo', 'slk'],\n  sl: ['slv'], hr: ['hrv'], ro: ['rum', 'ron'], hu: ['hun'], et: ['est'], lv: ['lav'], lt: ['lit'], tr: ['tur'], id: ['ind'],\n  sr: ['srp'], sh: ['hbs'], ru: ['rus'], uk: ['ukr'], bg: ['bul'], el: ['gre', 'ell'] };\nconst langMatches = (lang, wanted) => {\n  const l = String(lang || '').toLowerCase().replace(/_/g, '-');\n  return String(wanted || '').toLowerCase().split(',').map((w) => w.trim()).filter(Boolean)\n    .some((w) => [w].concat(ISO3[w] || []).some((code) => l === code || l.startsWith(code + '-')));\n};\nconst plain = (s) => s.replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ');\nconst vocab = new Map();\nconst addWords = (text) => {\n  for (const w of plain(text).toLowerCase().match(/[\\p{L}\\p{M}][\\p{L}\\p{M}'’\\-]*/gu) || []) vocab.set(w, (vocab.get(w) || 0) + 1);\n};\nfor (const d of docs) {\n  if (d.source_type === 'tmx') {\n    for (const m of d.content.matchAll(/<tuv\\b([^>]*)>[\\s\\S]*?<seg\\b[^>]*>([\\s\\S]*?)<\\/seg>/gi)) {\n      if (langMatches((m[1].match(/(?:xml:)?lang\\s*=\\s*[\"']([^\"']+)[\"']/i) || [, ''])[1], settings.target_tmx)) addWords(m[2]);\n    }\n  } else if (d.source_type === 'xliff') {\n    const declared = (d.content.match(/(?:target-language|trgLang)\\s*=\\s*[\"']([^\"']+)[\"']/i) || [, ''])[1];\n    if (declared && !langMatches(declared, settings.target_tmx)) continue;\n    for (const m of d.content.matchAll(/<target\\b[^>]*>([\\s\\S]*?)<\\/target>/gi)) addWords(m[1]);\n  }\n}\n\nreturn [{\n  json: {\n    file_name: glossary.file_name,\n    columns,\n    target_column: target,\n    source_column: sourceColumn || '',\n    rows: glossary.rows,\n    items,\n    vocabulary: [...vocab.entries()],\n    memories_used: docs.filter((d) => d.source_type === 'tmx' || d.source_type === 'xliff').map((d) => d.file_name),\n  },\n}];\n"
+      },
+      "name": "Glossary terms",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -10304,
+        2896
+      ],
+      "notes": "Wildcards-only jobs: reads the glossary",
+      "notesInFlow": true,
+      "id": "f41c638a-fdd1-4f85-9fe7-5a420abc531c"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "25cb83b0367c",
+              "leftValue": "={{ $('Settings').first().json.mode }}",
+              "rightValue": "wildcards",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Wildcards only? (after gate)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -8960,
+        2608
+      ],
+      "id": "43483ab6-9c86-4642-a0c0-1a74351a7513"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===========================================================================\n// MEMOQ WILDCARDS: which target terms get them, and how.\n//\n//   route 'ai'    the AI lists each term's forms, the code proposes the\n//                 wildcards (your Wildcards Logic rules), the AI checks them\n//   route 'code'  the code proposes from the forms seen in the files only:\n//                 AI review not ticked, not approved, or client restricted\n//   route 'none'  wildcards not asked for, or no target terms\n//\n// Only target terms get wildcards. Reached from the AI review loop or the\n// no-AI path (extraction jobs), or from \"Glossary terms\" (wildcards-only jobs).\n// ===========================================================================\nconst settings = $('Settings').first().json;\nconst gate = $('Check restricted list').first().json.gate || {};\nconst wildcardsOnly = settings.mode === 'wildcards';\n\nlet terms = [];\nlet items = [];\nlet vocabulary = [];\nif (wildcardsOnly) {\n  const g = $('Glossary terms').first().json;\n  items = g.items;\n  vocabulary = g.vocabulary;\n} else {\n  terms = $input.all().map((i) => i.json);\n  if (settings.add_wildcards) {\n    vocabulary = $('Match translations').first().json.target_vocabulary || [];\n    terms.forEach((t, i) => {\n      // The checked translation if there is one, else the files' suggestion.\n      const checked = ['confirmed', 'corrected', 'translated'].includes(t.ai_translation_check) && t.ai_translation;\n      const base = checked ? t.ai_translation : t.code_suggestion;\n      if (!base) return;\n      // The forms seen in the files belong to the files' suggestion: use them\n      // unless the AI replaced it with another translation.\n      const filesForms = !checked || t.ai_translation_check === 'confirmed';\n      items.push({\n        id: String(i),\n        source_term: t.term,\n        base: String(base).replace(/[|*]/g, ''),\n        had_wildcards: '',\n        tm_forms: filesForms ? t.code_forms || [] : [],\n      });\n    });\n  }\n}\n\nconst wanted = wildcardsOnly || settings.add_wildcards === true;\nconst route = !wanted || !items.length ? 'none' : gate.may_run_ai ? 'ai' : 'code';\nreturn [{ json: { route, wildcards_only: wildcardsOnly, items, vocabulary, terms, ai_note: gate.reason || '' } }];\n"
+      },
+      "name": "Wildcard plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -10080,
+        3100
+      ],
+      "notes": "memoQ wildcards: which terms, which route",
+      "notesInFlow": true,
+      "id": "060fa836-f9f7-49cf-b474-b7042fcd8e65"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "61213db1a091",
+              "leftValue": "={{ $('Wildcard plan').first().json.route }}",
+              "rightValue": "ai",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "AI for wildcards?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -9856,
+        3100
+      ],
+      "id": "ccd8fa07-c711-4970-816a-969fce20487a"
+    },
+    {
+      "parameters": {
+        "jsCode": "// One item per target term, for batching through the AI.\nreturn $('Wildcard plan').first().json.items.map((it) => ({ json: it }));\n"
+      },
+      "name": "Wildcard items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -9632,
+        2940
+      ],
+      "id": "cf3fbfc4-e51c-4f49-b53c-23863cff6e66"
+    },
+    {
+      "parameters": {
+        "batchSize": 25,
+        "options": {}
+      },
+      "name": "Batch wildcard forms",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -9408,
+        2940
+      ],
+      "id": "aa5f83cc-2341-4788-b40c-06a85fe538a9"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Asks the AI for each target term's forms: the code needs them to place\n// the wildcards. Sends the terms (and the source terms, as context) only.\nconst batch = $input.all().map((i) => i.json);\nconst settings = $('Settings').first().json;\nconst lang = settings.target_label || settings.target_lang;\n\nconst instruction = [\n  `You are a terminologist for ${lang}. For each term below (a ${lang} glossary term, with the term it translates for context), list the forms it takes in running text: every grammatical case, singular and plural, and for adjectives the forms that agree with the noun.`,\n  'For multi-word terms, give whole-phrase forms with the words agreeing, as they would appear in a sentence.',\n  'Include the term itself. Give up to 15 forms, most common first. Leave out derived words (for example a verb made from a noun), other spellings, and capitalised duplicates.',\n  'Reply with JSON only, no preamble and no code fences. Shape: {\"results\":[{\"id\":\"...\",\"forms\":[\"...\"]}]}',\n].join(' ');\nconst terms = batch.map((t) => ({ id: t.id, term: t.base, translates: t.source_term || undefined }));\n\n// `prompt` feeds the Google Gemini node \"AI forms\".\nreturn [{ json: { prompt: `${instruction}\\n\\nTerms:\\n${JSON.stringify(terms, null, 2)}`, items: batch } }];\n"
+      },
+      "name": "Build forms request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -9184,
+        2780
+      ],
+      "id": "081627e9-fe35-4407-a12a-e241419f762e"
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "message",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-3-flash-preview",
+          "mode": "list",
+          "cachedResultName": "models/gemini-3-flash-preview"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{ $json.prompt }}",
+              "role": "user"
+            }
+          ]
+        },
+        "simplify": true,
+        "jsonOutput": true,
+        "options": {
+          "maxOutputTokens": 16000,
+          "temperature": 0.2
+        }
+      },
+      "name": "AI forms",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        -8960,
+        2780
+      ],
+      "id": "261711ca-6fef-435b-a2e4-b274d6140997"
+    },
+    {
+      "parameters": {
+        "jsCode": "// The model's JSON reply, from the Google Gemini node (\"Simplify Output\" on\n// or off) or an Anthropic-style reply. { parsed } or { error }.\nfunction readReply(response) {\n  const candidate = Array.isArray(response.candidates) ? response.candidates[0] || {} : response;\n  let text = '';\n  if (candidate.content && Array.isArray(candidate.content.parts)) {\n    text = candidate.content.parts.filter((p) => p.text && !p.thought).map((p) => p.text).join('');\n  } else if (Array.isArray(response.content)) {\n    text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('\\n');\n  } else if (typeof response.text === 'string') {\n    text = response.text;\n  }\n  const finish = String(candidate.finishReason || '');\n  if (finish === 'MAX_TOKENS') return { error: 'Reply was cut off: raise \"Maximum Number of Tokens\" on the AI node.' };\n  if (finish && finish !== 'STOP') return { error: `The model stopped early (${finish}).` };\n  try {\n    return { parsed: JSON.parse(text.replace(/```json|```/g, '').trim()) };\n  } catch (e) {\n    return { error: `Could not parse the reply: ${e.message}` };\n  }\n}\n\nconst sent = $('Build forms request').first().json.items;\nconst reply = readReply($input.first().json);\nif (reply.error) return sent.map((t) => ({ json: { ...t, ai_forms: [], forms_error: reply.error } }));\n\nconst byId = new Map((reply.parsed.results || []).map((r) => [String(r.id), r]));\nreturn sent.map((t) => {\n  const r = byId.get(String(t.id));\n  const forms = r && Array.isArray(r.forms) ? r.forms.filter((f) => typeof f === 'string' && f.trim()).slice(0, 20) : [];\n  return { json: { ...t, ai_forms: forms, forms_error: r ? '' : 'no forms returned' } };\n});\n"
+      },
+      "name": "Parse forms",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -8736,
+        2780
+      ],
+      "id": "5acdb316-df7d-46a6-bfc8-1c270ace0977"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== wildcard engine (shared by \"Propose wildcards\" and \"Apply wildcards\")\n// Rules from \"Wildcards Logic\" and \"Word Matching Logic\":\n//   ending CHANGES between forms (periodo/periodi)  -> pipe after the shared stem: period|o\n//   forms only ADD letters, addition <= 50%           -> no wildcard (memoQ's 50% prefix)\n//   forms only ADD letters, addition > 50%            -> asterisk: run*\n//   multi-word: additions measured against the whole term; a word other\n//   than the last that varies always gets a wildcard (Símbolo* de Premio).\n// Whether a pipe also matches the stem on its own (program|mer -> \"program\").\n// The documents say it doesn't; two of their examples say it does.\nconst PIPE_MATCHES_STEM_ALONE = false;\n// A shared beginning shorter than this can't be a useful stem (Mutter/Mütter).\nconst MIN_STEM = 3;\n\nconst lower = (s) => s.toLocaleLowerCase();\nconst words = (s) => s.trim().split(/\\s+/).filter(Boolean);\nconst stripWildcards = (s) => s.replace(/[|*]/g, '');\nfunction lcpLen(list) {\n  let i = 0;\n  while (list.every((w) => i < w.length && w[i] === list[0][i])) i += 1;\n  return i;\n}\n\n// base: the term in its dictionary form. forms: its inflected forms (any case).\nfunction proposeWildcard(base, forms) {\n  const bw = words(base);\n  const bl = bw.map(lower);\n  const total = bw.join(' ').length;\n  const variants = [];\n  const otherShape = [];\n  for (const f of new Set(forms.map((x) => words(lower(x)).join(' ')))) {\n    const fw = f.split(' ');\n    if (fw.length === bw.length) variants.push(fw); else if (f) otherShape.push(f);\n  }\n  const out = [];\n  const why = [];\n  const irregular = [];\n  bw.forEach((word, i) => {\n    const b = bl[i];\n    const last = i === bw.length - 1;\n    let vs = [...new Set(variants.map((v) => v[i]))].filter((v) => v !== b);\n    // Forms that change near the start (Mutter/Mütter) can't be wildcarded.\n    // (A form that starts with the whole word is an addition, however short the word.)\n    const odd = vs.filter((v) => !v.startsWith(b) && lcpLen([b, v]) < MIN_STEM);\n    if (odd.length) { irregular.push(...odd); vs = vs.filter((v) => !odd.includes(v)); }\n    if (!vs.length) { out.push(word); return; }\n    if (vs.every((v) => v.startsWith(b))) {\n      const add = Math.max(...vs.map((v) => v.length - b.length));\n      const ratio = add / (bw.length === 1 ? b.length : total);\n      const pct = Math.round(ratio * 100);\n      if (last && ratio <= 0.5) { out.push(word); why.push(`\"${word}\" only adds up to ${add} letter${add === 1 ? '' : 's'} (${pct}%): 50% prefix, no wildcard`); return; }\n      out.push(word + '*');\n      why.push(last ? `\"${word}\" adds up to ${add} letters (${pct}%, over 50%): asterisk` : `\"${word}\" is not the last word and varies (${vs.slice(0, 3).join(', ')}): asterisk`);\n      return;\n    }\n    const stem = lcpLen([b, ...vs]);\n    const stemText = word.slice(0, stem);\n    if (stem < MIN_STEM) { out.push(word); why.push(`\"${word}\" changes near its start: wildcards can't cover it`); return; }\n    if (!PIPE_MATCHES_STEM_ALONE && vs.includes(b.slice(0, stem))) {\n      out.push(stemText + '*'); why.push(`\"${word}\": the stem \"${stemText}\" is itself a form (${vs.slice(0, 3).join(', ')}): asterisk`); return;\n    }\n    out.push(stemText + '|' + word.slice(stem));\n    why.push(`\"${word}\" changes its ending (${vs.slice(0, 3).join(', ')}): pipe after \"${stemText}\"`);\n  });\n  if (irregular.length) why.push(`not covered, changes near the start: ${[...new Set(irregular)].slice(0, 3).join(', ')}`);\n  if (otherShape.length) why.push(`forms with a different number of words ignored: ${otherShape.slice(0, 2).join(', ')}`);\n  if (!variants.some((v) => v.join(' ') !== bl.join(' '))) return { wildcarded: base, reason: 'no forms other than the term itself are known: no wildcard' };\n  return { wildcarded: out.join(' '), reason: why.join('; ') || 'no variation in the forms: no wildcard' };\n}\n\n// Does one word of a wildcarded term match a word of the text? `prefixRoom`\n// is how many extra letters memoQ's 50% prefix allows on an unmarked word.\nfunction wordMatches(p, w, prefixRoom) {\n  p = lower(p); w = lower(w);\n  if (p.endsWith('*')) return w.startsWith(p.slice(0, -1));\n  const bar = p.indexOf('|');\n  if (bar >= 0) { const stem = p.slice(0, bar); return w.startsWith(stem) && (PIPE_MATCHES_STEM_ALONE || w !== stem); }\n  return w === p || (prefixRoom > 0 && w.startsWith(p) && w.length - p.length <= prefixRoom);\n}\nfunction termMatches(wildcarded, form) {\n  const pw = words(wildcarded);\n  const fw = words(form);\n  if (pw.length !== fw.length) return false;\n  const total = stripWildcards(pw.join(' ')).length;\n  return pw.every((p, i) => wordMatches(p, fw[i], i === pw.length - 1 ? Math.floor(0.5 * (pw.length === 1 ? stripWildcards(p).length : total)) : 0));\n}\n// Words in the client's own texts that a wildcard would also catch, which\n// aren't among the term's forms: likely false hits (\"Wassert|urm\" ->\n// \"Wassertropfen\"). Most frequent first.\n// `vocabulary` is [[word, count], ...] sorted by word (see sortVocabulary).\nfunction alsoMatches(wildcarded, forms, vocabulary, max = 5) {\n  const known = new Set(forms.flatMap((f) => words(lower(f))));\n  const hits = new Map();\n  for (const p of words(wildcarded)) {\n    if (!/[|*]/.test(p)) continue;\n    const stem = lower(p).split(/[|*]/)[0];\n    let lo = 0;\n    let hi = vocabulary.length;\n    while (lo < hi) { const mid = (lo + hi) >> 1; if (vocabulary[mid][0] < stem) lo = mid + 1; else hi = mid; }\n    for (let i = lo; i < vocabulary.length && vocabulary[i][0].startsWith(stem); i += 1) {\n      const [w, n] = vocabulary[i];\n      if (!known.has(w) && wordMatches(p, w, 0)) hits.set(w, n);\n    }\n  }\n  return [...hits.entries()].sort((a, b) => b[1] - a[1]).slice(0, max).map(([w]) => w);\n}\nconst sortVocabulary = (v) => (v || []).map(([w, n]) => [lower(w), n]).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));\n// ===== end of wildcard engine\n\n// Pools each term's forms (the files' and the AI's), applies the rules, and\n// lists words in the files that the proposal would also catch.\nconst plan = $('Wildcard plan').first().json;\nif (plan.route === 'none') return [{ json: { skip: true } }];\nconst list = plan.route === 'ai' ? $input.all().map((i) => i.json) : plan.items;\nconst vocabulary = sortVocabulary(plan.vocabulary);\n\nreturn list.map((it) => {\n  const forms = [...new Set([it.base, ...(it.tm_forms || []), ...(it.ai_forms || [])].map((f) => String(f).trim()).filter(Boolean))];\n  const p = proposeWildcard(it.base, forms);\n  return { json: { ...it, forms, proposed: p.wildcarded, reason: p.reason, also_matches: alsoMatches(p.wildcarded, forms, vocabulary) } };\n});\n"
+      },
+      "name": "Propose wildcards",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -8512,
+        3100
+      ],
+      "notes": "Your Wildcards Logic rules, in code",
+      "notesInFlow": true,
+      "id": "fe08e02b-5bc8-4bdc-9faa-21c65be9fd92"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "423718b27c2c",
+              "leftValue": "={{ $('Wildcard plan').first().json.route }}",
+              "rightValue": "ai",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "AI check wildcards?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -8288,
+        3100
+      ],
+      "id": "4edd1e8f-0211-4ae5-9d44-8b3c8c7655c5"
+    },
+    {
+      "parameters": {
+        "batchSize": 25,
+        "options": {}
+      },
+      "name": "Batch wildcard checks",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -8064,
+        2940
+      ],
+      "id": "abb7175a-93d9-4977-b783-848bb52bfde1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Asks the AI to check the proposed wildcards against the rules.\n//\n// RULES is a summary of \"Wildcards Logic\" and \"Word Matching Logic\": edit\n// it here if those documents change.\nconst RULES = [\n  'memoQ wildcard rules for target terms:',\n  '1. | (pipe) inside a word marks the end of the stem: memoQ then matches words that begin with the stem. Use it when the ENDING CHANGES between forms: period|o (periodo, periodi), amig|o (amigo, amiga), talletu|s (talletus, talletuksen).',\n  '2. * (asterisk) at the end of a word matches the word itself and anything added after it. Use it when forms only ADD letters and the addition is more than 50% of the length of the term: run* (running), text* (texting), child* (children).',\n  '3. No wildcard when forms only ADD letters and the addition is at most 50% of the length of the term (cat/cats, bank/banks): memoQ\\'s 50% prefix matching covers them.',\n  '4. The stem is the longest beginning shared by all forms, not necessarily the grammatical stem.',\n  '5. Multi-word terms: measure additions against the whole term. The last word follows rules 1-3; any other word that varies always gets a wildcard (Símbolo* de Premio; besplatn|a okretanj|a).',\n  '6. If a word changes at its start or in the middle (Mutter/Mütter), wildcards cannot cover it: leave that word as it is.',\n  '7. Only insert | or *, at most one per word. Never change, add or remove letters, spaces or capitals.',\n].join('\\n');\n\nconst batch = $input.all().map((i) => i.json);\nconst settings = $('Settings').first().json;\nconst lang = settings.target_label || settings.target_lang;\n\nconst instruction = [\n  `You are checking memoQ term base wildcards for ${lang} target terms.`,\n  RULES,\n  'For each term: \"proposal\" was worked out from \"forms\" by applying these rules in code; \"reason\" says how; \"also_matches\" lists other words in the client\\'s files that the proposal would also catch.',\n  'Check that the forms are right and complete for the term, and that the proposal follows the rules, covers the forms and doesn\\'t catch unrelated words. Reply \"confirmed\" if the proposal is right, or \"corrected\" with your own version and a short note saying why.',\n  'Reply with JSON only, no preamble and no code fences. Shape: {\"results\":[{\"id\":\"...\",\"wildcarded\":\"...\",\"verdict\":\"confirmed\",\"note\":\"...\"}]}',\n].join('\\n');\nconst terms = batch.map((t) => ({\n  id: t.id,\n  term: t.base,\n  translates: t.source_term || undefined,\n  forms: t.forms.slice(0, 15),\n  proposal: t.proposed,\n  reason: t.reason,\n  also_matches: t.also_matches.length ? t.also_matches : undefined,\n}));\n\n// `prompt` feeds the Google Gemini node \"AI wildcard check\".\nreturn [{ json: { prompt: `${instruction}\\n\\nTerms:\\n${JSON.stringify(terms, null, 2)}`, items: batch } }];\n"
+      },
+      "name": "Build check request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -7840,
+        2780
+      ],
+      "id": "d467a083-fb3c-4bf4-8295-18d4fda78a61"
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "message",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-3-flash-preview",
+          "mode": "list",
+          "cachedResultName": "models/gemini-3-flash-preview"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{ $json.prompt }}",
+              "role": "user"
+            }
+          ]
+        },
+        "simplify": true,
+        "jsonOutput": true,
+        "options": {
+          "maxOutputTokens": 16000,
+          "temperature": 0.2
+        }
+      },
+      "name": "AI wildcard check",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        -7616,
+        2780
+      ],
+      "id": "171fb718-23f1-4e90-bc75-a203535048f1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// The model's JSON reply, from the Google Gemini node (\"Simplify Output\" on\n// or off) or an Anthropic-style reply. { parsed } or { error }.\nfunction readReply(response) {\n  const candidate = Array.isArray(response.candidates) ? response.candidates[0] || {} : response;\n  let text = '';\n  if (candidate.content && Array.isArray(candidate.content.parts)) {\n    text = candidate.content.parts.filter((p) => p.text && !p.thought).map((p) => p.text).join('');\n  } else if (Array.isArray(response.content)) {\n    text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('\\n');\n  } else if (typeof response.text === 'string') {\n    text = response.text;\n  }\n  const finish = String(candidate.finishReason || '');\n  if (finish === 'MAX_TOKENS') return { error: 'Reply was cut off: raise \"Maximum Number of Tokens\" on the AI node.' };\n  if (finish && finish !== 'STOP') return { error: `The model stopped early (${finish}).` };\n  try {\n    return { parsed: JSON.parse(text.replace(/```json|```/g, '').trim()) };\n  } catch (e) {\n    return { error: `Could not parse the reply: ${e.message}` };\n  }\n}\n\nconst sent = $('Build check request').first().json.items;\nconst reply = readReply($input.first().json);\nif (reply.error) return sent.map((t) => ({ json: { id: t.id, check_error: reply.error } }));\n\nconst byId = new Map((reply.parsed.results || []).map((r) => [String(r.id), r]));\nreturn sent.map((t) => {\n  const r = byId.get(String(t.id));\n  if (!r || typeof r.wildcarded !== 'string') return { json: { id: t.id, check_error: 'no answer for this term' } };\n  return { json: { id: t.id, ai_wildcarded: r.wildcarded, ai_verdict: r.verdict === 'confirmed' ? 'confirmed' : 'corrected', ai_note: String(r.note || '') } };\n});\n"
+      },
+      "name": "Parse wildcard check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -7392,
+        2780
+      ],
+      "id": "62f402fa-1823-4eeb-a82a-b89d04bd0fc8"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== wildcard engine (shared by \"Propose wildcards\" and \"Apply wildcards\")\n// Rules from \"Wildcards Logic\" and \"Word Matching Logic\":\n//   ending CHANGES between forms (periodo/periodi)  -> pipe after the shared stem: period|o\n//   forms only ADD letters, addition <= 50%           -> no wildcard (memoQ's 50% prefix)\n//   forms only ADD letters, addition > 50%            -> asterisk: run*\n//   multi-word: additions measured against the whole term; a word other\n//   than the last that varies always gets a wildcard (Símbolo* de Premio).\n// Whether a pipe also matches the stem on its own (program|mer -> \"program\").\n// The documents say it doesn't; two of their examples say it does.\nconst PIPE_MATCHES_STEM_ALONE = false;\n// A shared beginning shorter than this can't be a useful stem (Mutter/Mütter).\nconst MIN_STEM = 3;\n\nconst lower = (s) => s.toLocaleLowerCase();\nconst words = (s) => s.trim().split(/\\s+/).filter(Boolean);\nconst stripWildcards = (s) => s.replace(/[|*]/g, '');\nfunction lcpLen(list) {\n  let i = 0;\n  while (list.every((w) => i < w.length && w[i] === list[0][i])) i += 1;\n  return i;\n}\n\n// base: the term in its dictionary form. forms: its inflected forms (any case).\nfunction proposeWildcard(base, forms) {\n  const bw = words(base);\n  const bl = bw.map(lower);\n  const total = bw.join(' ').length;\n  const variants = [];\n  const otherShape = [];\n  for (const f of new Set(forms.map((x) => words(lower(x)).join(' ')))) {\n    const fw = f.split(' ');\n    if (fw.length === bw.length) variants.push(fw); else if (f) otherShape.push(f);\n  }\n  const out = [];\n  const why = [];\n  const irregular = [];\n  bw.forEach((word, i) => {\n    const b = bl[i];\n    const last = i === bw.length - 1;\n    let vs = [...new Set(variants.map((v) => v[i]))].filter((v) => v !== b);\n    // Forms that change near the start (Mutter/Mütter) can't be wildcarded.\n    // (A form that starts with the whole word is an addition, however short the word.)\n    const odd = vs.filter((v) => !v.startsWith(b) && lcpLen([b, v]) < MIN_STEM);\n    if (odd.length) { irregular.push(...odd); vs = vs.filter((v) => !odd.includes(v)); }\n    if (!vs.length) { out.push(word); return; }\n    if (vs.every((v) => v.startsWith(b))) {\n      const add = Math.max(...vs.map((v) => v.length - b.length));\n      const ratio = add / (bw.length === 1 ? b.length : total);\n      const pct = Math.round(ratio * 100);\n      if (last && ratio <= 0.5) { out.push(word); why.push(`\"${word}\" only adds up to ${add} letter${add === 1 ? '' : 's'} (${pct}%): 50% prefix, no wildcard`); return; }\n      out.push(word + '*');\n      why.push(last ? `\"${word}\" adds up to ${add} letters (${pct}%, over 50%): asterisk` : `\"${word}\" is not the last word and varies (${vs.slice(0, 3).join(', ')}): asterisk`);\n      return;\n    }\n    const stem = lcpLen([b, ...vs]);\n    const stemText = word.slice(0, stem);\n    if (stem < MIN_STEM) { out.push(word); why.push(`\"${word}\" changes near its start: wildcards can't cover it`); return; }\n    if (!PIPE_MATCHES_STEM_ALONE && vs.includes(b.slice(0, stem))) {\n      out.push(stemText + '*'); why.push(`\"${word}\": the stem \"${stemText}\" is itself a form (${vs.slice(0, 3).join(', ')}): asterisk`); return;\n    }\n    out.push(stemText + '|' + word.slice(stem));\n    why.push(`\"${word}\" changes its ending (${vs.slice(0, 3).join(', ')}): pipe after \"${stemText}\"`);\n  });\n  if (irregular.length) why.push(`not covered, changes near the start: ${[...new Set(irregular)].slice(0, 3).join(', ')}`);\n  if (otherShape.length) why.push(`forms with a different number of words ignored: ${otherShape.slice(0, 2).join(', ')}`);\n  if (!variants.some((v) => v.join(' ') !== bl.join(' '))) return { wildcarded: base, reason: 'no forms other than the term itself are known: no wildcard' };\n  return { wildcarded: out.join(' '), reason: why.join('; ') || 'no variation in the forms: no wildcard' };\n}\n\n// Does one word of a wildcarded term match a word of the text? `prefixRoom`\n// is how many extra letters memoQ's 50% prefix allows on an unmarked word.\nfunction wordMatches(p, w, prefixRoom) {\n  p = lower(p); w = lower(w);\n  if (p.endsWith('*')) return w.startsWith(p.slice(0, -1));\n  const bar = p.indexOf('|');\n  if (bar >= 0) { const stem = p.slice(0, bar); return w.startsWith(stem) && (PIPE_MATCHES_STEM_ALONE || w !== stem); }\n  return w === p || (prefixRoom > 0 && w.startsWith(p) && w.length - p.length <= prefixRoom);\n}\nfunction termMatches(wildcarded, form) {\n  const pw = words(wildcarded);\n  const fw = words(form);\n  if (pw.length !== fw.length) return false;\n  const total = stripWildcards(pw.join(' ')).length;\n  return pw.every((p, i) => wordMatches(p, fw[i], i === pw.length - 1 ? Math.floor(0.5 * (pw.length === 1 ? stripWildcards(p).length : total)) : 0));\n}\n// Words in the client's own texts that a wildcard would also catch, which\n// aren't among the term's forms: likely false hits (\"Wassert|urm\" ->\n// \"Wassertropfen\"). Most frequent first.\n// `vocabulary` is [[word, count], ...] sorted by word (see sortVocabulary).\nfunction alsoMatches(wildcarded, forms, vocabulary, max = 5) {\n  const known = new Set(forms.flatMap((f) => words(lower(f))));\n  const hits = new Map();\n  for (const p of words(wildcarded)) {\n    if (!/[|*]/.test(p)) continue;\n    const stem = lower(p).split(/[|*]/)[0];\n    let lo = 0;\n    let hi = vocabulary.length;\n    while (lo < hi) { const mid = (lo + hi) >> 1; if (vocabulary[mid][0] < stem) lo = mid + 1; else hi = mid; }\n    for (let i = lo; i < vocabulary.length && vocabulary[i][0].startsWith(stem); i += 1) {\n      const [w, n] = vocabulary[i];\n      if (!known.has(w) && wordMatches(p, w, 0)) hits.set(w, n);\n    }\n  }\n  return [...hits.entries()].sort((a, b) => b[1] - a[1]).slice(0, max).map(([w]) => w);\n}\nconst sortVocabulary = (v) => (v || []).map(([w, n]) => [lower(w), n]).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));\n// ===== end of wildcard engine\n\n// Final wildcards: the AI's answer where it passes the checks below, else\n// the code's proposal. Then notes what each one misses or also catches.\n//\n// wildcard_check:\n//   AI confirmed                          the code's proposal, checked by the AI\n//   AI corrected                          the AI changed it: check these first\n//   Code proposal kept (AI reply invalid) the AI's version broke the term\n//   Code only, not validated              the AI didn't run (or failed)\nconst plan = $('Wildcard plan').first().json;\nconst settings = $('Settings').first().json;\nconst proposals = plan.route === 'none' ? [] : $('Propose wildcards').all().map((i) => i.json);\nconst verdicts = plan.route === 'ai' ? new Map($input.all().map((i) => [String(i.json.id), i.json])) : new Map();\nconst vocabulary = sortVocabulary(plan.vocabulary);\n\n// Why an AI answer can't be used, or '' if it can.\nfunction invalid(w, base) {\n  if (lower(stripWildcards(w)).replace(/\\s+/g, ' ').trim() !== lower(base).replace(/\\s+/g, ' ').trim()) return 'it changes the letters of the term';\n  for (const word of words(w)) {\n    const marks = (word.match(/[|*]/g) || []).length;\n    if (marks > 1) return `more than one wildcard in \"${word}\"`;\n    if (word.includes('*') && !word.endsWith('*')) return `\"*\" not at the end of \"${word}\"`;\n    if (word.startsWith('|') || word.endsWith('|')) return `\"|\" at the edge of \"${word}\"`;\n  }\n  return '';\n}\n// Puts the AI's wildcards into the term exactly as written (keeps its capitals).\nfunction transfer(w, base) {\n  const marks = [];\n  let n = 0;\n  for (const ch of w.replace(/\\s+/g, ' ').trim()) { if (ch === '|' || ch === '*') marks.push([n, ch]); else n += 1; }\n  const chars = [...base.replace(/\\s+/g, ' ').trim()];\n  for (const [pos, ch] of marks.reverse()) chars.splice(pos, 0, ch);\n  return chars.join('');\n}\n\nconst results = new Map();\nfor (const p of proposals) {\n  let final = p.proposed;\n  let check = 'Code only, not validated';\n  const notes = [`Code: ${p.reason}`];\n  if (plan.route === 'ai') {\n    const v = verdicts.get(String(p.id)) || {};\n    if (p.forms_error) notes.push(`AI forms: ${p.forms_error}`);\n    if (v.check_error || !v.ai_wildcarded) {\n      notes.push(`AI check failed: ${v.check_error || 'no answer'}`);\n    } else {\n      const bad = invalid(v.ai_wildcarded, p.base);\n      if (bad) {\n        check = 'Code proposal kept (AI reply invalid)';\n        notes.push(`AI suggested \"${v.ai_wildcarded}\", not used: ${bad}`);\n      } else {\n        final = transfer(v.ai_wildcarded, p.base);\n        check = final === p.proposed ? 'AI confirmed' : 'AI corrected';\n        if (v.ai_note && check === 'AI corrected') notes.push(`AI: ${v.ai_note}`);\n      }\n    }\n  } else if (plan.ai_note) {\n    notes.push(`AI didn't run: ${plan.ai_note}`);\n  }\n  const missed = p.forms.filter((f) => !termMatches(final, f));\n  if (missed.length) notes.push(`doesn't match: ${missed.slice(0, 4).join(', ')}`);\n  const also = alsoMatches(final, p.forms, vocabulary);\n  if (also.length) notes.push(`also matches in the files: ${also.join(', ')}`);\n  if (p.had_wildcards) notes.push(`the glossary had: ${p.had_wildcards}`);\n  results.set(String(p.id), { memoq_term: final, wildcard_check: check, wildcard_note: notes.join('; ') });\n}\n\n// ---- extraction jobs: back onto the terms\nif (!plan.wildcards_only) {\n  return plan.terms.map((t, i) => ({ json: { ...t, ...(results.get(String(i)) || {}) } }));\n}\n\n// ---- wildcards-only jobs: the glossary's rows, with three columns added\nconst g = $('Glossary terms').first().json;\nconst memoqColumn = `${g.target_column} (memoQ)`;\nreturn g.rows.map((row, r) => {\n  const parts = [];\n  for (let k = 0; results.has(`${r}:${k}`); k += 1) parts.push(results.get(`${r}:${k}`));\n  const out = {};\n  for (const c of g.columns) out[c] = row[c];\n  out[memoqColumn] = parts.map((x) => x.memoq_term).join('; ');\n  out.wildcard_check = [...new Set(parts.map((x) => x.wildcard_check))].join(' / ');\n  out.wildcard_note = parts.length > 1 ? parts.map((x) => `${x.memoq_term}: ${x.wildcard_note}`).join(' / ') : parts.map((x) => x.wildcard_note).join('');\n  return { json: out };\n});\n"
+      },
+      "name": "Apply wildcards",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -7168,
+        3100
+      ],
+      "id": "1e9e4a59-7f1f-492e-b133-a60ecbdfdea4"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "93304af4d9cd",
+              "leftValue": "={{ $('Settings').first().json.mode }}",
+              "rightValue": "wildcards",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Wildcards only? (output)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -6944,
+        3100
+      ],
+      "id": "e265347b-d209-4004-8ae1-d59a2c598e30"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {
+          "fileName": "wildcards.xlsx",
+          "sheetName": "glossary"
+        }
+      },
+      "name": "Wildcard spreadsheet",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        -6720,
+        3260
+      ],
+      "id": "243d8d28-4dd1-457a-b182-3257b64966d6"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Wildcards-only jobs: the run record, plus the two output files ready for\n// upload (the glossary with wildcards, and this manifest).\nconst settings = $('Settings').first().json;\nconst plan = $('Wildcard plan').first().json;\nconst gate = $('Check restricted list').first().json.gate || {};\nconst g = $('Glossary terms').first().json;\nconst rows = $('Apply wildcards').all().map((i) => i.json);\nconst memoqColumn = `${g.target_column} (memoQ)`;\n\nconst byCheck = rows.reduce((acc, r) => { if (r.wildcard_check) acc[r.wildcard_check] = (acc[r.wildcard_check] || 0) + 1; return acc; }, {});\n\nconst manifest = {\n  run_at: new Date().toISOString(),\n  job_id: settings.job_id,\n  submitted_by: settings.submitted_by,\n  client: settings.client || '',\n  mode: 'wildcards',\n  target_language: settings.target_label,\n  glossary: g.file_name,\n  target_column: g.target_column,\n  source_column: g.source_column,\n  rows: rows.length,\n  terms: plan.items.length,\n  terms_with_wildcards: rows.reduce((n, r) => n + String(r[memoqColumn] || '').split(';').filter((t) => /[|*]/.test(t)).length, 0),\n  memories_used: g.memories_used,\n  words_in_memories: (g.vocabulary || []).length,\n  ai: {\n    requested: gate.requested || false,\n    approved: gate.approved || false,\n    restricted: gate.restricted || false,\n    ran: plan.route === 'ai',\n    note: gate.reason || '',\n  },\n  rows_by_check: byCheck,\n};\n\nconst safe = (s) => String(s || '').replace(/[^\\w.\\-]+/g, '_').slice(0, 60);\nconst base = `${safe(settings.client)}_${settings.target_lang}_${settings.job_id}`;\nconst glossary = ($('Wildcard spreadsheet').first().binary || {}).data;\nif (!glossary) throw new Error('The wildcard spreadsheet node produced no file.');\nconst manifestFile = await this.helpers.prepareBinaryData(\n  Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'),\n  `run_manifest_${base}.json`,\n  'application/json',\n);\n\nreturn [\n  { json: { kind: 'glossary', fileName: `wildcards_${base}.xlsx`, manifest }, binary: { data: glossary } },\n  { json: { kind: 'manifest', fileName: `run_manifest_${base}.json` }, binary: { data: manifestFile } },\n];\n"
+      },
+      "name": "Wildcard manifest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -6496,
+        3260
+      ],
+      "id": "3a3bc0f8-4c78-4827-acde-cf7d7fb2ddbc"
     }
   ],
   "pinData": {},
@@ -982,7 +1396,7 @@
       "main": [
         [
           {
-            "node": "Stage 1 statistical extraction",
+            "node": "Wildcards only?",
             "type": "main",
             "index": 0
           }
@@ -1037,7 +1451,7 @@
       "main": [
         [
           {
-            "node": "AI review approved?",
+            "node": "Wildcards only? (after gate)",
             "type": "main",
             "index": 0
           }
@@ -1077,7 +1491,7 @@
       "main": [
         [
           {
-            "node": "Final rows",
+            "node": "Wildcard plan",
             "type": "main",
             "index": 0
           }
@@ -1128,7 +1542,7 @@
       "main": [
         [
           {
-            "node": "Final rows",
+            "node": "Wildcard plan",
             "type": "main",
             "index": 0
           }
@@ -1195,6 +1609,275 @@
         [
           {
             "node": "Check restricted list",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wildcards only?": {
+      "main": [
+        [
+          {
+            "node": "Glossary terms",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stage 1 statistical extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Glossary terms": {
+      "main": [
+        [
+          {
+            "node": "Check restricted list",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wildcards only? (after gate)": {
+      "main": [
+        [
+          {
+            "node": "Wildcard plan",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI review approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wildcard plan": {
+      "main": [
+        [
+          {
+            "node": "AI for wildcards?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI for wildcards?": {
+      "main": [
+        [
+          {
+            "node": "Wildcard items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Propose wildcards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wildcard items": {
+      "main": [
+        [
+          {
+            "node": "Batch wildcard forms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch wildcard forms": {
+      "main": [
+        [
+          {
+            "node": "Propose wildcards",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build forms request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build forms request": {
+      "main": [
+        [
+          {
+            "node": "AI forms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI forms": {
+      "main": [
+        [
+          {
+            "node": "Parse forms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse forms": {
+      "main": [
+        [
+          {
+            "node": "Batch wildcard forms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Propose wildcards": {
+      "main": [
+        [
+          {
+            "node": "AI check wildcards?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI check wildcards?": {
+      "main": [
+        [
+          {
+            "node": "Batch wildcard checks",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Apply wildcards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch wildcard checks": {
+      "main": [
+        [
+          {
+            "node": "Apply wildcards",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build check request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build check request": {
+      "main": [
+        [
+          {
+            "node": "AI wildcard check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI wildcard check": {
+      "main": [
+        [
+          {
+            "node": "Parse wildcard check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse wildcard check": {
+      "main": [
+        [
+          {
+            "node": "Batch wildcard checks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply wildcards": {
+      "main": [
+        [
+          {
+            "node": "Wildcards only? (output)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wildcards only? (output)": {
+      "main": [
+        [
+          {
+            "node": "Wildcard spreadsheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Final rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wildcard spreadsheet": {
+      "main": [
+        [
+          {
+            "node": "Wildcard manifest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wildcard manifest": {
+      "main": [
+        [
+          {
+            "node": "Upload to job folder",
             "type": "main",
             "index": 0
           }

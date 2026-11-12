@@ -4,7 +4,8 @@
 
 // Write the result back to the job's row: links, counts and a short note.
 const uploads = $input.all();
-const sent = $('Run manifest').all();
+const wildcardsOnly = $('Settings').first().json.mode === 'wildcards';
+const sent = $(wildcardsOnly ? 'Wildcard manifest' : 'Run manifest').all();
 const urls = {};
 uploads.forEach((u, i) => {
   const kind = sent[i].json.kind;
@@ -13,6 +14,29 @@ uploads.forEach((u, i) => {
 
 const manifest = sent[0].json.manifest;
 const notes = [];
+const countChecks = (byCheck) => [
+  ['AI confirmed', 'confirmed by AI'], ['AI corrected', 'corrected by AI'],
+  ['Code proposal kept (AI reply invalid)', 'code proposal kept'], ['Code only, not validated', 'not validated'],
+].filter(([k]) => byCheck[k]).map(([k, label]) => `${byCheck[k]} ${label}`).join(', ');
+
+if (wildcardsOnly) {
+  notes.push(`Wildcards added to ${manifest.terms_with_wildcards} of ${manifest.terms} terms (column "${manifest.target_column}").`);
+  const counts = countChecks(manifest.rows_by_check || {});
+  if (counts) notes.push(`Rows: ${counts}.`);
+  if (!manifest.ai.ran && manifest.ai.requested) notes.push(`AI check skipped: ${manifest.ai.note}`);
+  return [{
+    json: {
+      job_id: manifest.job_id,
+      status: 'done',
+      finished_at: new Date().toISOString(),
+      terms_returned: manifest.terms,
+      glossary_url: urls.glossary || '',
+      stage1_url: '',
+      manifest_url: urls.manifest || '',
+      message: notes.join(' '),
+    },
+  }];
+}
 if (manifest.ai_stage.ran) {
   notes.push('AI review ran.');
   if (manifest.ai_stage.terms_with_parse_errors) {
@@ -31,6 +55,10 @@ if (manifest.translations && manifest.translations.requested) {
   ].filter(([k]) => c[k]).map(([k, label]) => `${c[k]} ${label}`);
   notes.push(`Translations into ${manifest.translations.target_label}: ${parts.join(', ') || 'none'}.`);
   if (manifest.translations.note) notes.push(manifest.translations.note);
+}
+if (manifest.wildcards && manifest.wildcards.requested) {
+  const counts = countChecks(manifest.wildcards.checks || {});
+  notes.push(`memoQ wildcards on ${manifest.wildcards.terms_with_wildcards} terms${counts ? ` (${counts})` : ''}.`);
 }
 const skipped = (manifest.coverage.skipped || []).filter((s) => !['below_min_chars', 'duplicate_segment'].includes(s.reason));
 if (skipped.length) notes.push('Skipped: ' + skipped.map((s) => `${s.reason} x${s.count}`).join(', '));

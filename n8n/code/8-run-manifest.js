@@ -45,6 +45,14 @@ const manifest = {
       checks: finalRows.reduce((acc, r) => { acc[r.translation_check] = (acc[r.translation_check] || 0) + 1; return acc; }, {}),
     }
     : { requested: false },
+  wildcards: settings.add_wildcards
+    ? {
+      requested: true,
+      ai_checked: $('Wildcard plan').first().json.route === 'ai',
+      terms_with_wildcards: finalRows.filter((r) => /[|*]/.test(r.memoq_term || '')).length,
+      checks: finalRows.reduce((acc, r) => { if (r.wildcard_check) acc[r.wildcard_check] = (acc[r.wildcard_check] || 0) + 1; return acc; }, {}),
+    }
+    : { requested: false },
   ai_stage: {
     requested: gate.requested || false,
     approved: gate.approved || false,

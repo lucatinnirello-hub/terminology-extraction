@@ -12,6 +12,9 @@
 //   Code suggestion, not validated     the AI didn't run: see code_suggestion
 //   No match in the files              nothing found, and no AI translation asked for
 // Nothing unchecked ever goes in `translation` itself.
+//
+// With wildcards on, `memoq_term` is the target term with memoQ wildcards
+// (see "Apply wildcards" for `wildcard_check`).
 const settings = $('Settings').first().json;
 const CHECK = {
   confirmed: 'AI confirmed',
@@ -45,6 +48,11 @@ return $input.all().map((item) => {
     row.code_suggestion = t.code_suggestion || '';
     row.code_confidence = t.code_suggestion ? `${t.code_confidence} (${t.code_found_in}/${t.code_segments})` : '';
     row.code_alternatives = join(t.code_alternatives);
+  }
+  if (settings.add_wildcards) {
+    row.memoq_term = t.memoq_term || '';
+    row.wildcard_check = t.wildcard_check || '';
+    row.wildcard_note = t.wildcard_note || '';
   }
   row.examples = join(t.examples);
   row.ai_error = t.ai_error || '';
