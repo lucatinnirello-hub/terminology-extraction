@@ -108,54 +108,18 @@
     },
     {
       "parameters": {
-        "jsCode": "// n8n Code node: \"Stage 2 input\"\n// Paste this whole file into that node, replacing everything in it.\n// (Copy of the code in Terminology_extraction_webhook_v4.json.)\n\n// Bundles what the stage 2 server needs (stage 1's terms and the job's\n// language) into one item, which \"Stage 2 NLP\" sends as the request body.\n// Its direct input here would be the stage 1 spreadsheet.\nconst settings = $('Settings').first().json;\nreturn [{\n  json: {\n    stage1: $('Stage 1 statistical extraction').first().json,\n    source_lang: settings.source_lang,\n    include_examples: settings.include_examples,\n  },\n}];\n"
+        "jsCode": "// ===========================================================================\n// STAGE 2 — lemmatisation and part-of-speech filtering.  *** STUB ***\n//\n// Passes stage 1's output straight through so the workflow runs end to end.\n//\n// The real version must:\n//   1. Group inflected forms (\"valve\" / \"valves\") and SUM their occurrences\n//      and segment counts, so the metrics stay correct.\n//   2. Drop verb phrases (\"inspected annually\" is the classic example).\n//   3. Set `lemma` and `pos_filtered` on each term.\n//\n// It must return the same shape: { stage, log, terms, rows }.\n// ===========================================================================\n\n// Reads stage 1 by name: its direct input is now the stage 1 spreadsheet.\nconst input = $('Stage 1 statistical extraction').first().json;\n\nconst terms = input.terms.map((t) => ({ ...t, lemma: null, pos_filtered: false }));\n\nreturn [\n  {\n    json: {\n      ...input,\n      stage: 'stage_2_nlp_stub',\n      log: {\n        ...input.log,\n        stage_2: {\n          status: 'stub — no lemmatisation or POS filtering applied',\n          terms_in: input.terms.length,\n          terms_out: terms.length,\n          merged_by_lemma: 0,\n          dropped_by_pos: 0,\n        },\n      },\n      terms,\n    },\n  },\n];\n"
       },
-      "id": "404eac7b-8b04-4ba2-9d02-23028170209a",
-      "name": "Stage 2 input",
+      "id": "64c85828-05cc-44e6-a0a6-63dc33566ed5",
+      "name": "Stage 2 NLP stub",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         -9856,
         2608
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://PASTE-TUNNEL-ADDRESS-HERE.trycloudflare.com/stage2",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json) }}",
-        "options": {
-          "timeout": 120000
-        }
-      },
-      "id": "64c85828-05cc-44e6-a0a6-63dc33566ed5",
-      "name": "Stage 2 NLP",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -9632,
-        2608
       ],
       "notesInFlow": true,
-      "notes": "Calls the stage 2 server on your machine (local-server/). Paste the tunnel address into the URL.",
-      "onError": "continueErrorOutput"
-    },
-    {
-      "parameters": {
-        "jsCode": "// n8n Code node: \"Stage 2 skipped\"\n// Paste this whole file into that node, replacing everything in it.\n// (Copy of the code in Terminology_extraction_webhook_v4.json.)\n\n// Runs only when \"Stage 2 NLP\" gets no good answer from the stage 2 server on\n// your machine (machine off, server or tunnel not running, tunnel address\n// changed, wrong key). Passes stage 1's terms through unchanged so the job\n// still finishes; the reason goes into the run manifest and the job's note.\nconst { stage1 } = $('Stage 2 input').first().json;\nconst err = $input.first().json.error;\nconst reason = (err && (err.message || err.description)) || String(err || 'no answer');\nconst terms = (stage1.terms || []).map((t) => ({ ...t, lemma: null, pos: null, pos_filtered: false }));\n\nreturn [{\n  json: {\n    ...stage1,\n    stage: 'stage_2_skipped',\n    log: {\n      ...stage1.log,\n      stage_2: {\n        skipped: true,\n        status: `Skipped: the stage 2 server didn't answer (${reason}). Terms passed through unchanged.`,\n        terms_in: terms.length,\n        terms_out: terms.length,\n        merged_by_lemma: 0,\n        dropped_by_pos: 0,\n        dropped: [],\n      },\n    },\n    terms,\n  },\n}];\n"
-      },
-      "id": "b49ad574-e47c-4ba0-86e6-241d5821b49f",
-      "name": "Stage 2 skipped",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -9632,
-        2800
-      ]
+      "notes": "STUB — replace when NLP exists"
     },
     {
       "parameters": {
@@ -166,7 +130,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -9408,
+        -9632,
         2608
       ],
       "notesInFlow": true,
@@ -201,20 +165,20 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -9184,
+        -9408,
         2608
       ]
     },
     {
       "parameters": {
-        "jsCode": "const stage = $('Check restricted list').first().json;\nconst terms = stage.terms || [];\nif (!terms.length) throw new Error('Stage 2 returned no terms.');\nreturn terms.map((t) => ({ json: t }));\n"
+        "jsCode": "const stage = $('Stage 2 NLP stub').first().json;\nconst terms = stage.terms || [];\nif (!terms.length) throw new Error('Stage 2 returned no terms.');\nreturn terms.map((t) => ({ json: t }));\n"
       },
       "id": "5333242f-0b74-4198-a6a9-0b554a0ad912",
       "name": "Terms to items",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -8960,
+        -9184,
         2448
       ]
     },
@@ -228,7 +192,7 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        -8736,
+        -8960,
         2448
       ]
     },
@@ -241,7 +205,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -8512,
+        -8736,
         2288
       ]
     },
@@ -274,7 +238,7 @@
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1,
       "position": [
-        -8288,
+        -8512,
         2288
       ],
       "id": "5a24f530-c664-4d17-96ed-d67f098ad8e9"
@@ -288,7 +252,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -8064,
+        -8288,
         2288
       ]
     },
@@ -301,7 +265,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -8512,
+        -8736,
         2704
       ]
     },
@@ -318,20 +282,20 @@
       "type": "n8n-nodes-base.convertToFile",
       "typeVersion": 1.1,
       "position": [
-        -8288,
+        -8512,
         2704
       ]
     },
     {
       "parameters": {
-        "jsCode": "// The run record, plus the three output files ready for upload: one item per\n// file, each with its binary in 'data'. Keep the manifest with the glossary:\n// it is what lets someone reproduce or question a result later.\nconst stage = $('Check restricted list').first().json;\nconst gate = $('Check restricted list').first().json.gate || {};\nconst settings = $('Settings').first().json;\nconst finalRows = $('Final rows').all().map((i) => i.json);\n\nconst manifest = {\n  run_at: new Date().toISOString(),\n  job_id: settings.job_id,\n  submitted_by: settings.submitted_by,\n  client: settings.client || '',\n  source_lang: settings.source_lang,\n  tmx_lang: settings.tmx_lang,\n  language_used: stage.language,\n  stopwords: stage.stopwords,\n  settings_used: settings,\n  input_files: $('Documents in').all().map((i) => i.json.file_name),\n  coverage: {\n    files_seen: stage.log.files_seen,\n    files_parsed: stage.log.files_parsed,\n    by_source_type: stage.log.by_source_type,\n    segments: stage.log.segments_total,\n    skipped: stage.log.skipped,\n    unsupported_in_folder: ($('Check job files').first().json.skipped_in_folder || 0),\n  },\n  extraction: {\n    candidates_before_filter: stage.log.candidates_before_filter,\n    merges: stage.log.merges,\n    suppressed_subphrases: stage.log.suppressed_subphrases,\n    dropped_below_min_segments: stage.log.dropped_below_min_segments,\n    terms_returned: stage.log.terms_returned,\n  },\n  stage_2: stage.log.stage_2,\n  ai_stage: {\n    requested: gate.requested || false,\n    approved: gate.approved || false,\n    restricted: gate.restricted || false,\n    ran: gate.may_run_ai || false,\n    note: gate.reason || '',\n    terms_with_parse_errors: finalRows.filter((r) => r.ai_error).length,\n  },\n};\n\nconst safe = (s) => String(s || '').replace(/[^\\w.\\-]+/g, '_').slice(0, 60);\nconst base = `${safe(settings.client)}_${settings.source_lang}_${settings.job_id}`;\n\nconst glossary = ($('Final spreadsheet').first().binary || {}).data;\nconst stage1 = ($('Stage 1 spreadsheet').first().binary || {}).data;\nif (!glossary || !stage1) throw new Error('A spreadsheet node produced no file.');\n\nconst manifestFile = await this.helpers.prepareBinaryData(\n  Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'),\n  `run_manifest_${base}.json`,\n  'application/json',\n);\n\nreturn [\n  { json: { kind: 'glossary', fileName: `glossary_${base}.xlsx`, manifest }, binary: { data: glossary } },\n  { json: { kind: 'stage1', fileName: `stage1_candidates_${base}.xlsx` }, binary: { data: stage1 } },\n  { json: { kind: 'manifest', fileName: `run_manifest_${base}.json` }, binary: { data: manifestFile } },\n];\n"
+        "jsCode": "// The run record, plus the three output files ready for upload: one item per\n// file, each with its binary in 'data'. Keep the manifest with the glossary:\n// it is what lets someone reproduce or question a result later.\nconst stage = $('Stage 2 NLP stub').first().json;\nconst gate = $('Check restricted list').first().json.gate || {};\nconst settings = $('Settings').first().json;\nconst finalRows = $('Final rows').all().map((i) => i.json);\n\nconst manifest = {\n  run_at: new Date().toISOString(),\n  job_id: settings.job_id,\n  submitted_by: settings.submitted_by,\n  client: settings.client || '',\n  source_lang: settings.source_lang,\n  tmx_lang: settings.tmx_lang,\n  language_used: stage.language,\n  stopwords: stage.stopwords,\n  settings_used: settings,\n  input_files: $('Documents in').all().map((i) => i.json.file_name),\n  coverage: {\n    files_seen: stage.log.files_seen,\n    files_parsed: stage.log.files_parsed,\n    by_source_type: stage.log.by_source_type,\n    segments: stage.log.segments_total,\n    skipped: stage.log.skipped,\n    unsupported_in_folder: ($('Check job files').first().json.skipped_in_folder || 0),\n  },\n  extraction: {\n    candidates_before_filter: stage.log.candidates_before_filter,\n    merges: stage.log.merges,\n    suppressed_subphrases: stage.log.suppressed_subphrases,\n    dropped_below_min_segments: stage.log.dropped_below_min_segments,\n    terms_returned: stage.log.terms_returned,\n  },\n  stage_2: stage.log.stage_2,\n  ai_stage: {\n    requested: gate.requested || false,\n    approved: gate.approved || false,\n    restricted: gate.restricted || false,\n    ran: gate.may_run_ai || false,\n    note: gate.reason || '',\n    terms_with_parse_errors: finalRows.filter((r) => r.ai_error).length,\n  },\n};\n\nconst safe = (s) => String(s || '').replace(/[^\\w.\\-]+/g, '_').slice(0, 60);\nconst base = `${safe(settings.client)}_${settings.source_lang}_${settings.job_id}`;\n\nconst glossary = ($('Final spreadsheet').first().binary || {}).data;\nconst stage1 = ($('Stage 1 spreadsheet').first().binary || {}).data;\nif (!glossary || !stage1) throw new Error('A spreadsheet node produced no file.');\n\nconst manifestFile = await this.helpers.prepareBinaryData(\n  Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'),\n  `run_manifest_${base}.json`,\n  'application/json',\n);\n\nreturn [\n  { json: { kind: 'glossary', fileName: `glossary_${base}.xlsx`, manifest }, binary: { data: glossary } },\n  { json: { kind: 'stage1', fileName: `stage1_candidates_${base}.xlsx` }, binary: { data: stage1 } },\n  { json: { kind: 'manifest', fileName: `run_manifest_${base}.json` }, binary: { data: manifestFile } },\n];\n"
       },
       "id": "4bae6e1e-b4d5-4cc8-a6be-8e1073568b7c",
       "name": "Run manifest",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -8064,
+        -8288,
         2704
       ],
       "notesInFlow": true,
@@ -339,14 +303,14 @@
     },
     {
       "parameters": {
-        "jsCode": "// AI stage did not run (the gate reason goes into the run manifest and the\n// Jobs sheet). Same items as \"Terms to items\", without AI columns.\nconst stage = $('Check restricted list').first().json;\nconst terms = stage.terms || [];\nif (!terms.length) throw new Error('Stage 2 returned no terms.');\nreturn terms.map((t) => ({ json: t }));\n"
+        "jsCode": "// AI stage did not run (the gate reason goes into the run manifest and the\n// Jobs sheet). Same items as \"Terms to items\", without AI columns.\nconst stage = $('Stage 2 NLP stub').first().json;\nconst terms = stage.terms || [];\nif (!terms.length) throw new Error('Stage 2 returned no terms.');\nreturn terms.map((t) => ({ json: t }));\n"
       },
       "id": "e36ba8b6-f908-41c9-93f6-035a89e8b3d9",
       "name": "Terms to items (no AI)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -8960,
+        -9184,
         2704
       ]
     },
@@ -428,20 +392,20 @@
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
       "position": [
-        -7840,
+        -8064,
         2704
       ],
       "id": "f4eff4e4-bf24-43e7-b02c-92cfaadf80fb"
     },
     {
       "parameters": {
-        "jsCode": "// Write the result back to the job's row: links, counts and a short note.\nconst uploads = $input.all();\nconst sent = $('Run manifest').all();\nconst urls = {};\nuploads.forEach((u, i) => {\n  const kind = sent[i].json.kind;\n  urls[kind] = u.json.webViewLink || `https://drive.google.com/file/d/${u.json.id}/view`;\n});\n\nconst manifest = sent[0].json.manifest;\nconst notes = [];\nif (manifest.ai_stage.ran) {\n  notes.push('AI review ran.');\n  if (manifest.ai_stage.terms_with_parse_errors) {\n    notes.push(`${manifest.ai_stage.terms_with_parse_errors} terms have no AI verdict (response could not be parsed).`);\n  }\n} else if (manifest.ai_stage.requested) {\n  notes.push(`AI review skipped: ${manifest.ai_stage.note}`);\n}\nif (manifest.stage_2 && manifest.stage_2.skipped) notes.push('Stage 2 (spaCy) skipped: the stage 2 server on your machine did not answer.');\nconst skipped = (manifest.coverage.skipped || []).filter((s) => !['below_min_chars', 'duplicate_segment'].includes(s.reason));\nif (skipped.length) notes.push('Skipped: ' + skipped.map((s) => `${s.reason} x${s.count}`).join(', '));\nif (manifest.coverage.unsupported_in_folder) notes.push(`${manifest.coverage.unsupported_in_folder} other files in the folder were ignored.`);\nif (manifest.coverage.files_parsed < manifest.coverage.files_seen) {\n  notes.push(`${manifest.coverage.files_seen - manifest.coverage.files_parsed} of ${manifest.coverage.files_seen} files produced no text.`);\n}\n\nreturn [{\n  json: {\n    job_id: manifest.job_id,\n    status: 'done',\n    finished_at: new Date().toISOString(),\n    terms_returned: manifest.extraction.terms_returned,\n    glossary_url: urls.glossary || '',\n    stage1_url: urls.stage1 || '',\n    manifest_url: urls.manifest || '',\n    message: notes.join(' '),\n  },\n}];\n"
+        "jsCode": "// Write the result back to the job's row: links, counts and a short note.\nconst uploads = $input.all();\nconst sent = $('Run manifest').all();\nconst urls = {};\nuploads.forEach((u, i) => {\n  const kind = sent[i].json.kind;\n  urls[kind] = u.json.webViewLink || `https://drive.google.com/file/d/${u.json.id}/view`;\n});\n\nconst manifest = sent[0].json.manifest;\nconst notes = [];\nif (manifest.ai_stage.ran) {\n  notes.push('AI review ran.');\n  if (manifest.ai_stage.terms_with_parse_errors) {\n    notes.push(`${manifest.ai_stage.terms_with_parse_errors} terms have no AI verdict (response could not be parsed).`);\n  }\n} else if (manifest.ai_stage.requested) {\n  notes.push(`AI review skipped: ${manifest.ai_stage.note}`);\n}\nconst skipped = (manifest.coverage.skipped || []).filter((s) => !['below_min_chars', 'duplicate_segment'].includes(s.reason));\nif (skipped.length) notes.push('Skipped: ' + skipped.map((s) => `${s.reason} x${s.count}`).join(', '));\nif (manifest.coverage.unsupported_in_folder) notes.push(`${manifest.coverage.unsupported_in_folder} other files in the folder were ignored.`);\nif (manifest.coverage.files_parsed < manifest.coverage.files_seen) {\n  notes.push(`${manifest.coverage.files_seen - manifest.coverage.files_parsed} of ${manifest.coverage.files_seen} files produced no text.`);\n}\n\nreturn [{\n  json: {\n    job_id: manifest.job_id,\n    status: 'done',\n    finished_at: new Date().toISOString(),\n    terms_returned: manifest.extraction.terms_returned,\n    glossary_url: urls.glossary || '',\n    stage1_url: urls.stage1 || '',\n    manifest_url: urls.manifest || '',\n    message: notes.join(' '),\n  },\n}];\n"
       },
       "name": "Job done",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -7616,
+        -7840,
         2704
       ],
       "id": "2f2e9b8e-2f1d-4cf3-89c5-7f42c7e41700"
@@ -476,7 +440,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
       "position": [
-        -7392,
+        -7616,
         2704
       ],
       "id": "dc9e3aa5-2878-434a-989e-f717f4762cdf"
@@ -774,7 +738,7 @@
     },
     {
       "parameters": {
-        "content": "## Terminology extraction (v4, started by the web page)\n\nThe Apps Script page calls **Webhook** (through Cloudflare) in two ways:\n- `check`: can n8n use these folders? Answered at once.\n- `start`: answered *accepted* within a second or two; the job then runs on and reports to the **log sheet** (links, counts, errors).\n\n**Setup**\n1. **Webhook**: attach a Header Auth credential (name `X-Terminology-Key`, value = a long random string). The same value goes in the Apps Script property `N8N_WEBHOOK_KEY`.\n2. Replace `PASTE_LOG_SHEET_ID_HERE` in **Log job started** and **Mark job done** (and in the error workflow).\n3. Google Drive credential on the Drive and HTTP nodes; Google Sheets credential on the Sheets nodes. Folders must be shared with this Google account.\n4. Google Gemini credential (API key from a billing-enabled Google AI Studio project) on **AI review**, only needed for AI review.\n5. **Stage 2 NLP**: start the stage 2 server on your machine (`local-server/`), paste its tunnel address into the URL, and attach a Header Auth credential (name `X-Stage2-Key`, value = the key the server prints). If the server doesn't answer, jobs still finish, without stage 2.\n6. Publish *Terminology job errors* first (unpublished workflows are greyed out in the list), set it as this workflow's Error workflow, then activate this one.",
+        "content": "## Terminology extraction (v4, started by the web page)\n\nThe Apps Script page calls **Webhook** (through Cloudflare) in two ways:\n- `check`: can n8n use these folders? Answered at once.\n- `start`: answered *accepted* within a second or two; the job then runs on and reports to the **log sheet** (links, counts, errors).\n\n**Setup**\n1. **Webhook**: attach a Header Auth credential (name `X-Terminology-Key`, value = a long random string). The same value goes in the Apps Script property `N8N_WEBHOOK_KEY`.\n2. Replace `PASTE_LOG_SHEET_ID_HERE` in **Log job started** and **Mark job done** (and in the error workflow).\n3. Google Drive credential on the Drive and HTTP nodes; Google Sheets credential on the Sheets nodes. Folders must be shared with this Google account.\n4. Google Gemini credential (API key from a billing-enabled Google AI Studio project) on **AI review**, only needed for AI review.\n5. Publish *Terminology job errors* first (unpublished workflows are greyed out in the list), set it as this workflow's Error workflow, then activate this one.",
         "height": 400,
         "width": 560,
         "color": 4
@@ -1036,7 +1000,18 @@
       "main": [
         [
           {
-            "node": "Stage 2 input",
+            "node": "Stage 2 NLP stub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage 2 NLP stub": {
+      "main": [
+        [
+          {
+            "node": "Check restricted list",
             "type": "main",
             "index": 0
           }
@@ -1194,46 +1169,6 @@
         [
           {
             "node": "Mark job done",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Stage 2 input": {
-      "main": [
-        [
-          {
-            "node": "Stage 2 NLP",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Stage 2 NLP": {
-      "main": [
-        [
-          {
-            "node": "Check restricted list",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Stage 2 skipped",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Stage 2 skipped": {
-      "main": [
-        [
-          {
-            "node": "Check restricted list",
             "type": "main",
             "index": 0
           }

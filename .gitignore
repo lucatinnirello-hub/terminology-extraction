@@ -5,5 +5,3 @@
 *.log
 node_modules/
 preview.png
-stage2-key.txt
-__pycache__/

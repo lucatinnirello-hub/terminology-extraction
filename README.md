@@ -30,8 +30,7 @@ to the job log sheet, which the page shows.
 | `n8n/Terminology_extraction_webhook_v4.json` | Main workflow: Webhook → checks → reply → extraction → log |
 | `n8n/Terminology_job_errors.json` | Error workflow: marks the failed job's log row, matched by execution ID |
 | `docs/terminology-job-flow.html` | The diagrams |
-| `n8n/code/` | Plain copies of Code nodes changed since first setup (XLIFF support, Gemini AI review, spaCy stage 2), for pasting into an existing workflow |
-| `local-server/` | The stage 2 server (spaCy) you run on your machine, and how to set it up |
+| `n8n/code/` | Plain copies of Code nodes changed since first setup (XLIFF support, Gemini AI review), for pasting into an existing workflow |
 | `docs/workflow-nodes.html` | Every n8n node: what it does, what to set up on it, whether it can stop a job |
 | `n8n/superseded/` | The earlier scheduled-check version, for reference only |
 
@@ -54,14 +53,7 @@ to the job log sheet, which the page shows.
    The Google account you use here is "n8n's account": folders must be shared with it.
 4. Publish (activate) *Terminology job errors*. Current n8n versions grey out unpublished workflows in the error workflow list.
    Then: main workflow → **Settings** → **Error workflow** → *Terminology job errors*.
-5. Set up the stage 2 server (next section). Until it's running, jobs finish without stage 2.
-6. Activate the main workflow and copy the Webhook node's **production** URL. Make sure Cloudflare routes it, the same way as your other webhooks.
-
-### 1b. Stage 2 server (spaCy, on your machine)
-
-Stage 1 stays JavaScript in n8n. Stage 2 cleans up its candidates with spaCy (drops verb phrases, merges "valve" / "valves", fills `lemma`). n8n can't run spaCy, so stage 2 runs on your own machine: the *Stage 2 NLP* node sends it the terms through a free Cloudflare tunnel and gets the cleaned-up list back.
-
-Setup and day-to-day use: [`local-server/README.md`](local-server/README.md). If your machine is off, jobs still finish without stage 2, and the job's note says so.
+5. Activate the main workflow and copy the Webhook node's **production** URL. Make sure Cloudflare routes it, the same way as your other webhooks.
 
 ### 2. Apps Script
 
@@ -128,7 +120,6 @@ An XLIFF file that declares a different source language from the job's is skippe
   - Problems after the reply (no usable files, no terms, Drive or Gemini errors) are written to the job's log row, with a link to the n8n execution.
   - If n8n restarts mid-job, nothing can report back, so the page flags a job still running after 45 minutes.
 - **AI review** still needs both ticks on the page, and the client must not be on the restricted list in n8n (*Check restricted list*). The page can't override that list.
-- **Stage 2** (spaCy) runs before the AI review, on your machine, whenever the stage 2 server is up. Otherwise it's skipped and the job's note says so.
 - **Languages** offered are the Latin-script ones, because the stage 1 tokeniser only reads Latin script. Each language maps to its TMX code, e.g. Czech is `cz` in the stopword lists and `cs-CZ` in TMX files.
 
 ## Log sheet columns
