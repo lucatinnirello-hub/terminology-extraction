@@ -131,6 +131,52 @@ An XLIFF file that declares a different source language from the job's is skippe
 - **AI review** still needs both ticks on the page, and the client must not be on the restricted list in n8n (*Check restricted list*). The page can't override that list.
 - **Languages** offered are the Latin-script ones, because the stage 1 tokeniser only reads Latin script. Each language maps to its TMX code, e.g. Czech is `cz` in the stopword lists and `cs-CZ` in TMX files.
 
+## Reading the candidate list
+
+Each extraction job writes two spreadsheets to the results folder:
+
+- **Stage 1**: the candidate terms straight from the statistics, before any AI. Its columns are the first block below.
+- **The glossary**: the same terms in the same order, with the AI's verdicts added. Translation and wildcard columns are added when those options are on.
+
+Every term from stage 1 reaches the glossary: the AI marks terms to drop, but nothing is removed. Filter on `ai_keep` to get the AI's shortlist.
+
+**From stage 1 (statistics, no AI)**
+
+| Column | What it holds | How to read it |
+|---|---|---|
+| `rank` | Position in the list, 1 = best | Ordered by `yake_score`. The AI doesn't change it. |
+| `term` | The term as it should go in the glossary | Lower case unless the files show it's a name, brand, acronym or always-capitalised word (see *Lower case* above). |
+| `source_form` | The most common way the files write it | Compare with `term` to see what the case rule changed. |
+| `case_note` | Why the case is what it is | *lower case*, *kept capitals: …* with the reason, or *lower case (check: only seen at sentence start or in headings)*: check these. *AI: …* means the AI changed the case. |
+| `word_count` | Words in the term | Capped by *Longest term (words)*. |
+| `yake_score` | How term-like the phrase looks statistically | See below. |
+| `occurrences` | How many times it appears in total | Includes the counts of any merged variants. |
+| `segments` | How many different segments it appears in | Always at least *Minimum segments a term must appear in*. Much lower than `occurrences` means it repeats inside a few segments. |
+| `source_types` | Which kinds of file it came from | `tmx`, `xliff`, `text`, separated by `\|`. |
+| `merged_variants` | Other spellings folded into this term | E.g. *color* merged into *colour* (set by *Near-duplicate merge threshold*). Entries starting `(sub)` are shorter terms dropped because they almost only appear inside this one, e.g. `(sub) relief valve` under *pressure relief valve* (set by *Sub-phrase suppression ratio*). |
+| `examples` | Up to *Example segments kept per term* segments containing it | Separated by `\|`. Read these before trusting a term. |
+
+**The YAKE score.** YAKE is the statistical method stage 1 uses to rank phrases. Each word gets a score from how it behaves in the files: frequent, often capitalised, appearing early, and next to the same few words each time (rather than next to anything, like *the* or *with*) all make a word look more like part of a term. A phrase's score combines its words' scores and is divided by how often the phrase occurs.
+
+- **Lower is better.** Rank 1 has the lowest score.
+- **Only compare within one job.** The number depends on the files, so there's no fixed good or bad value, and scores from different jobs can't be compared.
+- **It says how term-like a phrase looks, not whether it's right.** Frequent general phrases can still score well; that's what AI review and `ai_keep` are for.
+- **Longer terms tend to score worse,** because every word adds to the score. Don't drop a 3- or 4-word term just because it ranks below single words.
+
+**Added in the glossary**
+
+| Column | What it holds | How to read it |
+|---|---|---|
+| `lemma` | The term's dictionary form | Always empty for now: lemmatisation (stage 2) isn't built yet. |
+| `ai_keep` | The AI's verdict | `true`: a real term for this job. `false`: the AI suggests dropping it; `ai_reason` says why. Empty: the AI didn't run or its reply failed (see `ai_error`). |
+| `ai_reason` | The AI's reason, mostly for dropped terms | *no verdict returned* means the AI skipped this term in its reply. |
+| `definition` | A short definition written by the AI | Based on the examples and the AI brief. Empty without AI review. |
+| `translation` and the other translation columns | See *Translations* below | Only with *Suggest translations* on. |
+| `memoq_term`, `wildcard_check`, `wildcard_note` | See *memoQ wildcards* below | Only with wildcards on. |
+| `ai_error` | Why the AI review failed for this term's batch | Empty when all went well. All 25 terms of a failed batch carry the same message. |
+
+**A quick way to review:** filter `ai_keep` to `true`, sort by `rank`, then check rows with a *check* in `case_note`, any `(sub)` entries in `merged_variants` you'd want back, and, with translations on, *AI corrected* rows first.
+
 ## Translations
 
 Tick **Suggest translations of the terms** on the page and pick the target language.
