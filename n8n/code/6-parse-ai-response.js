@@ -32,7 +32,9 @@ function translationOf(t, v) {
 const candidate = Array.isArray(response.candidates) ? response.candidates[0] || {} : response;
 let text = '';
 if (candidate.content && Array.isArray(candidate.content.parts)) {
-  text = candidate.content.parts.filter((p) => p.text && !p.thought).map((p) => p.text).join('');
+  // With "Output Content as JSON" on, n8n may hand over the text already parsed.
+  text = candidate.content.parts.filter((p) => p.text && !p.thought)
+    .map((p) => (typeof p.text === 'string' ? p.text : JSON.stringify(p.text))).join('');
 } else if (Array.isArray(response.content)) {
   text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
 } else if (typeof response.text === 'string') {
@@ -54,11 +56,66 @@ try {
   return fail(`Could not parse model response: ${e.message}`);
 }
 
-const byTerm = new Map((parsed.results || []).map((r) => [String(r.term).toLowerCase(), r]));
+// Find the list of verdicts. The prompt asks for {"results":[...]}, but the
+// model sometimes sends a bare list, another key, or an object keyed by term.
+function resultsOf(p) {
+  if (Array.isArray(p)) return p;
+  if (!p || typeof p !== 'object') return [];
+  if (Array.isArray(p.results)) return p.results;
+  const list = Object.values(p).find((v) => Array.isArray(v) && v.some((r) => r && typeof r === 'object'));
+  if (list) return list;
+  const keyed = p.results && typeof p.results === 'object' ? p.results : p;
+  const entries = Object.entries(keyed).filter(([, v]) => v && typeof v === 'object' && !Array.isArray(v));
+  return entries.map(([k, v]) => ({ term: k, ...v }));
+}
+const results = resultsOf(parsed);
+
+// Terms are matched ignoring case, spacing, accents-as-typed, quotes and
+// trademark signs, so a reply that writes "Free Spins" as "free spins" or
+// "MEGAWAYS™" as "MEGAWAYS" still counts.
+const key = (s) => String(s == null ? '' : s)
+  .normalize('NFC')
+  .toLowerCase()
+  .replace(/[™®©"“”‘’']/g, '')
+  .replace(/\s+/g, ' ')
+  .trim();
+const termOf = (r) => (r && (r.term ?? r.Term ?? r.source_term ?? r.original_term)) ?? '';
+
+const byTerm = new Map();
+results.forEach((r, i) => {
+  if (!r || typeof r !== 'object') return;
+  const k = key(termOf(r));
+  if (k && !byTerm.has(k)) byTerm.set(k, i);
+});
+const used = new Set();
+const verdicts = sent.map((t) => {
+  const i = byTerm.get(key(t.term));
+  if (i === undefined || used.has(i)) return undefined;
+  used.add(i);
+  return i;
+});
+// Last resort: the reply has one entry per term but left "term" out. Match
+// those by position. Entries with a rewritten term are not guessed at.
+if (results.length === sent.length) {
+  verdicts.forEach((v, i) => {
+    if (v === undefined && !used.has(i) && results[i] && typeof results[i] === 'object' && !key(termOf(results[i]))) {
+      verdicts[i] = i;
+      used.add(i);
+    }
+  });
+}
+
+// A reply that matches no term at all is a failure, not a batch of skipped
+// terms: say so, with the start of the reply, so it can be seen in the glossary.
+if (sent.length && verdicts.every((v) => v === undefined)) {
+  const shape = Array.isArray(parsed) ? 'a list' : `an object with keys ${Object.keys(parsed || {}).slice(0, 5).join(', ') || '(none)'}`;
+  return fail(`The reply matched none of the terms (it was ${shape}, ${results.length} entries). Start of reply: ${text.slice(0, 300)}`);
+}
+
 const normaliseCase = $('Settings').first().json.normalise_case !== false;
 
-return sent.map((t) => {
-  const v = byTerm.get(String(t.term).toLowerCase());
+return sent.map((t, i) => {
+  const v = verdicts[i] === undefined ? undefined : results[verdicts[i]];
   // The model may only change letter case: anything else is ignored.
   const cased = v && normaliseCase && typeof v.term_cased === 'string' ? v.term_cased.trim() : '';
   const recase = cased && cased !== t.term && cased.toLowerCase() === String(t.term).toLowerCase();

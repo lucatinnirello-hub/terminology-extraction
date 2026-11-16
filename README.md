@@ -169,11 +169,11 @@ Every term from stage 1 reaches the glossary: the AI marks terms to drop, but no
 |---|---|---|
 | `lemma` | The term's dictionary form | Always empty for now: lemmatisation (stage 2) isn't built yet. |
 | `ai_keep` | The AI's verdict | `true`: a real term for this job. `false`: the AI suggests dropping it; `ai_reason` says why. Empty: the AI didn't run or its reply failed (see `ai_error`). |
-| `ai_reason` | The AI's reason, mostly for dropped terms | *no verdict returned* means the AI skipped this term in its reply. |
+| `ai_reason` | The AI's reason, mostly for dropped terms | *no verdict returned* means the AI's reply had no entry for this term: it left it out, or rewrote the term beyond case, spacing, quotes and ™. |
 | `definition` | A short definition written by the AI | Based on the examples and the AI brief. Empty without AI review. |
 | `translation` and the other translation columns | See *Translations* below | Only with *Suggest translations* on. |
 | `memoq_term`, `wildcard_check`, `wildcard_note` | See *memoQ wildcards* below | Only with wildcards on. |
-| `ai_error` | Why the AI review failed for this term's batch | Empty when all went well. All 25 terms of a failed batch carry the same message. |
+| `ai_error` | Why the AI review failed for this term's batch | Empty when all went well. All 25 terms of a failed batch carry the same message. *The reply matched none of the terms* quotes the start of the reply, to show what the model sent instead. |
 
 **A quick way to review:** filter `ai_keep` to `true`, sort by `rank`, then check rows with a *check* in `case_note`, any `(sub)` entries in `merged_variants` you'd want back, and, with translations on, *AI corrected* rows first.
 
