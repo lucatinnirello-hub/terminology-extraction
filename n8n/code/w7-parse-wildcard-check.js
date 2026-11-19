@@ -31,6 +31,17 @@ if (reply.error) return sent.map((t) => ({ json: { id: t.id, check_error: reply.
 const byId = new Map((reply.parsed.results || []).map((r) => [String(r.id), r]));
 return sent.map((t) => {
   const r = byId.get(String(t.id));
-  if (!r || typeof r.wildcarded !== 'string') return { json: { id: t.id, check_error: 'no answer for this term' } };
-  return { json: { id: t.id, ai_wildcarded: r.wildcarded, ai_verdict: r.verdict === 'confirmed' ? 'confirmed' : 'corrected', ai_note: String(r.note || '') } };
+  if (!r) return { json: { id: t.id, check_error: 'no answer for this term' } };
+  const forms = Array.isArray(r.forms) ? r.forms.filter((f) => typeof f === 'string' && f.trim()).slice(0, 30) : [];
+  const corrected = r.verdict !== 'confirmed';
+  if (corrected && !forms.length) return { json: { id: t.id, check_error: 'corrected, but no forms given' } };
+  return {
+    json: {
+      id: t.id,
+      ai_verdict: corrected ? 'corrected' : 'confirmed',
+      ai_forms: corrected ? forms : [],
+      ai_note: String(r.note || ''),
+      term_suggestion: String(r.term_suggestion || '').trim(),
+    },
+  };
 });

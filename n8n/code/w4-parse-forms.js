@@ -31,6 +31,6 @@ if (reply.error) return sent.map((t) => ({ json: { ...t, ai_forms: [], forms_err
 const byId = new Map((reply.parsed.results || []).map((r) => [String(r.id), r]));
 return sent.map((t) => {
   const r = byId.get(String(t.id));
-  const forms = r && Array.isArray(r.forms) ? r.forms.filter((f) => typeof f === 'string' && f.trim()).slice(0, 20) : [];
+  const forms = r && Array.isArray(r.forms) ? r.forms.filter((f) => typeof f === 'string' && f.trim()).slice(0, 30) : [];
   return { json: { ...t, ai_forms: forms, forms_error: r ? '' : 'no forms returned' } };
 });

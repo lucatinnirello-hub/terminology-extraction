@@ -15,7 +15,7 @@ uploads.forEach((u, i) => {
 const manifest = sent[0].json.manifest;
 const notes = [];
 const countChecks = (byCheck) => [
-  ['AI confirmed', 'confirmed by AI'], ['AI corrected', 'corrected by AI'],
+  ['AI confirmed', 'forms confirmed by AI'], ['AI corrected', 'forms corrected by AI'],
   ['Code proposal kept (AI reply invalid)', 'code proposal kept'], ['Code only, not validated', 'not validated'],
   ['No wildcards needed', 'need none (the language doesn\'t inflect)'],
 ].filter(([k]) => byCheck[k]).map(([k, label]) => `${byCheck[k]} ${label}`).join(', ');
@@ -24,6 +24,7 @@ if (wildcardsOnly) {
   notes.push(`Wildcards added to ${manifest.terms_with_wildcards} of ${manifest.terms} terms (column "${manifest.target_column}").`);
   const counts = countChecks(manifest.rows_by_check || {});
   if (counts) notes.push(`Rows: ${counts}.`);
+  if (manifest.rows_with_term_suggestions) notes.push(`${manifest.rows_with_term_suggestions} rows have a suggested correction to the term (term_suggestion).`);
   if (!manifest.ai.ran && manifest.ai.requested) notes.push(`AI not used: ${manifest.ai.note}.`);
   return [{
     json: {

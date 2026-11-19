@@ -25,7 +25,8 @@ const manifest = {
   source_column: g.source_column,
   rows: rows.length,
   terms: plan.items.length,
-  terms_with_wildcards: rows.reduce((n, r) => n + String(r[memoqColumn] || '').split(';').filter((t) => /[|*]/.test(t)).length, 0),
+  terms_with_wildcards: rows.reduce((n, r) => n + String(r[memoqColumn] || '').split(/[;,/]/).filter((t) => /[|*]/.test(t)).length, 0),
+  rows_with_term_suggestions: rows.filter((r) => r.term_suggestion).length,
   memories_used: g.memories_used,
   words_in_memories: (g.vocabulary || []).length,
   ai: {

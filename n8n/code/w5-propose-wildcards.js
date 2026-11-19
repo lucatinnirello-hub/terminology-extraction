@@ -19,6 +19,10 @@ const MIN_STEM = 3;
 const lower = (s) => s.toLocaleLowerCase();
 const words = (s) => s.trim().split(/\s+/).filter(Boolean);
 const stripWildcards = (s) => s.replace(/[|*]/g, '');
+// Punctuation around a word ("(ОЮНЧУГА", "көбөйтүү!") stays outside the
+// wildcards: the rules apply to the letters and digits only.
+const splitPunct = (w) => { const m = w.match(/^([^\p{L}\p{N}|*]*)(.*?)([^\p{L}\p{N}|*]*)$/u); return { pre: m[1], core: m[2], post: m[3] }; };
+const coreWords = (s) => words(s).map((w) => splitPunct(w).core).filter(Boolean);
 function lcpLen(list) {
   let i = 0;
   while (list.every((w) => i < w.length && w[i] === list[0][i])) i += 1;
@@ -27,12 +31,13 @@ function lcpLen(list) {
 
 // base: the term in its dictionary form. forms: its inflected forms (any case).
 function proposeWildcard(base, forms) {
-  const bw = words(base);
+  const tokens = words(base).map(splitPunct);
+  const bw = tokens.map((t) => t.core).filter(Boolean);
   const bl = bw.map(lower);
   const total = bw.join(' ').length;
   const variants = [];
   const otherShape = [];
-  for (const f of new Set(forms.map((x) => words(lower(x)).join(' ')))) {
+  for (const f of new Set(forms.map((x) => coreWords(lower(x)).join(' ')))) {
     const fw = f.split(' ');
     if (fw.length === bw.length) variants.push(fw); else if (f) otherShape.push(f);
   }
@@ -69,7 +74,9 @@ function proposeWildcard(base, forms) {
   if (irregular.length) why.push(`not covered, changes near the start: ${[...new Set(irregular)].slice(0, 3).join(', ')}`);
   if (otherShape.length) why.push(`forms with a different number of words ignored: ${otherShape.slice(0, 2).join(', ')}`);
   if (!variants.some((v) => v.join(' ') !== bl.join(' '))) return { wildcarded: base, reason: 'no forms other than the term itself are known: no wildcard' };
-  return { wildcarded: out.join(' '), reason: why.join('; ') || 'no variation in the forms: no wildcard' };
+  let k = 0;
+  const rebuilt = tokens.map((t) => (t.core ? t.pre + out[k++] + t.post : t.pre)).join(' ');
+  return { wildcarded: rebuilt, reason: why.join('; ') || 'no variation in the forms: no wildcard' };
 }
 
 // Does one word of a wildcarded term match a word of the text? `prefixRoom`
@@ -82,8 +89,8 @@ function wordMatches(p, w, prefixRoom) {
   return w === p || (prefixRoom > 0 && w.startsWith(p) && w.length - p.length <= prefixRoom);
 }
 function termMatches(wildcarded, form) {
-  const pw = words(wildcarded);
-  const fw = words(form);
+  const pw = coreWords(wildcarded);
+  const fw = coreWords(form);
   if (pw.length !== fw.length) return false;
   const total = stripWildcards(pw.join(' ')).length;
   return pw.every((p, i) => wordMatches(p, fw[i], i === pw.length - 1 ? Math.floor(0.5 * (pw.length === 1 ? stripWildcards(p).length : total)) : 0));
@@ -93,9 +100,9 @@ function termMatches(wildcarded, form) {
 // "Wassertropfen"). Most frequent first.
 // `vocabulary` is [[word, count], ...] sorted by word (see sortVocabulary).
 function alsoMatches(wildcarded, forms, vocabulary, max = 5) {
-  const known = new Set(forms.flatMap((f) => words(lower(f))));
+  const known = new Set(forms.flatMap((f) => coreWords(lower(f))));
   const hits = new Map();
-  for (const p of words(wildcarded)) {
+  for (const p of coreWords(wildcarded)) {
     if (!/[|*]/.test(p)) continue;
     const stem = lower(p).split(/[|*]/)[0];
     let lo = 0;
@@ -112,14 +119,36 @@ const sortVocabulary = (v) => (v || []).map(([w, n]) => [lower(w), n]).sort((a, 
 // ===== end of wildcard engine
 
 // Pools each term's forms (the files' and the AI's), applies the rules, and
-// lists words in the files that the proposal would also catch.
+// lists words in the files that the proposal would also catch. One item per
+// distinct term: copies of the same term (in any capitals) share their forms
+// and get the same wildcards. `ids` lists the copies.
 const plan = $('Wildcard plan').first().json;
 if (plan.route !== 'ai' && plan.route !== 'code') return [{ json: { skip: true } }];
-const list = plan.route === 'ai' ? $input.all().map((i) => i.json) : plan.items;
 const vocabulary = sortVocabulary(plan.vocabulary);
+const key = (s) => lower(String(s)).replace(/\s+/g, ' ').trim();
 
-return list.map((it) => {
-  const forms = [...new Set([it.base, ...(it.tm_forms || []), ...(it.ai_forms || [])].map((f) => String(f).trim()).filter(Boolean))];
-  const p = proposeWildcard(it.base, forms);
-  return { json: { ...it, forms, proposed: p.wildcarded, reason: p.reason, also_matches: alsoMatches(p.wildcarded, forms, vocabulary) } };
+// The AI's forms, by term ("Wildcard items" sent each distinct term once).
+const aiForms = new Map();
+if (plan.route === 'ai') {
+  for (const { json: it } of $input.all()) {
+    const k = key(it.base);
+    const prev = aiForms.get(k) || { forms: [], error: '' };
+    aiForms.set(k, { forms: prev.forms.concat(it.ai_forms || []), error: prev.error || it.forms_error || '' });
+  }
+}
+
+const groups = new Map();
+for (const it of plan.items) {
+  const k = key(it.base);
+  if (!groups.has(k)) groups.set(k, { id: it.id, base: it.base, source_term: it.source_term, ids: [], tm_forms: [] });
+  const g = groups.get(k);
+  g.ids.push(it.id);
+  g.tm_forms.push(...(it.tm_forms || []));
+}
+
+return [...groups.entries()].map(([k, g]) => {
+  const ai = aiForms.get(k) || { forms: [], error: plan.route === 'ai' ? 'no forms returned' : '' };
+  const forms = [...new Set([g.base, ...g.tm_forms, ...ai.forms].map((f) => String(f).trim()).filter(Boolean))];
+  const p = proposeWildcard(g.base, forms);
+  return { json: { ...g, forms_error: ai.error, forms, proposed: p.wildcarded, reason: p.reason, also_matches: alsoMatches(p.wildcarded, forms, vocabulary) } };
 });

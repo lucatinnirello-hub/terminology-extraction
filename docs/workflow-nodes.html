@@ -372,7 +372,7 @@
 </tr><tr data-setup="0" data-google="0" data-stops="1" data-name="glossary terms">
   <td class="num">35</td>
   <td class="node"><span class="nm">Glossary terms</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Wildcards-only jobs. Reads the glossary, finds the target-term column (named on the page, or from the language name), and lists each target term with its source term. Several terms in one cell, separated by ";", are handled one by one; wildcards already there are worked out again. TMX/XLIFF files in the job only supply their target-language words, to spot false hits.<div class="stops"><span class="stop-label">Can stop the job</span> No glossary, no target column found, an empty column, or more than 5,000 rows</div></td>
+  <td class="what">Wildcards-only jobs. Reads the glossary, finds the target-term column (named on the page, or from the language name), and lists each target term with its source term. Several terms in one cell, separated by ";", "," or "/" (not between digits), are handled one by one; wildcards already there are worked out again. TMX/XLIFF files in the job only supply their target-language words, to spot false hits.<div class="stops"><span class="stop-label">Can stop the job</span> No glossary, no target column found, an empty column, or more than 5,000 rows</div></td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="wildcards only? (after gate)">
   <td class="num">36</td>
@@ -392,7 +392,7 @@
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="wildcard items">
   <td class="num">39</td>
   <td class="node"><span class="nm">Wildcard items</span><span class="type t-n8n">Code</span></td>
-  <td class="what">One item per target term, ready for batching.</td>
+  <td class="what">One item per distinct target term, ready for batching: a term that appears more than once is sent once.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="batch wildcard forms">
   <td class="num">40</td>
@@ -402,7 +402,7 @@
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="build forms request">
   <td class="num">41</td>
   <td class="node"><span class="nm">Build forms request</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Asks the AI for each target term&#x27;s forms (cases, number, agreement). Sends the target term and its source term only.</td>
+  <td class="what">Asks the AI for each target term&#x27;s forms (cases, number, possessives, agreement, common combinations of endings, with any letters that change). The prompt is the same for every language. Sends the target term and its source term only.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="1" data-google="0" data-stops="1" data-name="ai forms">
   <td class="num">42</td>
@@ -417,7 +417,7 @@
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="propose wildcards">
   <td class="num">44</td>
   <td class="node"><span class="nm">Propose wildcards</span><span class="type t-n8n">Code</span></td>
-  <td class="what">The rules of <i>Wildcards Logic</i> and <i>Word Matching Logic</i>: a pipe where endings change, an asterisk for additions over 50%, none at or under 50%, and any varying word but the last always marked. Also lists words in the client&#x27;s files that a proposal would also catch.</td>
+  <td class="what">The rules of <i>Wildcards Logic</i> and <i>Word Matching Logic</i>: a pipe where endings change, an asterisk for additions over 50%, none at or under 50%, and any varying word but the last always marked. Punctuation around a word stays outside the wildcards. Copies of the same term share their forms and get the same wildcards. Also lists words in the client&#x27;s files that a proposal would also catch.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="ai check wildcards?">
   <td class="num">45</td>
@@ -432,7 +432,7 @@
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="build check request">
   <td class="num">47</td>
   <td class="node"><span class="nm">Build check request</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Asks the AI to confirm or correct each proposal, with the rules (<code>RULES</code>, editable in the node), the forms, the code&#x27;s reasoning and the words it would also catch.</td>
+  <td class="what">Asks the AI to confirm or correct each term&#x27;s <b>forms</b> (not the wildcards). Wildcards-only jobs: also asks it to flag terms that look misspelt, truncated or ungrammatical.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="1" data-google="0" data-stops="1" data-name="ai wildcard check">
   <td class="num">48</td>
@@ -442,12 +442,12 @@
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="parse wildcard check">
   <td class="num">49</td>
   <td class="node"><span class="nm">Parse wildcard check</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Reads the verdicts. A reply that can&#x27;t be read leaves that batch with the code&#x27;s proposals, marked not validated.</td>
+  <td class="what">Reads the verdicts, corrected forms and term suggestions. A reply that can&#x27;t be read leaves that batch with the code&#x27;s proposals, marked not validated.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="apply wildcards">
   <td class="num">50</td>
   <td class="node"><span class="nm">Apply wildcards</span><span class="type t-n8n">Code</span></td>
-  <td class="what">Uses the AI&#x27;s version only if it keeps the term&#x27;s letters and uses the wildcards validly; otherwise keeps the code&#x27;s. Notes forms the result misses and words it also catches. Extraction jobs: adds <code>memoq_term</code>, <code>wildcard_check</code>, <code>wildcard_note</code> to the terms. Wildcards-only jobs: the glossary&#x27;s rows with the same three columns added.</td>
+  <td class="what">Where the AI corrected the forms, places the wildcards again in code from the corrected forms; the AI never places them. Notes forms the result misses and words it also catches. Extraction jobs: adds <code>memoq_term</code>, <code>wildcard_check</code>, <code>wildcard_note</code> to the terms. Wildcards-only jobs: the glossary&#x27;s rows with those three columns and <code>term_suggestion</code> added, each cell put back together with its own separators.</td>
   <td class="setup"><span class="none">None</span></td>
 </tr><tr data-setup="0" data-google="0" data-stops="0" data-name="wildcards only? (output)">
   <td class="num">51</td>

@@ -19,6 +19,10 @@ const MIN_STEM = 3;
 const lower = (s) => s.toLocaleLowerCase();
 const words = (s) => s.trim().split(/\s+/).filter(Boolean);
 const stripWildcards = (s) => s.replace(/[|*]/g, '');
+// Punctuation around a word ("(ОЮНЧУГА", "көбөйтүү!") stays outside the
+// wildcards: the rules apply to the letters and digits only.
+const splitPunct = (w) => { const m = w.match(/^([^\p{L}\p{N}|*]*)(.*?)([^\p{L}\p{N}|*]*)$/u); return { pre: m[1], core: m[2], post: m[3] }; };
+const coreWords = (s) => words(s).map((w) => splitPunct(w).core).filter(Boolean);
 function lcpLen(list) {
   let i = 0;
   while (list.every((w) => i < w.length && w[i] === list[0][i])) i += 1;
@@ -27,12 +31,13 @@ function lcpLen(list) {
 
 // base: the term in its dictionary form. forms: its inflected forms (any case).
 function proposeWildcard(base, forms) {
-  const bw = words(base);
+  const tokens = words(base).map(splitPunct);
+  const bw = tokens.map((t) => t.core).filter(Boolean);
   const bl = bw.map(lower);
   const total = bw.join(' ').length;
   const variants = [];
   const otherShape = [];
-  for (const f of new Set(forms.map((x) => words(lower(x)).join(' ')))) {
+  for (const f of new Set(forms.map((x) => coreWords(lower(x)).join(' ')))) {
     const fw = f.split(' ');
     if (fw.length === bw.length) variants.push(fw); else if (f) otherShape.push(f);
   }
@@ -69,7 +74,9 @@ function proposeWildcard(base, forms) {
   if (irregular.length) why.push(`not covered, changes near the start: ${[...new Set(irregular)].slice(0, 3).join(', ')}`);
   if (otherShape.length) why.push(`forms with a different number of words ignored: ${otherShape.slice(0, 2).join(', ')}`);
   if (!variants.some((v) => v.join(' ') !== bl.join(' '))) return { wildcarded: base, reason: 'no forms other than the term itself are known: no wildcard' };
-  return { wildcarded: out.join(' '), reason: why.join('; ') || 'no variation in the forms: no wildcard' };
+  let k = 0;
+  const rebuilt = tokens.map((t) => (t.core ? t.pre + out[k++] + t.post : t.pre)).join(' ');
+  return { wildcarded: rebuilt, reason: why.join('; ') || 'no variation in the forms: no wildcard' };
 }
 
 // Does one word of a wildcarded term match a word of the text? `prefixRoom`
@@ -82,8 +89,8 @@ function wordMatches(p, w, prefixRoom) {
   return w === p || (prefixRoom > 0 && w.startsWith(p) && w.length - p.length <= prefixRoom);
 }
 function termMatches(wildcarded, form) {
-  const pw = words(wildcarded);
-  const fw = words(form);
+  const pw = coreWords(wildcarded);
+  const fw = coreWords(form);
   if (pw.length !== fw.length) return false;
   const total = stripWildcards(pw.join(' ')).length;
   return pw.every((p, i) => wordMatches(p, fw[i], i === pw.length - 1 ? Math.floor(0.5 * (pw.length === 1 ? stripWildcards(p).length : total)) : 0));
@@ -93,9 +100,9 @@ function termMatches(wildcarded, form) {
 // "Wassertropfen"). Most frequent first.
 // `vocabulary` is [[word, count], ...] sorted by word (see sortVocabulary).
 function alsoMatches(wildcarded, forms, vocabulary, max = 5) {
-  const known = new Set(forms.flatMap((f) => words(lower(f))));
+  const known = new Set(forms.flatMap((f) => coreWords(lower(f))));
   const hits = new Map();
-  for (const p of words(wildcarded)) {
+  for (const p of coreWords(wildcarded)) {
     if (!/[|*]/.test(p)) continue;
     const stem = lower(p).split(/[|*]/)[0];
     let lo = 0;
@@ -111,33 +118,25 @@ function alsoMatches(wildcarded, forms, vocabulary, max = 5) {
 const sortVocabulary = (v) => (v || []).map(([w, n]) => [lower(w), n]).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 // ===== end of wildcard engine
 
-// Final wildcards: the AI's answer where it passes the checks below, else
-// the code's proposal. Then notes what each one misses or also catches.
+// Final wildcards, always placed by the code: from the forms the AI checked
+// (or corrected), else from the forms in "Propose wildcards". Then notes what
+// each one misses or also catches. Every copy of a term gets the same answer.
 //
 // wildcard_check:
-//   AI confirmed                          the code's proposal, checked by the AI
-//   AI corrected                          the AI changed it: check these first
-//   Code proposal kept (AI reply invalid) the AI's version broke the term
-//   Code only, not validated              the AI didn't run (or failed)
-//   No wildcards needed                   the target language doesn't inflect
+//   AI confirmed              the AI found the forms right: the code's wildcards stand
+//   AI corrected              the AI corrected the forms and the code re-placed the
+//                             wildcards from them: check these first
+//   Code only, not validated  the AI didn't run (or failed)
+//   No wildcards needed       the target language doesn't inflect
 const plan = $('Wildcard plan').first().json;
 const settings = $('Settings').first().json;
-const proposals = plan.route === 'ai' || plan.route === 'code' ? $('Propose wildcards').all().map((i) => i.json) : [];
+const proposals = plan.route === 'ai' || plan.route === 'code' ? $('Propose wildcards').all().map((i) => i.json).filter((p) => !p.skip) : [];
 const verdicts = plan.route === 'ai' ? new Map($input.all().map((i) => [String(i.json.id), i.json])) : new Map();
 const vocabulary = sortVocabulary(plan.vocabulary);
+const itemsById = new Map(plan.items.map((it) => [String(it.id), it]));
 
-// Why an AI answer can't be used, or '' if it can.
-function invalid(w, base) {
-  if (lower(stripWildcards(w)).replace(/\s+/g, ' ').trim() !== lower(base).replace(/\s+/g, ' ').trim()) return 'it changes the letters of the term';
-  for (const word of words(w)) {
-    const marks = (word.match(/[|*]/g) || []).length;
-    if (marks > 1) return `more than one wildcard in "${word}"`;
-    if (word.includes('*') && !word.endsWith('*')) return `"*" not at the end of "${word}"`;
-    if (word.startsWith('|') || word.endsWith('|')) return `"|" at the edge of "${word}"`;
-  }
-  return '';
-}
-// Puts the AI's wildcards into the term exactly as written (keeps its capitals).
+// Puts the wildcards into a copy of the term exactly as that copy is written
+// (keeps its capitals).
 function transfer(w, base) {
   const marks = [];
   let n = 0;
@@ -150,33 +149,43 @@ function transfer(w, base) {
 const results = new Map();
 for (const p of proposals) {
   let final = p.proposed;
+  let forms = p.forms;
   let check = 'Code only, not validated';
-  const notes = [`Code: ${p.reason}`];
+  let suggestion = '';
+  const notes = [];
   if (plan.route === 'ai') {
     const v = verdicts.get(String(p.id)) || {};
     if (p.forms_error) notes.push(`AI forms: ${p.forms_error}`);
-    if (v.check_error || !v.ai_wildcarded) {
-      notes.push(`AI check failed: ${v.check_error || 'no answer'}`);
+    if (v.check_error || !v.ai_verdict) {
+      notes.push(`Code: ${p.reason}`, `AI check failed: ${v.check_error || 'no answer'}`);
+    } else if (v.ai_verdict === 'confirmed') {
+      check = 'AI confirmed';
+      notes.push(`Code: ${p.reason}`);
     } else {
-      const bad = invalid(v.ai_wildcarded, p.base);
-      if (bad) {
-        check = 'Code proposal kept (AI reply invalid)';
-        notes.push(`AI suggested "${v.ai_wildcarded}", not used: ${bad}`);
-      } else {
-        final = transfer(v.ai_wildcarded, p.base);
-        check = final === p.proposed ? 'AI confirmed' : 'AI corrected';
-        if (v.ai_note && check === 'AI corrected') notes.push(`AI: ${v.ai_note}`);
-      }
+      forms = [...new Set([p.base, ...v.ai_forms].map((f) => String(f).trim()).filter(Boolean))];
+      const again = proposeWildcard(p.base, forms);
+      final = again.wildcarded;
+      check = 'AI corrected';
+      notes.push(`Code, from the AI's corrected forms: ${again.reason}`);
+      if (final !== p.proposed) notes.push(`before the AI's correction: ${p.proposed}`);
+      if (v.ai_note) notes.push(`AI: ${v.ai_note}`);
     }
-  } else if (plan.ai_note) {
-    notes.push(`AI didn't run: ${plan.ai_note}`);
+    suggestion = v.term_suggestion || '';
+  } else {
+    notes.push(`Code: ${p.reason}`);
+    if (plan.ai_note) notes.push(`AI didn't run: ${plan.ai_note}`);
   }
-  const missed = p.forms.filter((f) => !termMatches(final, f));
+  const missed = forms.filter((f) => !termMatches(final, f));
   if (missed.length) notes.push(`doesn't match: ${missed.slice(0, 4).join(', ')}`);
-  const also = alsoMatches(final, p.forms, vocabulary);
+  const also = alsoMatches(final, forms, vocabulary);
   if (also.length) notes.push(`also matches in the files: ${also.join(', ')}`);
-  if (p.had_wildcards) notes.push(`the glossary had: ${p.had_wildcards}`);
-  results.set(String(p.id), { memoq_term: final, wildcard_check: check, wildcard_note: notes.join('; ') });
+  for (const id of p.ids || [p.id]) {
+    const it = itemsById.get(String(id)) || p;
+    const own = [...notes];
+    if (it.had_wildcards) own.push(`the glossary had: ${it.had_wildcards}`);
+    if ((p.ids || []).length > 1) own.push(`same term ${p.ids.length} times in the glossary: same wildcards for each`);
+    results.set(String(id), { memoq_term: transfer(final, it.base), wildcard_check: check, wildcard_note: own.join('; '), term_suggestion: suggestion });
+  }
 }
 
 // Languages that don't inflect: every term as it is.
@@ -198,13 +207,18 @@ if (!plan.wildcards_only) {
 // ---- wildcards-only jobs: the glossary's rows, with three columns added
 const g = $('Glossary terms').first().json;
 const memoqColumn = `${g.target_column} (memoQ)`;
+const sepById = new Map(g.items.map((it) => [String(it.id), it.sep || '']));
 return g.rows.map((row, r) => {
   const parts = [];
-  for (let k = 0; results.has(`${r}:${k}`); k += 1) parts.push(results.get(`${r}:${k}`));
+  for (let k = 0; results.has(`${r}:${k}`); k += 1) parts.push({ ...results.get(`${r}:${k}`), sep: sepById.get(`${r}:${k}`) || '' });
   const out = {};
   for (const c of g.columns) out[c] = row[c];
-  out[memoqColumn] = parts.map((x) => x.memoq_term).join('; ');
+  // The cell's own separators (";", ",", "/") between its terms, as written.
+  out[memoqColumn] = parts.map((x) => x.memoq_term + x.sep).join('');
   out.wildcard_check = [...new Set(parts.map((x) => x.wildcard_check))].join(' / ');
   out.wildcard_note = parts.length > 1 ? parts.map((x) => `${x.memoq_term}: ${x.wildcard_note}`).join(' / ') : parts.map((x) => x.wildcard_note).join('');
+  if (parts.length > 1 && g.split_rows && g.split_rows.includes(r)) out.wildcard_note = `cell split into ${parts.length} terms at its separators / ${out.wildcard_note}`;
+  const suggestions = parts.filter((x) => x.term_suggestion);
+  out.term_suggestion = parts.length > 1 ? suggestions.map((x) => `${stripWildcards(x.memoq_term)} → ${x.term_suggestion}`).join(' / ') : suggestions.map((x) => x.term_suggestion).join('');
   return { json: out };
 });

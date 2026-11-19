@@ -10,9 +10,9 @@
 // "sr", "sr-Latn"...) or reads "translation" / "target". The source term,
 // sent to the AI as context, is the first other column.
 //
-// A cell can hold several terms separated by ";" (synonyms): each one gets
-// its own wildcards. Wildcards already in a cell are removed and worked out
-// again; the note says so.
+// A cell can hold several terms separated by ";", "," or "/" (synonyms):
+// each one gets its own wildcards. Wildcards already in a cell are removed
+// and worked out again; the note says so.
 //
 // TMX/XLIFF files in the job are only used for their target-language words:
 // they show which other words a wildcard would also catch.
@@ -52,9 +52,42 @@ if (settings.target_column) {
 const sourceColumn = columns.find((c) => c !== target && glossary.rows.some((r) => String(r[c] || '').trim()));
 
 // ---- one item per target term (synonyms split)
+// A cell can hold several terms separated by ";", "," or "/" (not between
+// digits: 1,5 or 24/7). Each part keeps the separator that followed it, so
+// "Apply wildcards" can put the cell back together as it was written.
+function splitCell(cell) {
+  const parts = [];
+  let cur = '';
+  for (let i = 0; i < cell.length; i += 1) {
+    const ch = cell[i];
+    const betweenDigits = /\d/.test(cell[i - 1] || '') && /\d/.test(cell[i + 1] || '');
+    if (ch === ';' || ((ch === ',' || ch === '/') && !betweenDigits)) {
+      let j = i + 1;
+      while (j < cell.length && /\s/.test(cell[j])) j += 1;
+      const trailing = cur.match(/\s*$/)[0];
+      parts.push({ term: cur.slice(0, cur.length - trailing.length).trim(), sep: trailing + cell.slice(i, j) });
+      cur = '';
+      i = j - 1;
+    } else {
+      cur += ch;
+    }
+  }
+  parts.push({ term: cur.trim(), sep: '' });
+  // An empty part (";;", a trailing ","): its separator joins the previous part's.
+  const out = [];
+  for (const p of parts) {
+    if (p.term) out.push(p);
+    else if (out.length) out[out.length - 1].sep += p.sep;
+  }
+  return out;
+}
+
 const items = [];
+const splitRows = [];
 glossary.rows.forEach((row, r) => {
-  String(row[target] || '').split(';').map((t) => t.trim()).filter(Boolean).forEach((term, k) => {
+  const parts = splitCell(String(row[target] || '').trim());
+  if (parts.length > 1 && parts.some((p) => /[,/]/.test(p.sep))) splitRows.push(r);
+  parts.forEach(({ term, sep }, k) => {
     const clean = term.replace(/[|*]/g, '');
     items.push({
       id: `${r}:${k}`,
@@ -62,6 +95,7 @@ glossary.rows.forEach((row, r) => {
       base: clean,
       had_wildcards: clean !== term ? term : '',
       tm_forms: [],
+      sep,
     });
   });
 });
@@ -102,6 +136,7 @@ return [{
     source_column: sourceColumn || '',
     rows: glossary.rows,
     items,
+    split_rows: splitRows,
     vocabulary: [...vocab.entries()],
     memories_used: docs.filter((d) => d.source_type === 'tmx' || d.source_type === 'xliff').map((d) => d.file_name),
   },
