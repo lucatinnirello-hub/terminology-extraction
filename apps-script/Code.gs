@@ -83,7 +83,8 @@ const LANGUAGES = [
 
 // Target languages for translation suggestions. `code` must be a stopword
 // list in n8n's "Stopword lists" node (or borrow one there: Serbian uses
-// Croatian); `tmx` is what the language is called inside TMX/XLIFF files.
+// Croatian; Kyrgyz has its own in EXTRA_STOPWORDS); `tmx` is what the
+// language is called inside TMX/XLIFF files.
 // Unlike source languages, non-Latin scripts work here: the translation
 // matching reads any alphabet with spaces between words.
 const TARGET_LANGUAGES = LANGUAGES.concat([
@@ -92,6 +93,7 @@ const TARGET_LANGUAGES = LANGUAGES.concat([
   { code: 'el', tmx: 'el', label: 'Greek' },
   { code: 'ru', tmx: 'ru', label: 'Russian' },
   { code: 'uk', tmx: 'uk', label: 'Ukrainian' },
+  { code: 'ky', tmx: 'ky', label: 'Kyrgyz' },
 ]).sort(function (a, b) { return a.label.localeCompare(b.label); });
 
 // Written without spaces between words: offered for wildcards-only jobs, not
