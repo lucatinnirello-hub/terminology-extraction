@@ -68,14 +68,12 @@ glossary.rows.forEach((row, r) => {
 if (!items.length) throw new Error(`The "${target}" column of ${glossary.file_name} is empty.`);
 
 // ---- target-language words in the job's memories (for false hits)
-const ISO3 = { en: ['eng'], it: ['ita'], fr: ['fre', 'fra'], de: ['ger', 'deu'], es: ['spa'], pt: ['por'], nl: ['dut', 'nld'],
-  da: ['dan'], sv: ['swe'], nb: ['nob', 'nor'], no: ['nor', 'nob'], fi: ['fin'], pl: ['pol'], cs: ['cze', 'ces'], sk: ['slo', 'slk'],
-  sl: ['slv'], hr: ['hrv'], ro: ['rum', 'ron'], hu: ['hun'], et: ['est'], lv: ['lav'], lt: ['lit'], tr: ['tur'], id: ['ind'],
-  sr: ['srp'], sh: ['hbs'], ru: ['rus'], uk: ['ukr'], bg: ['bul'], el: ['gre', 'ell'] };
+// settings.target_tmx lists every code the files may use, two- and
+// three-letter ('sr,sh,srp,hbs'; from the page).
 const langMatches = (lang, wanted) => {
   const l = String(lang || '').toLowerCase().replace(/_/g, '-');
   return String(wanted || '').toLowerCase().split(',').map((w) => w.trim()).filter(Boolean)
-    .some((w) => [w].concat(ISO3[w] || []).some((code) => l === code || l.startsWith(code + '-')));
+    .some((code) => l === code || l.startsWith(code + '-'));
 };
 const plain = (s) => s.replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ');
 const vocab = new Map();

@@ -3,7 +3,13 @@
 // (Copy of the code in Terminology_extraction_webhook_v4.json.)
 
 // ===========================================================================
-// STOPWORD LISTS
+// STOPWORD LISTS: the word data for every language.
+//
+// The page's LANGUAGE_LIST (Apps Script) says which languages are offered
+// and what files call them. This node holds their words: each language's
+// stopword list, extra boundary words, connector words and word endings.
+// A language on the page needs a list here, of its own or borrowed
+// (LIST_FOR); README → "Adding a language" has the checklist.
 //
 // YAKE's own stopword lists, extracted from the Python package, so this
 // workflow and any future Python component treat word boundaries the same
@@ -91,49 +97,80 @@ const CONNECTORS = {
   sr: ['u', 'za', 'na', 'sa', 'od'],
 };
 
-// Languages with no stopword list of their own, and the list they borrow.
+// --- EDITABLE: word endings stripped when matching translations -----------
+// So case endings don't split the counts in "Match translations"
+// ("okretanja" / "okretanje" / "okretanjima"). Only affects how forms are
+// grouped: suggestions are always shown as written in the files. Target
+// languages only. Strongly inflected languages benefit most.
+const SUFFIXES = {
+  sr: ['ima', 'ama', 'ega', 'emu', 'ome', 'oga', 'omu', 'ih', 'im', 'og', 'om', 'em', 'oj', 'a', 'e', 'i', 'u', 'o'],
+};
+SUFFIXES.hr = SUFFIXES.sr;
+
+// --- EDITABLE: languages with no stopword list of their own ----------------
+// and the list they borrow. Their EXTRA_STOPWORDS, CONNECTORS and SUFFIXES
+// are added on top, and any they don't have are borrowed too.
 const LIST_FOR = { sr: 'hr' };
 
 // ---------------------------------------------------------------------------
 const settings = $('Settings').first().json;
-const lang = String(settings.source_lang || 'en').toLowerCase().split(/[-_]/)[0];
 
-const base = STOPWORD_LISTS[lang];
-if (!base) {
-  throw new Error(
-    `No stopword list for language "${lang}". Available: ${Object.keys(STOPWORD_LISTS).sort().join(', ')}`
-  );
-}
-
-const extra = EXTRA_STOPWORDS[lang] || [];
-
-// Target-language lists, for translation suggestions ("Match translations").
-function targetLists() {
-  if (!settings.suggest_translations) return null;
-  const t = settings.target_lang;
-  const list = STOPWORD_LISTS[t] || STOPWORD_LISTS[LIST_FOR[t]] || [];
+// Everything this node knows about one language. Keys are exactly as on the
+// page: a variant such as 'sr-cyrl' doesn't fall back to 'sr' (whose list
+// is Latin script); give it its own words or a LIST_FOR entry.
+function profile(code, role) {
+  const key = String(code || '').toLowerCase();
+  const keys = [key, LIST_FOR[key]].filter(Boolean);
+  const first = (table) => table[keys.find((k) => table[k])] || [];
+  const base = first(STOPWORD_LISTS);
+  const extra = EXTRA_STOPWORDS[key] || [];
+  if (!base.length && !extra.length) {
+    throw new Error(
+      `No stopword list for the ${role} language "${key}". Add one in the "Stopword lists" node: `
+      + `in EXTRA_STOPWORDS, or borrow another language's in LIST_FOR. Available: ${Object.keys(STOPWORD_LISTS).sort().join(', ')}`
+    );
+  }
   return {
-    language: t,
-    stopwords: [...list, ...(EXTRA_STOPWORDS[t] || [])],
-    connectors: (CONNECTORS[t] || CONNECTORS[LIST_FOR[t]] || []).map((w) => w.toLowerCase()),
+    language: key,
+    list_used: keys.find((k) => STOPWORD_LISTS[k]) || '(extra words only)',
+    base,
+    extra,
+    connectors: first(CONNECTORS).map((w) => w.toLowerCase()),
+    suffixes: first(SUFFIXES),
   };
 }
-const connectors = (CONNECTORS[lang] || []).map((w) => w.toLowerCase());
+
+const src = profile(settings.source_lang || 'en', 'source');
+
+// The target language, for translation suggestions ("Match translations").
+function targetLists() {
+  if (!settings.suggest_translations) return null;
+  const t = profile(settings.target_lang, 'target');
+  return {
+    language: t.language,
+    list_used: t.list_used,
+    stopwords: [...t.base, ...t.extra],
+    connectors: t.connectors,
+    suffixes: t.suffixes,
+  };
+}
 
 return [
   {
     json: {
-      language: lang,
-      stopwords: base,
-      extra_stopwords: extra,
-      connectors,
+      language: src.language,
+      list_used: src.list_used,
+      stopwords: src.base,
+      extra_stopwords: src.extra,
+      connectors: src.connectors,
       counts: {
-        yake: base.length,
-        extra: extra.length,
-        connectors: connectors.length,
-        total: new Set([...base, ...extra]).size,
+        yake: src.base.length,
+        extra: src.extra.length,
+        connectors: src.connectors.length,
+        total: new Set([...src.base, ...src.extra]).size,
       },
-      languages_available: Object.keys(STOPWORD_LISTS).sort(),
+      languages_available: Object.keys(STOPWORD_LISTS).concat(Object.keys(EXTRA_STOPWORDS), Object.keys(LIST_FOR))
+        .filter((k, i, all) => all.indexOf(k) === i).sort(),
       target: targetLists(),
     },
   },
