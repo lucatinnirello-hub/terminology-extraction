@@ -38,6 +38,8 @@ const LIMITS = {
 const body = $input.first().json.body || {};
 const reject = (error) => [{ json: { ok: false, action: String(body.action || ''), code: 400, reply: { ok: false, error } } }];
 const isId = (s) => typeof s === 'string' && /^[-\w]{10,}$/.test(s);
+// Language keys, as in LANGUAGE_LIST on the page: 'en', 'cz', 'ky', 'sr-cyrl'.
+const isLang = (s) => typeof s === 'string' && /^[a-z]{2,3}(-[a-z]{2,4})?$/.test(s);
 
 if (body.action === 'check') {
   const folders = (body.folders || []).filter((f) => f && isId(f.id) && ['input', 'output'].includes(f.purpose));
@@ -49,7 +51,7 @@ if (body.action !== 'start') return reject(`Unknown action "${body.action}".`);
 const job = body.job || {};
 if (!/^T\d{8}-\d{6}-[0-9a-f]{4}$/.test(job.job_id || '')) return reject('Missing or malformed job_id.');
 if (!String(job.client || '').trim()) return reject('Client is required.');
-if (!/^[a-z]{2}$/.test(job.source_lang || '')) return reject('source_lang must be a two-letter stopword-list key.');
+if (!isLang(job.source_lang)) return reject('source_lang must be a language key from the page, e.g. "en".');
 if (!isId(job.input_folder_id) || !isId(job.output_folder_id)) return reject('Input and output folder IDs are required.');
 // 'extract': find terms in TMX/XLIFF/text. 'wildcards': add memoQ wildcards
 // to the target terms of a finished glossary (.xlsx/.csv).
@@ -76,18 +78,20 @@ for (const [key, max] of Object.entries(TEXT_LIMITS)) {
 }
 
 // Translation suggestions: target language as a stopword-list key (e.g.
-// 'it', or 'sr', which uses the Croatian list), and what it's called inside
-// TMX/XLIFF files ('sr,sh'). AI translation of terms with no target text
-// only when the person chose it, and only with AI review.
+// 'it', or 'sr', which uses the Croatian list), what it's called inside
+// TMX/XLIFF files ('sr,sh,srp,hbs'), and whether it inflects (memoQ
+// wildcards). All from LANGUAGE_LIST on the page. AI translation of terms
+// with no target text only when the person chose it, and only with AI review.
 settings.mode = mode;
 settings.suggest_translations = mode === 'extract' && fromPage.suggest_translations === true;
 if (settings.suggest_translations || mode === 'wildcards') {
   const t = fromPage.target_lang;
-  if (!/^[a-z]{2}$/.test(t || '')) return reject('target_lang must be a two-letter language key.');
+  if (!isLang(t)) return reject('target_lang must be a language key from the page, e.g. "it".');
   if (t === job.source_lang) return reject('The target language must differ from the source language.');
   settings.target_lang = t;
   settings.target_tmx = String(fromPage.target_tmx || t).toLowerCase().replace(/[^a-z,\-]/g, '');
   settings.target_label = String(fromPage.target_label || t).slice(0, 40);
+  settings.target_inflects = fromPage.target_inflects !== false;
 }
 settings.ai_translate_missing = settings.suggest_translations && settings.run_ai_review && fromPage.ai_translate_missing === true;
 
@@ -100,9 +104,9 @@ if (mode === 'wildcards') settings.target_column = String(fromPage.target_column
 Object.assign(settings, {
   client: String(job.client).trim(),
   source_lang: job.source_lang,
-  // What the language is called inside TMX files (Czech is 'cz' in the
-  // stopword lists but 'cs' in TMX). Comma-separated prefixes.
-  tmx_lang: String(job.tmx_lang || job.source_lang).toLowerCase(),
+  // What the language is called inside TMX/XLIFF files (Czech is 'cz' in
+  // the stopword lists but 'cs' or 'cze' in files). Comma-separated codes.
+  tmx_lang: String(job.tmx_lang || job.source_lang).toLowerCase().replace(/[^a-z,\-]/g, ''),
   input_mode: job.input_mode === 'folder' ? 'folder' : 'upload',
   output_mode: job.output_mode === 'folder' ? 'folder' : 'job',
   job_id: job.job_id,

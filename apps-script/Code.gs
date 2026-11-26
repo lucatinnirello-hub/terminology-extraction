@@ -50,61 +50,87 @@ const WILDCARD_EXTENSIONS = GLOSSARY_EXTENSIONS.concat(['tmx', 'xml', 'xlf', 'xl
 const STALE_MINUTES = 45;            // 'running' for longer than this probably stopped
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
-// Languages offered in the form. `code` must be a key in the n8n "Stopword
-// lists" node; `tmx` is what the language is called inside TMX files
-// (comma-separated prefixes; the extraction accepts any). Only Latin-script
-// languages are listed because the stage 1 tokeniser only reads Latin script.
-const LANGUAGES = [
-  { code: 'en', tmx: 'en', label: 'English' },
-  { code: 'it', tmx: 'it', label: 'Italian' },
-  { code: 'fr', tmx: 'fr', label: 'French' },
-  { code: 'de', tmx: 'de', label: 'German' },
-  { code: 'es', tmx: 'es', label: 'Spanish' },
-  { code: 'pt', tmx: 'pt', label: 'Portuguese (European)' },
-  { code: 'br', tmx: 'pt', label: 'Portuguese (Brazilian)' },
-  { code: 'nl', tmx: 'nl', label: 'Dutch' },
-  { code: 'da', tmx: 'da', label: 'Danish' },
-  { code: 'sv', tmx: 'sv', label: 'Swedish' },
-  { code: 'no', tmx: 'nb,no,nn', label: 'Norwegian' },
-  { code: 'fi', tmx: 'fi', label: 'Finnish' },
-  { code: 'pl', tmx: 'pl', label: 'Polish' },
-  { code: 'cz', tmx: 'cs', label: 'Czech' },
-  { code: 'sk', tmx: 'sk', label: 'Slovak' },
-  { code: 'sl', tmx: 'sl', label: 'Slovenian' },
-  { code: 'hr', tmx: 'hr', label: 'Croatian' },
-  { code: 'ro', tmx: 'ro', label: 'Romanian' },
-  { code: 'hu', tmx: 'hu', label: 'Hungarian' },
-  { code: 'et', tmx: 'et', label: 'Estonian' },
-  { code: 'lv', tmx: 'lv', label: 'Latvian' },
-  { code: 'lt', tmx: 'lt', label: 'Lithuanian' },
-  { code: 'tr', tmx: 'tr', label: 'Turkish' },
-  { code: 'id', tmx: 'id', label: 'Indonesian' },
+// ---------------------------------------------------------------------------
+// LANGUAGES: the one list to edit when adding a language.
+//
+// Everything the page and n8n need to know about a language is on its line
+// here, except its word lists, which live in n8n's "Stopword lists" node.
+// README → "Adding a language" has the checklist.
+//
+//   code      Key used everywhere: the page, the log, file names, and the
+//             name of its stopword list in n8n. YAKE's keys are mostly the
+//             ISO code, with two exceptions: Czech is 'cz' and Brazilian
+//             Portuguese 'br'. Lower case, 2 or 3 letters, optionally with a
+//             suffix ('sr-cyrl').
+//   label     Shown on the page, sent to the AI ("You are a terminologist
+//             for …") and used to find a glossary's target-term column.
+//   tmx       What TMX/XLIFF files call it: every code, comma-separated,
+//             two-letter and three-letter (memoQ sometimes writes 'eng').
+//             Each matches with or without a region, so 'pt' takes 'pt-BR'.
+//   use       How far it can be used. Each level includes the ones below it.
+//               'source'     source language of an extraction; also target
+//                            (the stage 1 tokeniser reads Latin script only)
+//               'target'     target of translation suggestions and memoQ
+//                            wildcards (any script with spaces between words)
+//               'wildcards'  target of wildcards-only jobs (for languages
+//                            written without spaces, which translation
+//                            matching can't split into words)
+//   inflects  false if terms never change form, so they never need memoQ
+//             wildcards and the AI isn't asked. Leave it out otherwise.
+// ---------------------------------------------------------------------------
+const LANGUAGE_LIST = [
+  { code: 'en', label: 'English', tmx: 'en,eng', use: 'source' },
+  { code: 'it', label: 'Italian', tmx: 'it,ita', use: 'source' },
+  { code: 'fr', label: 'French', tmx: 'fr,fre,fra', use: 'source' },
+  { code: 'de', label: 'German', tmx: 'de,ger,deu', use: 'source' },
+  { code: 'es', label: 'Spanish', tmx: 'es,spa', use: 'source' },
+  { code: 'pt', label: 'Portuguese (European)', tmx: 'pt,por', use: 'source' },
+  { code: 'br', label: 'Portuguese (Brazilian)', tmx: 'pt,por', use: 'source' },
+  { code: 'nl', label: 'Dutch', tmx: 'nl,dut,nld', use: 'source' },
+  { code: 'da', label: 'Danish', tmx: 'da,dan', use: 'source' },
+  { code: 'sv', label: 'Swedish', tmx: 'sv,swe', use: 'source' },
+  { code: 'no', label: 'Norwegian', tmx: 'nb,no,nn,nob,nor,nno', use: 'source' },
+  { code: 'fi', label: 'Finnish', tmx: 'fi,fin', use: 'source' },
+  { code: 'pl', label: 'Polish', tmx: 'pl,pol', use: 'source' },
+  { code: 'cz', label: 'Czech', tmx: 'cs,cze,ces', use: 'source' },
+  { code: 'sk', label: 'Slovak', tmx: 'sk,slo,slk', use: 'source' },
+  { code: 'sl', label: 'Slovenian', tmx: 'sl,slv', use: 'source' },
+  { code: 'hr', label: 'Croatian', tmx: 'hr,hrv', use: 'source' },
+  { code: 'ro', label: 'Romanian', tmx: 'ro,rum,ron', use: 'source' },
+  { code: 'hu', label: 'Hungarian', tmx: 'hu,hun', use: 'source' },
+  { code: 'et', label: 'Estonian', tmx: 'et,est', use: 'source' },
+  { code: 'lv', label: 'Latvian', tmx: 'lv,lav', use: 'source' },
+  { code: 'lt', label: 'Lithuanian', tmx: 'lt,lit', use: 'source' },
+  { code: 'tr', label: 'Turkish', tmx: 'tr,tur', use: 'source' },
+  { code: 'id', label: 'Indonesian', tmx: 'id,ind', use: 'source' },
+  // Target only. Serbian is Latin script but has no stopword list of its own
+  // (n8n borrows Croatian's); the others aren't Latin script.
+  { code: 'sr', label: 'Serbian (Latin)', tmx: 'sr,sh,srp,hbs', use: 'target' },
+  { code: 'bg', label: 'Bulgarian', tmx: 'bg,bul', use: 'target' },
+  { code: 'el', label: 'Greek', tmx: 'el,gre,ell', use: 'target' },
+  { code: 'ru', label: 'Russian', tmx: 'ru,rus', use: 'target' },
+  { code: 'uk', label: 'Ukrainian', tmx: 'uk,ukr', use: 'target' },
+  { code: 'ky', label: 'Kyrgyz', tmx: 'ky,kir', use: 'target' },
+  // Wildcards-only jobs: written without spaces between words.
+  // Japanese is a judgement call: its nouns, most glossary terms, don't
+  // inflect, but verbs and adjectives do; remove `inflects: false` to have
+  // the AI list forms as for other languages. Korean, if added, should keep
+  // inflects: particles attach to nouns (상금 심볼 → 상금 심볼이).
+  { code: 'zh', label: 'Chinese', tmx: 'zh,chi,zho', use: 'wildcards', inflects: false },
+  { code: 'ja', label: 'Japanese', tmx: 'ja,jpn', use: 'wildcards', inflects: false },
+  { code: 'th', label: 'Thai', tmx: 'th,tha', use: 'wildcards', inflects: false },
 ];
 
-// Target languages for translation suggestions. `code` must be a stopword
-// list in n8n's "Stopword lists" node (or borrow one there: Serbian uses
-// Croatian; Kyrgyz has its own in EXTRA_STOPWORDS); `tmx` is what the
-// language is called inside TMX/XLIFF files.
-// Unlike source languages, non-Latin scripts work here: the translation
-// matching reads any alphabet with spaces between words.
-const TARGET_LANGUAGES = LANGUAGES.concat([
-  { code: 'sr', tmx: 'sr,sh', label: 'Serbian (Latin)' },
-  { code: 'bg', tmx: 'bg', label: 'Bulgarian' },
-  { code: 'el', tmx: 'el', label: 'Greek' },
-  { code: 'ru', tmx: 'ru', label: 'Russian' },
-  { code: 'uk', tmx: 'uk', label: 'Ukrainian' },
-  { code: 'ky', tmx: 'ky', label: 'Kyrgyz' },
-]).sort(function (a, b) { return a.label.localeCompare(b.label); });
-
-// Written without spaces between words: offered for wildcards-only jobs, not
-// for translation suggestions (the matching finds words by their spaces).
-// `inflects: false`: their terms never need wildcards, so no AI is needed;
-// keep in step with NO_INFLECTION in n8n's "Wildcard plan".
-const WILDCARD_TARGET_LANGUAGES = TARGET_LANGUAGES.concat([
-  { code: 'zh', tmx: 'zh', label: 'Chinese', inflects: false },
-  { code: 'ja', tmx: 'ja', label: 'Japanese', inflects: false },
-  { code: 'th', tmx: 'th', label: 'Thai', inflects: false },
-]).sort(function (a, b) { return a.label.localeCompare(b.label); });
+// The three lists the page offers, built from LANGUAGE_LIST.
+const USE_LEVEL_ = { source: 3, target: 2, wildcards: 1 };
+function languagesFor_(minUse) {
+  return LANGUAGE_LIST
+    .filter(function (l) { return USE_LEVEL_[l.use] >= USE_LEVEL_[minUse]; })
+    .sort(function (a, b) { return a.label.localeCompare(b.label); });
+}
+const LANGUAGES = LANGUAGE_LIST.filter(function (l) { return l.use === 'source'; }); // kept in list order
+const TARGET_LANGUAGES = languagesFor_('target');
+const WILDCARD_TARGET_LANGUAGES = languagesFor_('wildcards');
 
 // Tuning settings: defaults match n8n; min/max are enforced here and in n8n.
 // `help` is shown in the question-mark tooltip next to each setting.
@@ -311,6 +337,7 @@ function submitJob(form, jobId) {
     settings.target_lang = target.code;
     settings.target_tmx = target.tmx;
     settings.target_label = target.label;
+    settings.target_inflects = target.inflects !== false;
     // AI translation of terms the files don't translate: only on request, and only with AI review.
     settings.ai_translate_missing = settings.suggest_translations && settings.run_ai_review && form.ai_translate_missing === true;
     settings.add_wildcards = settings.suggest_translations && form.add_wildcards === true;
@@ -451,6 +478,39 @@ function testConnection() {
   const reply = callN8n_({ action: 'check', folders: [{ purpose: 'output', id: cfg.workFolderId }] });
   Logger.log(JSON.stringify(reply, null, 2));
   return reply;
+}
+
+/**
+ * Checks LANGUAGE_LIST for mistakes after you edit it: run it from the
+ * editor before deploying. Logs what each language is offered for, and the
+ * codes that need a stopword list in n8n's "Stopword lists" node.
+ */
+function checkLanguages() {
+  const problems = [];
+  const seen = {};
+  LANGUAGE_LIST.forEach(function (l, i) {
+    const where = (l.label || 'entry ' + (i + 1)) + ': ';
+    if (!/^[a-z]{2,3}(-[a-z]{2,4})?$/.test(l.code || '')) problems.push(where + 'code "' + l.code + '" must be 2 or 3 lower-case letters, optionally with a suffix such as "-cyrl".');
+    if (seen[l.code]) problems.push(where + 'code "' + l.code + '" is also used by ' + seen[l.code] + '.');
+    seen[l.code] = l.label;
+    if (!l.label) problems.push(where + 'no label.');
+    if (!USE_LEVEL_[l.use]) problems.push(where + 'use must be "source", "target" or "wildcards", not "' + l.use + '".');
+    const codes = String(l.tmx || '').split(',');
+    if (!l.tmx || codes.some(function (c) { return !/^[a-z]{2,3}(-[a-z0-9]{2,8})*$/.test(c); })) {
+      problems.push(where + 'tmx "' + l.tmx + '" must be lower-case codes separated by commas, with no spaces, e.g. "cs,cze,ces".');
+    }
+    if (l.inflects !== undefined && typeof l.inflects !== 'boolean') problems.push(where + 'inflects must be true or false (or left out).');
+  });
+  const lines = [
+    'Source languages: ' + LANGUAGES.map(function (l) { return l.label; }).join(', '),
+    'Translation targets: ' + TARGET_LANGUAGES.map(function (l) { return l.label; }).join(', '),
+    'Wildcards-only targets: ' + WILDCARD_TARGET_LANGUAGES.map(function (l) { return l.label + (l.inflects === false ? ' (no wildcards needed)' : ''); }).join(', '),
+    'Codes that need a stopword list in n8n ("Stopword lists"): ' + TARGET_LANGUAGES.map(function (l) { return l.code; }).join(', '),
+    problems.length ? 'PROBLEMS:\n  ' + problems.join('\n  ') : 'No problems found.',
+  ];
+  Logger.log(lines.join('\n\n'));
+  if (problems.length) throw new Error(problems.length + ' problem(s) in LANGUAGE_LIST; see the log.');
+  return lines.join('\n\n');
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,762 @@
+<title>New Language Request</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Layout: questionnaire on the left, the live request on the right (stacks on phones).
+     Palette follows the terminology extraction page (apps-script/Index.html). */
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #f0f2f5;
+    --border: #dde1e6;
+    --text: #1b1f24;
+    --muted: #5d6670;
+    --accent: #1f5fbf;
+    --accent-text: #ffffff;
+    --accent-soft: #e6eefb;
+    --ok: #1e7a3c;
+    --ok-soft: #e5f4ea;
+    --warn: #8a5a00;
+    --warn-soft: #fdf3dc;
+    --radius: 10px;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .08);
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121417; --surface: #1b1e22; --surface-2: #23272c; --border: #343a41;
+      --text: #e7eaee; --muted: #9aa3ad; --accent: #7aa7ff; --accent-text: #0d1b33;
+      --accent-soft: #1d2a40; --ok: #6fd28f; --ok-soft: #173123; --warn: #f2c35b;
+      --warn-soft: #3a3016; --shadow: none; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121417; --surface: #1b1e22; --surface-2: #23272c; --border: #343a41;
+    --text: #e7eaee; --muted: #9aa3ad; --accent: #7aa7ff; --accent-text: #0d1b33;
+    --accent-soft: #1d2a40; --ok: #6fd28f; --ok-soft: #173123; --warn: #f2c35b;
+    --warn-soft: #3a3016; --shadow: none; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.5 var(--font);
+  }
+  a { color: var(--accent); }
+  header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding-block: 18px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  header .inner { max-width: 1240px; margin: 0 auto; display: grid; gap: 4px; }
+  header h1 { font-size: 19px; margin: 0; font-weight: 650; text-wrap: balance; }
+  header p { margin: 0; color: var(--muted); max-width: 70ch; }
+  main {
+    max-width: 1240px; margin: 0 auto;
+    display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 20px; align-items: start;
+    padding-block: 20px 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  @media (max-width: 920px) { main { grid-template-columns: minmax(0, 1fr); } }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); min-width: 0; }
+  .card > h2 {
+    font-size: 15px; margin: 0; padding: 13px 16px; border-bottom: 1px solid var(--border); font-weight: 620;
+    display: flex; gap: 10px; align-items: baseline;
+  }
+  .card > h2 .step { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; font-size: 13px; }
+  .card-body { padding: 16px; display: grid; gap: 16px; }
+  .form { display: grid; gap: 16px; min-width: 0; }
+  .field { display: grid; gap: 5px; min-width: 0; }
+  .field > label, .field > .label { font-weight: 560; }
+  .optional { color: var(--muted); font-weight: 400; font-size: 12.5px; }
+  .hint { color: var(--muted); font-size: 12.5px; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px 14px; }
+  input[type=text], input[type=url], input[type=date], select, textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px;
+    background: var(--surface); color: var(--text); font: inherit;
+  }
+  textarea { resize: vertical; min-height: 84px; }
+  textarea.code, input.code { font-family: var(--mono); font-size: 12.5px; }
+  input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  .choices { display: grid; gap: 8px; }
+  .choice {
+    display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: start;
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+  }
+  .choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+  .choice:has(input:disabled) { opacity: .5; cursor: not-allowed; }
+  .choice input { margin: 3px 0 0; grid-row: span 2; accent-color: var(--accent); }
+  .choice b { font-weight: 580; }
+  .choice span { color: var(--muted); font-size: 12.5px; grid-column: 2; }
+  .check { display: flex; gap: 8px; align-items: flex-start; }
+  .check input { margin-top: 3px; accent-color: var(--accent); }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
+  .fact { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+  .fact .k { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .fact .v { font-weight: 560; overflow-wrap: anywhere; }
+  .note { border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+  .note.info { background: var(--accent-soft); }
+  .note.ok { background: var(--ok-soft); color: var(--ok); }
+  .note.warn { background: var(--warn-soft); color: var(--warn); }
+  .note b { font-weight: 620; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font: 12.5px var(--mono); padding: 3px 8px; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text); cursor: pointer;
+  }
+  .chip.on { background: var(--accent-soft); border-color: var(--accent); }
+  details > summary { cursor: pointer; color: var(--accent); font-weight: 560; }
+  details[open] > summary { margin-bottom: 10px; }
+  .out { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); }
+  @media (max-width: 920px) { .out { position: static; } }
+  .effort { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .pill { font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; }
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .pill.info { background: var(--accent-soft); color: var(--accent); }
+  .pill.muted { background: var(--surface-2); color: var(--muted); }
+  ul.todo { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+  pre.request {
+    margin: 0; padding: 14px; background: var(--surface-2); border-radius: 8px;
+    font: 12.5px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 56vh; overflow: auto;
+  }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button {
+    font: inherit; font-weight: 580; border-radius: 7px; padding: 8px 14px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .status { color: var(--ok); font-size: 13px; }
+  @media (prefers-reduced-motion: no-preference) { .choice, .chip { transition: background-color .12s, border-color .12s; } }
+</style>
+
+<header>
+  <div class="inner">
+    <h1>New language request</h1>
+    <p>For the terminology extraction tool. Pick the language and most answers fill in from what's known about it; check them, add what only you know, then copy the request into a Claude Code session on the <code>terminology-extraction</code> repository.</p>
+  </div>
+</header>
+
+<main>
+  <div class="form">
+
+    <section class="card">
+      <h2><span class="step">1 of 4</span> Language</h2>
+      <div class="card-body">
+        <div class="field">
+          <label for="lang">Which language?</label>
+          <input type="text" id="lang" list="lang-list" autocomplete="off" placeholder="Start typing, e.g. Georgian">
+          <datalist id="lang-list"></datalist>
+          <div class="hint">Not in the list? Type its name anyway and fill in the details below.</div>
+        </div>
+        <div id="lang-status"></div>
+        <div class="facts" id="facts"></div>
+        <details id="details-edit">
+          <summary>Change these details</summary>
+          <div class="row">
+            <div class="field"><label for="f-label">Name on the page</label><input type="text" id="f-label"></div>
+            <div class="field"><label for="f-code">Code</label><input type="text" id="f-code" class="code" placeholder="e.g. ka"></div>
+            <div class="field"><label for="f-script">Script</label><input type="text" id="f-script" placeholder="e.g. Cyrillic"></div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label for="f-spaces">Spaces between words?</label>
+              <select id="f-spaces"><option value="yes">Yes</option><option value="no">No (like Chinese, Thai)</option></select>
+            </div>
+            <div class="field">
+              <label for="f-inflects">Do terms change form?</label>
+              <select id="f-inflects"><option value="yes">Yes: cases, plurals, endings</option><option value="no">No (like Chinese, Vietnamese)</option></select>
+              <div class="hint">Decides whether memoQ wildcards are needed.</div>
+            </div>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">2 of 4</span> What it's for</h2>
+      <div class="card-body">
+        <div class="choices" id="use-choices">
+          <label class="choice"><input type="radio" name="use" value="source" id="use-source">
+            <b>Source language of an extraction</b>
+            <span>Find terms in files written in this language. Also offers it as a target.</span></label>
+          <label class="choice"><input type="radio" name="use" value="target" id="use-target">
+            <b>Target language</b>
+            <span>Translation suggestions from the TMX/XLIFF targets, and memoQ wildcards on the target terms.</span></label>
+          <label class="choice"><input type="radio" name="use" value="wildcards" id="use-wildcards">
+            <b>Wildcards on finished glossaries only</b>
+            <span>For languages written without spaces between words, which translation matching can't split.</span></label>
+        </div>
+        <div id="use-note"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">3 of 4</span> Client files</h2>
+      <div class="card-body">
+        <div class="field">
+          <label for="f-tmx">Codes the files use for this language</label>
+          <input type="text" id="f-tmx" class="code" placeholder="e.g. ka,geo,kat">
+          <div class="hint">Comma-separated. Each also matches with a region, so <code>ka</code> takes <code>ka-GE</code>. Filled in from the ISO standards; files from some tools use other codes.</div>
+        </div>
+        <div class="field">
+          <label for="f-header">Paste the first lines of a real TMX or XLIFF file <span class="optional">(optional, recommended)</span></label>
+          <textarea id="f-header" class="code" placeholder='&lt;header srclang="en-GB" ...&gt;  or  &lt;file source-language="en-US" target-language="ka-GE" ...&gt;'></textarea>
+          <div class="hint">The codes in it show up below; click one to add or remove it.</div>
+          <div class="chips" id="found-codes"></div>
+        </div>
+        <label class="check"><input type="checkbox" id="f-checked"> <span>I've checked these codes against a real client file</span></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">4 of 4</span> Words and context</h2>
+      <div class="card-body">
+        <div id="stop-block" class="field">
+          <div class="label">Stopword list</div>
+          <div class="hint">Function words (and, of, the, which…) that mark where a term starts and ends.</div>
+          <div id="stop-yake"></div>
+          <div class="choices" id="stop-choices">
+            <label class="choice"><input type="radio" name="stop" value="draft" id="stop-draft">
+              <b>Claude drafts one for review</b>
+              <span>Conjunctions, pre/postpositions, pronouns and auxiliaries in all their forms, as was done for Kyrgyz.</span></label>
+            <label class="choice"><input type="radio" name="stop" value="borrow" id="stop-borrow">
+              <b>Borrow a close language's list</b>
+              <span>Same script only, as Serbian (Latin) borrows Croatian's.</span></label>
+            <label class="choice"><input type="radio" name="stop" value="supply" id="stop-supply">
+              <b>I'll supply a list</b>
+              <span>Paste it below, one word per line or comma-separated.</span></label>
+          </div>
+          <div class="field" id="borrow-field" hidden>
+            <label for="f-borrow">Borrow from</label>
+            <select id="f-borrow"></select>
+          </div>
+          <div class="field" id="supply-field" hidden>
+            <label for="f-supply">Your list</label>
+            <textarea id="f-supply"></textarea>
+          </div>
+          <div class="field">
+            <label for="f-reviewer">Native speaker who can review it <span class="optional">(optional)</span></label>
+            <input type="text" id="f-reviewer" placeholder="Name, or a vendor">
+          </div>
+        </div>
+
+        <div class="row" id="words-row">
+          <div class="field" id="conn-field">
+            <label for="f-connectors">Words that can sit inside a term</label>
+            <select id="f-connectors">
+              <option value="propose">Not sure: let Claude propose</option>
+              <option value="none">None</option>
+              <option value="list">I'll list them</option>
+            </select>
+            <div class="hint">Like Italian <i>di</i> in <i>valvola di sicurezza</i>. Matters for languages that build terms with prepositions.</div>
+            <input type="text" id="f-connectors-list" placeholder="e.g. de, del, per" hidden>
+          </div>
+          <div class="field" id="endings-field">
+            <label for="f-endings">Word endings for translation matching</label>
+            <select id="f-endings">
+              <option value="propose">Let Claude propose for review</option>
+              <option value="none">Not needed</option>
+            </select>
+            <div class="hint">Lets case forms count as one translation (<i>okretanja / okretanje</i>). Helps strongly inflected languages.</div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="f-for">Needed for <span class="optional">(optional)</span></label>
+            <input type="text" id="f-for" placeholder="Client or project">
+          </div>
+          <div class="field">
+            <label for="f-when">Needed by <span class="optional">(optional)</span></label>
+            <input type="date" id="f-when">
+          </div>
+        </div>
+        <div class="field">
+          <label for="f-sample">Drive folder with sample files for a test job <span class="optional">(optional)</span></label>
+          <input type="url" id="f-sample" placeholder="https://drive.google.com/drive/folders/…">
+        </div>
+        <div class="field">
+          <label for="f-notes">Anything else <span class="optional">(optional)</span></label>
+          <textarea id="f-notes" placeholder="e.g. the client's files mix Latin and Cyrillic"></textarea>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <aside class="card out" aria-live="polite">
+    <h2>Your request</h2>
+    <div class="card-body">
+      <div class="effort" id="effort"></div>
+      <ul class="todo" id="todo"></ul>
+      <pre class="request" id="request"></pre>
+      <div class="actions">
+        <button class="primary" id="copy" type="button">Copy request</button>
+        <button id="reset" type="button">Start over</button>
+        <span class="status" id="copy-status" role="status"></span>
+      </div>
+      <div class="hint">Your answers are kept in this browser until you start over.</div>
+    </div>
+  </aside>
+</main>
+
+<script>
+(function () {
+  // ---------------------------------------------------------------------------
+  // Data
+  // ---------------------------------------------------------------------------
+
+  // What the tool already supports: LANGUAGE_LIST in apps-script/Code.gs.
+  // Keep in step when a language is added (the request asks Claude to).
+  var SUPPORTED = {
+    en: 'source', it: 'source', fr: 'source', de: 'source', es: 'source', pt: 'source', br: 'source',
+    nl: 'source', da: 'source', sv: 'source', no: 'source', fi: 'source', pl: 'source', cz: 'source',
+    sk: 'source', sl: 'source', hr: 'source', ro: 'source', hu: 'source', et: 'source', lv: 'source',
+    lt: 'source', tr: 'source', id: 'source',
+    sr: 'target', bg: 'target', el: 'target', ru: 'target', uk: 'target', ky: 'target',
+    zh: 'wildcards', ja: 'wildcards', th: 'wildcards',
+  };
+  // Stopword lists YAKE ships ("Stopword lists" node).
+  var YAKE = ['ar', 'bg', 'br', 'cz', 'da', 'de', 'el', 'en', 'es', 'et', 'fa', 'fi', 'fr', 'hi', 'hr', 'hu', 'hy',
+    'id', 'it', 'ja', 'lt', 'lv', 'nl', 'no', 'pl', 'pt', 'ro', 'ru', 'sk', 'sl', 'sv', 'tr', 'uk', 'zh'];
+  var YAKE_NAMES = {
+    ar: 'Arabic', bg: 'Bulgarian', br: 'Portuguese (Brazilian)', cz: 'Czech', da: 'Danish', de: 'German', el: 'Greek',
+    en: 'English', es: 'Spanish', et: 'Estonian', fa: 'Persian', fi: 'Finnish', fr: 'French', hi: 'Hindi', hr: 'Croatian',
+    hu: 'Hungarian', hy: 'Armenian', id: 'Indonesian', it: 'Italian', ja: 'Japanese', lt: 'Lithuanian', lv: 'Latvian',
+    nl: 'Dutch', no: 'Norwegian', pl: 'Polish', pt: 'Portuguese (European)', ro: 'Romanian', ru: 'Russian', sk: 'Slovak',
+    sl: 'Slovenian', sv: 'Swedish', tr: 'Turkish', uk: 'Ukrainian', zh: 'Chinese',
+  };
+  var SCRIPT_OF_YAKE = { ar: 'Arabic', bg: 'Cyrillic', el: 'Greek', fa: 'Arabic', hi: 'Devanagari', hy: 'Armenian', ja: 'Japanese', ru: 'Cyrillic', uk: 'Cyrillic', zh: 'Chinese' };
+
+  // n: name, c: code, t: codes in files, s: script, sp: spaces between words,
+  // inf: terms change form, lat: false = Latin letters the stage 1 tokeniser
+  // doesn't read yet, b: suggested list to borrow, note: what to know.
+  var L = [
+    { n: 'English', c: 'en', t: 'en,eng', s: 'Latin' },
+    { n: 'Italian', c: 'it', t: 'it,ita', s: 'Latin' },
+    { n: 'French', c: 'fr', t: 'fr,fre,fra', s: 'Latin' },
+    { n: 'German', c: 'de', t: 'de,ger,deu', s: 'Latin' },
+    { n: 'Spanish', c: 'es', t: 'es,spa', s: 'Latin' },
+    { n: 'Portuguese (European)', c: 'pt', t: 'pt,por', s: 'Latin' },
+    { n: 'Portuguese (Brazilian)', c: 'br', t: 'pt,por', s: 'Latin' },
+    { n: 'Dutch', c: 'nl', t: 'nl,dut,nld', s: 'Latin' },
+    { n: 'Danish', c: 'da', t: 'da,dan', s: 'Latin' },
+    { n: 'Swedish', c: 'sv', t: 'sv,swe', s: 'Latin' },
+    { n: 'Norwegian', c: 'no', t: 'nb,no,nn,nob,nor,nno', s: 'Latin' },
+    { n: 'Finnish', c: 'fi', t: 'fi,fin', s: 'Latin' },
+    { n: 'Polish', c: 'pl', t: 'pl,pol', s: 'Latin' },
+    { n: 'Czech', c: 'cz', t: 'cs,cze,ces', s: 'Latin' },
+    { n: 'Slovak', c: 'sk', t: 'sk,slo,slk', s: 'Latin' },
+    { n: 'Slovenian', c: 'sl', t: 'sl,slv', s: 'Latin' },
+    { n: 'Croatian', c: 'hr', t: 'hr,hrv', s: 'Latin' },
+    { n: 'Romanian', c: 'ro', t: 'ro,rum,ron', s: 'Latin' },
+    { n: 'Hungarian', c: 'hu', t: 'hu,hun', s: 'Latin' },
+    { n: 'Estonian', c: 'et', t: 'et,est', s: 'Latin' },
+    { n: 'Latvian', c: 'lv', t: 'lv,lav', s: 'Latin' },
+    { n: 'Lithuanian', c: 'lt', t: 'lt,lit', s: 'Latin' },
+    { n: 'Turkish', c: 'tr', t: 'tr,tur', s: 'Latin' },
+    { n: 'Indonesian', c: 'id', t: 'id,ind', s: 'Latin' },
+    { n: 'Serbian (Latin)', c: 'sr', t: 'sr,sh,srp,hbs', s: 'Latin', b: 'hr' },
+    { n: 'Bulgarian', c: 'bg', t: 'bg,bul', s: 'Cyrillic' },
+    { n: 'Greek', c: 'el', t: 'el,gre,ell', s: 'Greek' },
+    { n: 'Russian', c: 'ru', t: 'ru,rus', s: 'Cyrillic' },
+    { n: 'Ukrainian', c: 'uk', t: 'uk,ukr', s: 'Cyrillic' },
+    { n: 'Kyrgyz', c: 'ky', t: 'ky,kir', s: 'Cyrillic' },
+    { n: 'Chinese', c: 'zh', t: 'zh,chi,zho', s: 'Chinese', sp: false, inf: false, note: 'The Chinese entry already accepts Traditional Chinese files (zh-TW, zh-HK).' },
+    { n: 'Japanese', c: 'ja', t: 'ja,jpn', s: 'Japanese', sp: false, inf: false },
+    { n: 'Thai', c: 'th', t: 'th,tha', s: 'Thai', sp: false, inf: false },
+
+    { n: 'Afrikaans', c: 'af', t: 'af,afr', s: 'Latin', note: 'Dutch-like with little inflection; Dutch connectors (van, vir) may suit.' },
+    { n: 'Albanian', c: 'sq', t: 'sq,alb,sqi', s: 'Latin', note: 'Nouns take definite endings (libër / libri), so wildcards matter.' },
+    { n: 'Amharic', c: 'am', t: 'am,amh', s: 'Ethiopic' },
+    { n: 'Arabic', c: 'ar', t: 'ar,ara', s: 'Arabic', note: 'Words also change at their start (al-, wa-, bi-), which memoQ wildcards can\'t cover: expect many terms left alone with a note.' },
+    { n: 'Armenian', c: 'hy', t: 'hy,arm,hye', s: 'Armenian' },
+    { n: 'Azerbaijani', c: 'az', t: 'az,aze', s: 'Latin', lat: false, note: 'The letter ə is outside the Latin range stage 1 reads, so it would split words.' },
+    { n: 'Basque', c: 'eu', t: 'eu,baq,eus', s: 'Latin', note: 'Heavily suffixing (etxe / etxean / etxeko): word endings for matching will help.' },
+    { n: 'Belarusian', c: 'be', t: 'be,bel', s: 'Cyrillic' },
+    { n: 'Bengali', c: 'bn', t: 'bn,ben', s: 'Bengali' },
+    { n: 'Bosnian', c: 'bs', t: 'bs,bos', s: 'Latin', b: 'hr', note: 'Can borrow the Croatian list, as Serbian (Latin) does, with the same word endings.' },
+    { n: 'Burmese', c: 'my', t: 'my,bur,mya', s: 'Myanmar', sp: false, inf: false },
+    { n: 'Catalan', c: 'ca', t: 'ca,cat', s: 'Latin', lat: false, note: 'The middle dot in l·l (col·lecció) splits words in stage 1: a small fix is needed for it as a source language.' },
+    { n: 'Faroese', c: 'fo', t: 'fo,fao', s: 'Latin' },
+    { n: 'Filipino (Tagalog)', c: 'tl', t: 'tl,fil,tgl', s: 'Latin', note: 'Infixes (sulat / sumulat) change words inside, which wildcards can\'t cover.' },
+    { n: 'Galician', c: 'gl', t: 'gl,glg', s: 'Latin', note: 'Builds terms with prepositions like Portuguese (de, da, do).' },
+    { n: 'Georgian', c: 'ka', t: 'ka,geo,kat', s: 'Georgian' },
+    { n: 'Gujarati', c: 'gu', t: 'gu,guj', s: 'Gujarati' },
+    { n: 'Hausa', c: 'ha', t: 'ha,hau', s: 'Latin', lat: false, note: 'The hooked letters ɓ and ɗ are outside the Latin range stage 1 reads.' },
+    { n: 'Hebrew', c: 'he', t: 'he,iw,heb', s: 'Hebrew', note: 'Older files may use iw. Prefixes (ha-, ve-, be-) attach to words, which wildcards can\'t cover.' },
+    { n: 'Hindi', c: 'hi', t: 'hi,hin', s: 'Devanagari' },
+    { n: 'Icelandic', c: 'is', t: 'is,ice,isl', s: 'Latin' },
+    { n: 'Igbo', c: 'ig', t: 'ig,ibo', s: 'Latin', lat: false, note: 'Dotted vowels (ị, ọ, ụ) are outside the Latin range stage 1 reads.' },
+    { n: 'Irish', c: 'ga', t: 'ga,gle', s: 'Latin', note: 'Initial mutations (bord / mbord / bhord) change words at their start, which wildcards can\'t cover.' },
+    { n: 'Kannada', c: 'kn', t: 'kn,kan', s: 'Kannada' },
+    { n: 'Kazakh', c: 'kk', t: 'kk,kaz', s: 'Cyrillic', note: 'Close to Kyrgyz: its list is a starting point, but the words differ.' },
+    { n: 'Khmer', c: 'km', t: 'km,khm', s: 'Khmer', sp: false, inf: false },
+    { n: 'Korean', c: 'ko', t: 'ko,kor', s: 'Hangul', note: 'Particles attach to nouns (상금 심볼 → 상금 심볼이), so terms do change form.' },
+    { n: 'Lao', c: 'lo', t: 'lo,lao', s: 'Lao', sp: false, inf: false },
+    { n: 'Luxembourgish', c: 'lb', t: 'lb,ltz', s: 'Latin' },
+    { n: 'Macedonian', c: 'mk', t: 'mk,mac,mkd', s: 'Cyrillic', b: 'bg', note: 'Close to Bulgarian; borrowing its list is a reasonable start.' },
+    { n: 'Malay', c: 'ms', t: 'ms,may,msa', s: 'Latin', b: 'id', note: 'Close to Indonesian; borrowing its list is a reasonable start.' },
+    { n: 'Malayalam', c: 'ml', t: 'ml,mal', s: 'Malayalam' },
+    { n: 'Maltese', c: 'mt', t: 'mt,mlt', s: 'Latin' },
+    { n: 'Marathi', c: 'mr', t: 'mr,mar', s: 'Devanagari' },
+    { n: 'Mongolian', c: 'mn', t: 'mn,mon', s: 'Cyrillic' },
+    { n: 'Nepali', c: 'ne', t: 'ne,nep', s: 'Devanagari' },
+    { n: 'Pashto', c: 'ps', t: 'ps,pus', s: 'Arabic' },
+    { n: 'Persian', c: 'fa', t: 'fa,per,fas', s: 'Arabic' },
+    { n: 'Punjabi', c: 'pa', t: 'pa,pan', s: 'Gurmukhi' },
+    { n: 'Serbian (Cyrillic)', c: 'sr-cyrl', t: 'sr-cyrl', s: 'Cyrillic', note: 'Serbian (Latin) accepts any sr code today, so Cyrillic files would match it too: its codes need narrowing to sr-latn, and files marked just sr-RS can\'t be told apart.' },
+    { n: 'Sinhala', c: 'si', t: 'si,sin', s: 'Sinhala' },
+    { n: 'Somali', c: 'so', t: 'so,som', s: 'Latin' },
+    { n: 'Swahili', c: 'sw', t: 'sw,swa', s: 'Latin', note: 'Noun-class prefixes (kitabu / vitabu) change words at their start, which wildcards can\'t cover.' },
+    { n: 'Tajik', c: 'tg', t: 'tg,tgk', s: 'Cyrillic' },
+    { n: 'Tamil', c: 'ta', t: 'ta,tam', s: 'Tamil' },
+    { n: 'Telugu', c: 'te', t: 'te,tel', s: 'Telugu' },
+    { n: 'Turkmen', c: 'tk', t: 'tk,tuk', s: 'Latin' },
+    { n: 'Urdu', c: 'ur', t: 'ur,urd', s: 'Arabic' },
+    { n: 'Uzbek', c: 'uz', t: 'uz,uzb', s: 'Latin', lat: false, note: 'The ʻ in oʻ and gʻ splits words in stage 1: a small fix is needed for it as a source language.' },
+    { n: 'Vietnamese', c: 'vi', t: 'vi,vie', s: 'Latin', lat: false, inf: false, note: 'Spaces separate syllables, not words, so a two-word term is four "words" to the matcher. Letters such as ạ are outside the range stage 1 reads.' },
+    { n: 'Welsh', c: 'cy', t: 'cy,wel,cym', s: 'Latin', note: 'Initial mutations (cath / gath / nghath) change words at their start, which wildcards can\'t cover.' },
+    { n: 'Xhosa', c: 'xh', t: 'xh,xho', s: 'Latin', note: 'Noun-class prefixes change words at their start, which wildcards can\'t cover.' },
+    { n: 'Yoruba', c: 'yo', t: 'yo,yor', s: 'Latin', lat: false, note: 'Dotted letters (ẹ, ọ, ṣ) are outside the Latin range stage 1 reads.' },
+    { n: 'Zulu', c: 'zu', t: 'zu,zul', s: 'Latin', note: 'Noun-class prefixes change words at their start, which wildcards can\'t cover.' },
+  ];
+  var BY_NAME = {};
+  L.forEach(function (l) { BY_NAME[l.n.toLowerCase()] = l; });
+  var USE_LEVEL = { source: 3, target: 2, wildcards: 1 };
+  var USE_TEXT = { source: 'source language (and target)', target: 'target language (translation suggestions and memoQ wildcards)', wildcards: 'target of wildcards-only jobs' };
+  var USE_SHORT = { source: 'source and target', target: 'target only', wildcards: 'wildcards-only jobs' };
+  var example = false; // the Georgian example shown on a first visit
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+  var $ = function (id) { return document.getElementById(id); };
+  var radio = function (name) { var r = document.querySelector('input[name="' + name + '"]:checked'); return r ? r.value : ''; };
+  var setRadio = function (name, value) { document.querySelectorAll('input[name="' + name + '"]').forEach(function (r) { r.checked = r.value === value; }); };
+  var el = function (tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  var codesOf = function (s) { return String(s || '').toLowerCase().split(/[\s,;]+/).map(function (c) { return c.replace(/_/g, '-').trim(); }).filter(Boolean); };
+  var uniq = function (a) { return a.filter(function (x, i) { return a.indexOf(x) === i; }); };
+
+  L.forEach(function (l) {
+    var o = document.createElement('option');
+    o.value = l.n;
+    $('lang-list').appendChild(o);
+  });
+  YAKE.forEach(function (k) {
+    var o = document.createElement('option');
+    o.value = k;
+    o.textContent = YAKE_NAMES[k] + ' (' + (SCRIPT_OF_YAKE[k] || 'Latin') + ')';
+    $('f-borrow').appendChild(o);
+  });
+
+  var current = null; // the language data matched to the name typed
+
+  function known() { return current || {}; }
+  function latinReadable() {
+    return /^latin$/i.test($('f-script').value.trim()) && known().lat !== false;
+  }
+  function hasYake() { return YAKE.indexOf($('f-code').value.trim()) !== -1; }
+  function supportedUse() { return SUPPORTED[$('f-code').value.trim()] || ''; }
+
+  // ---------------------------------------------------------------------------
+  // Filling in from the language picked
+  // ---------------------------------------------------------------------------
+  function pick(name) {
+    example = false;
+    current = BY_NAME[String(name || '').trim().toLowerCase()] || null;
+    var l = current;
+    if (l) {
+      $('f-label').value = l.n;
+      $('f-code').value = l.c;
+      $('f-script').value = l.s;
+      $('f-spaces').value = l.sp === false ? 'no' : 'yes';
+      $('f-inflects').value = l.inf === false ? 'no' : 'yes';
+      $('f-tmx').value = l.t;
+      $('details-edit').open = false;
+      if (l.b) { setRadio('stop', 'borrow'); $('f-borrow').value = l.b; }
+      else setRadio('stop', 'draft');
+    } else {
+      $('f-label').value = String(name || '').trim();
+      ['f-code', 'f-script', 'f-tmx'].forEach(function (id) { $(id).value = ''; });
+      $('f-spaces').value = 'yes';
+      $('f-inflects').value = 'yes';
+      $('details-edit').open = !!String(name || '').trim();
+      setRadio('stop', 'draft');
+    }
+    setRadio('use', suggestedUse());
+    refreshFoundCodes();
+    render();
+  }
+
+  function suggestedUse() {
+    if ($('f-spaces').value === 'no') return 'wildcards';
+    var have = supportedUse();
+    if (have === 'target' && latinReadable()) return 'source';
+    if (have) return have === 'wildcards' ? 'wildcards' : 'source';
+    return latinReadable() ? 'source' : 'target';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Codes found in a pasted file header
+  // ---------------------------------------------------------------------------
+  function refreshFoundCodes() {
+    var text = $('f-header').value;
+    var re = /(?:srclang|xml:lang|lang|source-language|target-language|srcLang|trgLang|adminlang)\s*=\s*["']([^"']+)["']/gi;
+    var found = [];
+    var m;
+    while ((m = re.exec(text))) found.push(m[1].toLowerCase().replace(/_/g, '-'));
+    found = uniq(found).filter(function (c) { return c !== '*all*'; });
+    var box = $('found-codes');
+    box.textContent = '';
+    var have = codesOf($('f-tmx').value);
+    found.forEach(function (code) {
+      var base = code.split('-')[0];
+      var on = have.indexOf(code) !== -1 || have.indexOf(base) !== -1;
+      var chip = el('button', 'chip' + (on ? ' on' : ''), code);
+      chip.type = 'button';
+      chip.title = on ? 'Covered by the codes above' : 'Add to the codes above';
+      chip.addEventListener('click', function () {
+        var list = codesOf($('f-tmx').value);
+        var i = list.indexOf(code);
+        if (i !== -1) list.splice(i, 1); else if (list.indexOf(base) === -1) list.push(base); else list.push(code);
+        $('f-tmx').value = uniq(list).join(',');
+        refreshFoundCodes();
+        render();
+      });
+      box.appendChild(chip);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // The request
+  // ---------------------------------------------------------------------------
+  function render() {
+    var label = $('f-label').value.trim();
+    var code = $('f-code').value.trim().toLowerCase();
+    var script = $('f-script').value.trim();
+    var spaces = $('f-spaces').value === 'yes';
+    var inflects = $('f-inflects').value === 'yes';
+    var tmx = uniq(codesOf($('f-tmx').value)).join(',');
+    var use = radio('use');
+    var have = supportedUse();
+    var l = known();
+
+    // Language facts
+    var facts = $('facts');
+    facts.textContent = '';
+    if (label) {
+      [['Code', code || '?'], ['Script', script || '?'], ['Spaces', spaces ? 'Yes' : 'No'], ['Changes form', inflects ? 'Yes' : 'No'], ['YAKE list', hasYake() ? 'Yes' : 'No']]
+        .forEach(function (f) { var d = el('div', 'fact'); d.appendChild(el('div', 'k', f[0])); d.appendChild(el('div', 'v', f[1])); facts.appendChild(d); });
+    }
+    var status = $('lang-status');
+    status.textContent = '';
+    if (example) status.appendChild(el('div', 'note info', 'An example, to show how it works. Type your language above.'));
+    if (label && have) {
+      status.appendChild(el('div', 'note ok', label + ' is already supported as a ' + USE_TEXT[have] + '.' + (have !== 'source' && spaces ? ' Request it below as a source language if that\'s what you need.' : '')));
+    } else if (label && !current) {
+      status.appendChild(el('div', 'note info', 'Not in the built-in list: fill in the details under "Change these details".'));
+    }
+    if (l.note) status.appendChild(el('div', 'note warn', l.note));
+
+    // Use choices
+    $('use-source').disabled = !spaces;
+    $('use-target').disabled = !spaces;
+    if (!spaces && use !== 'wildcards') { setRadio('use', 'wildcards'); use = 'wildcards'; }
+    var useNote = $('use-note');
+    useNote.textContent = '';
+    var needsTokeniser = use === 'source' && !latinReadable();
+    if (needsTokeniser) {
+      useNote.appendChild(el('div', 'note warn', /^latin$/i.test(script)
+        ? 'Stage 1 doesn\'t read all of ' + (label || 'this language') + '\'s letters yet. A source language needs a small change to it first.'
+        : 'Stage 1 only reads Latin script today. A ' + (script || 'non-Latin') + ' source language needs it changed to read any script: a bigger step, tested on real files.'));
+    }
+    if (!spaces) useNote.appendChild(el('div', 'note info', 'Written without spaces, so only wildcards-only jobs. ' + (inflects ? '' : 'Its terms never need wildcards: they come back unchanged and no AI is needed.')));
+
+    // Stopwords
+    var needsList = use === 'source' || use === 'target';
+    $('stop-block').hidden = !needsList;
+    var yakeBox = $('stop-yake');
+    yakeBox.textContent = '';
+    var yake = hasYake();
+    $('stop-choices').hidden = yake;
+    if (yake) yakeBox.appendChild(el('div', 'note ok', 'YAKE has a list for ' + (label || code) + ': nothing needed.'));
+    var stop = radio('stop');
+    $('borrow-field').hidden = yake || stop !== 'borrow';
+    $('supply-field').hidden = yake || stop !== 'supply';
+    $('f-reviewer').parentNode.hidden = yake || stop === 'supply';
+    $('words-row').hidden = !needsList;
+    $('endings-field').hidden = !inflects;
+    $('f-connectors-list').hidden = $('f-connectors').value !== 'list';
+
+    // Effort and to-do
+    var todo = [];
+    var effort = [];
+    var nothing = have && USE_LEVEL[have] >= USE_LEVEL[use || 'wildcards'];
+    if (!label) {
+      effort.push(['muted', 'Pick a language to start']);
+    } else if (nothing) {
+      effort.push(['ok', 'Already supported']);
+    } else {
+      todo.push('Add one line to the language list (Apps Script) and redeploy.');
+      if (needsList && !yake) {
+        if (stop === 'borrow') todo.push('Borrow the ' + (YAKE_NAMES[$('f-borrow').value] || '') + ' stopword list (n8n).');
+        else if (stop === 'supply') todo.push('Add your stopword list (n8n).');
+        else todo.push('Draft a stopword list' + ($('f-reviewer').value.trim() ? ' for ' + $('f-reviewer').value.trim() + ' to review' : ', then have a native speaker review it') + '.');
+      }
+      if (needsTokeniser) todo.push(/^latin$/i.test(script) ? 'Small change to stage 1 so it reads all the letters.' : 'Change stage 1 to read ' + (script || 'this') + ' script.');
+      if (code === 'sr-cyrl') todo.push('Narrow Serbian (Latin)\'s codes so it stops matching Cyrillic files.');
+      todo.push('Run a test job' + ($('f-sample').value.trim() ? ' on your sample files' : '') + '.');
+      var big = needsTokeniser && !/^latin$/i.test(script);
+      effort.push(big ? ['warn', 'Bigger change'] : (needsList && !yake && stop === 'draft') ? ['info', 'Needs a word list review'] : ['ok', 'Quick to add']);
+      if (!code || !tmx || !script) effort.push(['warn', 'Details missing']);
+      else if (!$('f-checked').checked) effort.push(['warn', 'File codes not checked']);
+    }
+    var eb = $('effort');
+    eb.textContent = '';
+    effort.forEach(function (e) { eb.appendChild(el('span', 'pill ' + e[0], e[1])); });
+    var tl = $('todo');
+    tl.textContent = '';
+    todo.forEach(function (t) { tl.appendChild(el('li', '', t)); });
+
+    // Request text
+    var lines = [];
+    if (!label) {
+      lines.push('Pick a language on the left: the request appears here.');
+    } else if (nothing) {
+      lines.push(label + ' is already supported as a ' + USE_TEXT[have] + '. Nothing to request.');
+    } else {
+      var entry = "{ code: '" + code + "', label: '" + label.replace(/'/g, "\\'") + "', tmx: '" + tmx + "', use: '" + use + "'" + (inflects ? '' : ', inflects: false') + ' },';
+      lines.push('Add ' + label + ' to the terminology extraction tool (repository terminology-extraction), following README → "Adding a language".');
+      lines.push('');
+      lines.push('Language:        ' + label);
+      lines.push('Use:             ' + USE_TEXT[use] + (have ? '; today: ' + USE_SHORT[have] : ''));
+      lines.push('Code:            ' + (code || '(please choose)'));
+      lines.push('Codes in files:  ' + (tmx || '(please choose)') + ($('f-checked').checked ? '  (checked against a real client file)'
+        : current ? '  (from the ISO standards, not checked against a file)' : '  (not checked against a file)'));
+      lines.push('Script:          ' + (script || '(please say)') + ', ' + (spaces ? 'spaces between words' : 'no spaces between words'));
+      lines.push('Inflects:        ' + (inflects ? 'yes' : 'no (inflects: false, so no memoQ wildcards needed)'));
+      if (needsList) {
+        var sw;
+        if (yake) sw = 'YAKE has a list (' + code + ')';
+        else if (stop === 'borrow') sw = 'borrow the ' + (YAKE_NAMES[$('f-borrow').value] || $('f-borrow').value) + ' list (LIST_FOR: ' + code + " → '" + $('f-borrow').value + "')";
+        else if (stop === 'supply') sw = 'use the list below';
+        else sw = 'please draft one of function words, as for Kyrgyz, with a docs/ note on how it was made';
+        lines.push('Stopwords:       ' + sw);
+        if (!yake && stop !== 'supply') lines.push('Reviewer:        ' + ($('f-reviewer').value.trim() || 'not named yet'));
+        var conn = $('f-connectors').value;
+        lines.push('Connector words: ' + (conn === 'none' ? 'none' : conn === 'list' ? ($('f-connectors-list').value.trim() || '(to be listed)') : 'please propose'));
+        if (inflects) lines.push('Word endings:    ' + ($('f-endings').value === 'none' ? 'not needed' : 'please propose for review'));
+      }
+      if (needsTokeniser) lines.push('Stage 1:         needs to read ' + (/^latin$/i.test(script) ? 'all of ' + label + '\'s letters' : script + ' script') + ' (source language)');
+      if ($('f-for').value.trim()) lines.push('Needed for:      ' + $('f-for').value.trim());
+      if ($('f-when').value) lines.push('Needed by:       ' + $('f-when').value);
+      if ($('f-sample').value.trim()) lines.push('Sample files:    ' + $('f-sample').value.trim());
+      if (l.note) { lines.push(''); lines.push('Good to know: ' + l.note); }
+      if ($('f-notes').value.trim()) { lines.push(''); lines.push('Notes: ' + $('f-notes').value.trim()); }
+      if (needsList && !yake && stop === 'supply' && $('f-supply').value.trim()) {
+        lines.push('');
+        lines.push('Stopword list:');
+        lines.push(codesOf($('f-supply').value.replace(/\n/g, ',')).join(', '));
+      }
+      lines.push('');
+      if (code && tmx) {
+        lines.push('Proposed LANGUAGE_LIST line (apps-script/Code.gs):');
+        lines.push('  ' + entry);
+      } else {
+        lines.push('Please suggest the code and the codes files use for it.');
+      }
+      lines.push('');
+      lines.push('Also add it to SUPPORTED in docs/new-language-request.html.');
+    }
+    $('request').textContent = lines.join('\n');
+    save();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Draft kept in this browser
+  // ---------------------------------------------------------------------------
+  var FIELDS = ['lang', 'f-label', 'f-code', 'f-script', 'f-spaces', 'f-inflects', 'f-tmx', 'f-header', 'f-borrow', 'f-supply',
+    'f-reviewer', 'f-connectors', 'f-connectors-list', 'f-endings', 'f-for', 'f-when', 'f-sample', 'f-notes'];
+  var KEY = 'new-language-request:v1';
+  function save() {
+    if (example) return; // the example isn't the viewer's draft
+    var d = { use: radio('use'), stop: radio('stop'), checked: $('f-checked').checked };
+    FIELDS.forEach(function (id) { d[id] = $(id).value; });
+    try { localStorage.setItem(KEY, JSON.stringify(d)); } catch (e) { /* storage off: fine */ }
+  }
+  function load() {
+    var d = null;
+    try { d = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { d = null; }
+    return d;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Events
+  // ---------------------------------------------------------------------------
+  $('lang').addEventListener('input', function () {
+    var v = $('lang').value;
+    if (BY_NAME[v.trim().toLowerCase()] || !v.trim()) pick(v);
+    else { current = null; $('f-label').value = v.trim(); render(); }
+  });
+  $('lang').addEventListener('change', function () { pick($('lang').value); });
+  ['f-spaces', 'f-script'].forEach(function (id) {
+    $(id).addEventListener('change', function () { setRadio('use', suggestedUse()); render(); });
+  });
+  $('f-code').addEventListener('input', function () { setRadio('use', suggestedUse()); render(); });
+  $('f-header').addEventListener('input', function () { refreshFoundCodes(); render(); });
+  $('f-tmx').addEventListener('input', function () { refreshFoundCodes(); render(); });
+  document.querySelectorAll('input, select, textarea').forEach(function (e) {
+    if (['lang', 'f-header', 'f-tmx', 'f-code'].indexOf(e.id) === -1) {
+      e.addEventListener('input', render);
+      e.addEventListener('change', render);
+    }
+  });
+
+  $('copy').addEventListener('click', function () {
+    var text = $('request').textContent;
+    var done = function () { $('copy-status').textContent = 'Copied. Paste it into Claude Code.'; setTimeout(function () { $('copy-status').textContent = ''; }, 4000); };
+    var fallback = function () {
+      var r = document.createRange();
+      r.selectNodeContents($('request'));
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+      $('copy-status').textContent = 'Selected: press Ctrl+C (⌘C on a Mac) to copy.';
+    };
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+  });
+
+  $('reset').addEventListener('click', function () {
+    try { localStorage.removeItem(KEY); } catch (e) { /* fine */ }
+    FIELDS.forEach(function (id) { var e = $(id); e.value = e.tagName === 'SELECT' ? e.options[0].value : ''; });
+    $('f-checked').checked = false;
+    $('found-codes').textContent = '';
+    setRadio('use', '');
+    setRadio('stop', '');
+    current = null;
+    render();
+    $('lang').focus();
+  });
+
+  // Start: the saved draft, or an example so the page shows what it does.
+  var d = load();
+  if (d && d.lang) {
+    current = BY_NAME[String(d.lang).trim().toLowerCase()] || null;
+    FIELDS.forEach(function (id) { if (d[id] != null) $(id).value = d[id]; });
+    setRadio('use', d.use);
+    setRadio('stop', d.stop);
+    $('f-checked').checked = !!d.checked;
+    refreshFoundCodes();
+    render();
+  } else {
+    $('lang').value = 'Georgian';
+    pick('Georgian');
+    $('f-header').value = '<file original="manual.docx" source-language="en-GB" target-language="ka-GE" datatype="plaintext">';
+    example = true;
+    refreshFoundCodes();
+    render();
+  }
+})();
+</script>

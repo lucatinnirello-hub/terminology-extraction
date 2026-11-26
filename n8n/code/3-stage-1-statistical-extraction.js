@@ -28,17 +28,13 @@ function decodeEntities(s) {
 // --- language codes -----------------------------------------------------
 // TMX and XLIFF files may name the source language as 'en', 'en-US', 'EN_GB'
 // or, from some memoQ exports, the three-letter 'eng'. `sourceLang` is a
-// comma-separated list of two-letter prefixes (e.g. 'nb,no,nn').
-const ISO3 = {
-  en: ['eng'], it: ['ita'], fr: ['fre', 'fra'], de: ['ger', 'deu'], es: ['spa'], pt: ['por'], nl: ['dut', 'nld'],
-  da: ['dan'], sv: ['swe'], nb: ['nob', 'nor'], no: ['nor', 'nob'], nn: ['nno', 'nor'], fi: ['fin'], pl: ['pol'],
-  cs: ['cze', 'ces'], sk: ['slo', 'slk'], sl: ['slv'], hr: ['hrv'], ro: ['rum', 'ron'], hu: ['hun'], et: ['est'],
-  lv: ['lav'], lt: ['lit'], tr: ['tur'], id: ['ind'],
-};
+// comma-separated list of every code the files may use, two- and
+// three-letter (e.g. 'nb,no,nn,nob,nor,nno'; from LANGUAGE_LIST on the
+// page). Each matches with or without a region.
 function langMatches(lang, sourceLang) {
   const l = String(lang || '').toLowerCase().replace(/_/g, '-');
   const wants = String(sourceLang || '').toLowerCase().split(',').map((w) => w.trim()).filter(Boolean);
-  return wants.some((w) => [w].concat(ISO3[w] || []).some((code) => l === code || l.startsWith(code + '-')));
+  return wants.some((code) => l === code || l.startsWith(code + '-'));
 }
 
 // --- inline markup ----------------------------------------------------------

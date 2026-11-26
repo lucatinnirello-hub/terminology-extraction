@@ -22,15 +22,10 @@
 // also target_vocabulary: every target-language word in the files, counted.
 // ===========================================================================
 
-// --- EDITABLE: word endings stripped when counting -------------------------
-// So case endings don't split the counts ("okretanja" / "okretanje" /
-// "okretanjima"). Only affects how forms are grouped: suggestions are always
-// shown as written in the files. Keyed by target language code.
-const SUFFIXES = {
-  sr: ['ima', 'ama', 'ega', 'emu', 'ome', 'oga', 'omu', 'ih', 'im', 'og', 'om', 'em', 'oj', 'a', 'e', 'i', 'u', 'o'],
-};
-SUFFIXES.hr = SUFFIXES.sr;
+// The target language's stopwords, connectors and word endings come from
+// "Stopword lists"; what files call it (settings.target_tmx) from the page.
 
+// --- EDITABLE ----------------------------------------------------------------
 // Segments looked at per term. Plenty for a reliable count; keeps big
 // memories fast.
 const MAX_SEGMENTS_PER_TERM = 200;
@@ -63,16 +58,12 @@ function cleanInline(s) {
       .replace(/<[^>]+>/g, ' ')
   ).replace(/\s+/g, ' ').trim();
 }
-const ISO3 = {
-  en: ['eng'], it: ['ita'], fr: ['fre', 'fra'], de: ['ger', 'deu'], es: ['spa'], pt: ['por'], nl: ['dut', 'nld'],
-  da: ['dan'], sv: ['swe'], nb: ['nob', 'nor'], no: ['nor', 'nob'], nn: ['nno', 'nor'], fi: ['fin'], pl: ['pol'],
-  cs: ['cze', 'ces'], sk: ['slo', 'slk'], sl: ['slv'], hr: ['hrv'], ro: ['rum', 'ron'], hu: ['hun'], et: ['est'],
-  lv: ['lav'], lt: ['lit'], tr: ['tur'], id: ['ind'], sr: ['srp'], sh: ['hbs'], ru: ['rus'], uk: ['ukr'], bg: ['bul'], el: ['gre', 'ell'],
-};
+// `wanted` lists every code the files may use, two- and three-letter
+// ('cs,cze,ces'; from the page). Each matches with or without a region.
 function langMatches(lang, wanted) {
   const l = String(lang || '').toLowerCase().replace(/_/g, '-');
   const wants = String(wanted || '').toLowerCase().split(',').map((w) => w.trim()).filter(Boolean);
-  return wants.some((w) => [w].concat(ISO3[w] || []).some((code) => l === code || l.startsWith(code + '-')));
+  return wants.some((code) => l === code || l.startsWith(code + '-'));
 }
 const attr = (tag, name) => (tag.match(new RegExp('\\s' + name + '\\s*=\\s*["\']([^"\']*)["\']', 'i')) || [, ''])[1];
 
@@ -127,7 +118,7 @@ const SPLIT_PUNCT = /[.!?:;,()\[\]{}"“”„«»…\/|+=*#<>]+/;
 const tokens = (text) => (text.match(/[\p{L}\p{M}][\p{L}\p{M}'’\-]*|\d+(?:[.,]\d+)?/gu) || [])
   .map((t) => t.replace(/^['’\-]+|['’\-]+$/g, ''))
   .filter(Boolean);
-const suffixes = SUFFIXES[targetLang] || [];
+const suffixes = target.suffixes || [];
 const stem = (w) => {
   for (const s of suffixes) if (w.length - s.length >= 4 && w.endsWith(s)) return w.slice(0, -s.length);
   return w;

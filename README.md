@@ -31,6 +31,7 @@ to the job log sheet, which the page shows.
 | `n8n/Terminology_job_errors.json` | Error workflow: marks the failed job's log row, matched by execution ID |
 | `docs/terminology-job-flow.html` | The diagrams |
 | `n8n/code/` | Plain copies of Code nodes changed since first setup (XLIFF support, Gemini AI review, lower-case entries, the AI brief, translation suggestions, memoQ wildcards), for pasting into an existing workflow |
+| `docs/new-language-request.html` | The form for requesting a new language |
 | `docs/workflow-nodes.html` | Every n8n node: what it does, what to set up on it, whether it can stop a job |
 | `n8n/superseded/` | The earlier scheduled-check version, for reference only |
 
@@ -129,7 +130,7 @@ An XLIFF file that declares a different source language from the job's is skippe
   When AI review runs, the model can correct a term's case, but nothing else about the term. The glossary's `source_form` column keeps the most common original form.
 - **The AI brief** (step 3, extraction jobs) is sent with every batch. It holds the type of terminology (general, UI strings, technical, marketing and others), the subject area and up to 2,000 characters of instructions, and it's saved in the run manifest. It can change which terms are kept, how definitions read and how translations are judged, but not the reply format.
 - **AI review** still needs both ticks on the page, and the client must not be on the restricted list in n8n (*Check restricted list*). The page can't override that list.
-- **Languages** offered are the Latin-script ones, because the stage 1 tokeniser only reads Latin script. Each language maps to its TMX code, e.g. Czech is `cz` in the stopword lists and `cs-CZ` in TMX files.
+- **Source languages** offered are the Latin-script ones, because the stage 1 tokeniser only reads Latin script. Each language lists the codes TMX/XLIFF files use for it, e.g. Czech is `cz` in the stopword lists and `cs`, `cze` or `ces` (with any region, such as `cs-CZ`) in files. See [Adding a language](#adding-a-language).
 
 ## Translations
 
@@ -155,7 +156,7 @@ Glossary columns added for translation jobs:
 
 The job's note on the page counts each kind, e.g. *"Translations into Serbian (Latin): 456 confirmed by AI, 41 corrected by AI, 3 AI-translated, not from the files."*
 
-**Languages.** Any target language with a stopword list in *Stopword lists* works, including Cyrillic and Greek; Serbian (Latin) borrows the Croatian list plus a few Serbian words, and accepts both `sr` and `sh` as its code in TMX files. Kyrgyz has no YAKE list: it uses a hand-made one of function words only (conjunctions, postpositions, pronouns and demonstratives in all their cases), made from the English list without a native-speaker review; `docs/kyrgyz-stopwords.md` lists what was left out and why. If its translation suggestions keep getting cut short or run on around one word, that word is the one to add or remove. For strongly inflected languages, *Match translations* can also strip word endings so case forms count together (`SUFFIXES` at the top of the node; set up for Serbian and Croatian). Plain-text files have no target side, so their terms only get AI translations, and only when chosen.
+**Languages.** Any target language with a stopword list in *Stopword lists* works, including Cyrillic and Greek; Serbian (Latin) borrows the Croatian list plus a few Serbian words, and accepts `sr`, `sh`, `srp` and `hbs` as its code in TMX files. Kyrgyz has no YAKE list: it uses a hand-made one of function words only (conjunctions, postpositions, pronouns and demonstratives in all their cases), made from the English list without a native-speaker review; `docs/kyrgyz-stopwords.md` lists what was left out and why. If its translation suggestions keep getting cut short or run on around one word, that word is the one to add or remove. For strongly inflected languages, *Match translations* can also strip word endings so case forms count together (`SUFFIXES` in *Stopword lists*; set up for Serbian and Croatian). Plain-text files have no target side, so their terms only get AI translations, and only when chosen.
 
 **Cost.** With translations on, each AI request is about twice the size (about 4,300 tokens per 25 terms, against 1,900 without).
 
@@ -177,11 +178,55 @@ How each target term gets its wildcards (batches of 25):
 
 `wildcard_check` says what happened: *AI confirmed*, *AI corrected* (check these first), *Code proposal kept (AI reply invalid)*, *Code only, not validated* (the AI didn't run), or *No wildcards needed* (see below). The job's note on the page counts each.
 
-**Languages that don't inflect.** Chinese, Japanese, Thai, Lao, Khmer, Burmese and Vietnamese terms never need wildcards, so the AI isn't asked and every term comes back unchanged, marked *No wildcards needed* (`NO_INFLECTION` in *Wildcard plan*). Japanese is a judgement call: its nouns don't inflect but its verbs and adjectives do; remove `'ja'` to treat it like other languages. Korean is deliberately not on the list: particles attach to nouns. Chinese, Japanese and Thai are offered for wildcards-only jobs only: they're written without spaces, which the translation matching needs to find words.
+**Languages that don't inflect.** Chinese, Japanese and Thai terms never need wildcards, so the AI isn't asked and every term comes back unchanged, marked *No wildcards needed* (`inflects: false` in `LANGUAGE_LIST` in `Code.gs`; Lao, Khmer, Burmese and Vietnamese would get it too if added). Japanese is a judgement call: its nouns don't inflect but its verbs and adjectives do; remove its `inflects: false` to treat it like other languages. Korean, if added, should keep inflecting: particles attach to nouns. Chinese, Japanese and Thai are offered for wildcards-only jobs only: they're written without spaces, which the translation matching needs to find words.
 
 **Editing the rules.** The AI's copy of the rules is `RULES` in *Build check request*. The code's rules are in *Propose wildcards* and *Apply wildcards* (the same block in both; keep them identical). `PIPE_MATCHES_STEM_ALONE` there sets whether a pipe also matches the stem on its own. It does in memoQ (`program|ming instruction|s` matches *program instruction*), so it's on, although *Wildcards Logic* says otherwise; switch it off and the code uses an asterisk wherever the stem is itself a form.
 
 **Cost.** Two small AI requests per 25 terms: the terms and their forms only, no example segments.
+
+## Adding a language
+
+**To request one**, fill in `docs/new-language-request.html` (open it in a browser, or use the published copy: <https://claude.ai/artifact/QE6KqsUcMk1Se4FgXCEGCb>). Pick the language and most answers fill in; it produces a request to paste into a Claude Code session, with the `LANGUAGE_LIST` line ready.
+
+Everything about a language is in two places:
+
+| Where | What it holds |
+|---|---|
+| `LANGUAGE_LIST` at the top of `apps-script/Code.gs` | One line per language: its code, its name on the page, the codes TMX/XLIFF files use for it, what it can be used for, and whether it inflects. The page's three language menus are built from it. |
+| *Stopword lists* node in n8n (`n8n/code/0b-stopword-lists.js`) | Its words: the stopword list (YAKE's, borrowed from another language in `LIST_FOR`, or hand-made in `EXTRA_STOPWORDS`), connector words that may sit inside a term (`CONNECTORS`), and word endings for translation matching (`SUFFIXES`). |
+
+No other node needs editing: the page sends each job the language's file codes and whether it inflects, and the other nodes read the words from *Stopword lists*.
+
+### What's needed for a new language
+
+| | Needed | Example (Kyrgyz) |
+|---|---|---|
+| Name on the page | always | Kyrgyz |
+| Code | always: the YAKE list's name if there is one, otherwise the ISO 639-1 code | `ky` |
+| Codes used in the client's TMX/XLIFF files | always: two- and three-letter, any script or variant suffixes you see in real files | `ky,kir` |
+| Script, and spaces between words? | always: decides `use` (below) | Cyrillic, spaces |
+| Inflects? | always | yes |
+| Stopword list | for `source` and `target`: YAKE has 34 languages; otherwise borrow a close language's or make one of function words (conjunctions, prepositions or postpositions, pronouns, auxiliaries) | hand-made, 211 words |
+| Connector words | optional, for languages that build multi-word terms with prepositions | none |
+| Word endings | optional, for strongly inflected target languages | none |
+
+`use` follows from the script:
+
+- **`source`**: Latin script with a stopword list. Also offered as a target.
+- **`target`**: any script with spaces between words (Cyrillic, Greek…). Translation suggestions and memoQ wildcards.
+- **`wildcards`**: written without spaces (Chinese, Japanese, Thai). Wildcards-only jobs, which need no stopword list.
+
+### Steps
+
+1. **Apps Script**: add a line to `LANGUAGE_LIST`, e.g.
+   `{ code: 'ky', label: 'Kyrgyz', tmx: 'ky,kir', use: 'target' },`
+   Run `checkLanguages()` from the editor: it lists what each language is offered for and flags mistakes (a repeated code, a space in `tmx`…).
+2. **n8n** (skip for `wildcards` languages): in *Stopword lists*, make sure the code has a list. If YAKE has one under that code, nothing to do. Otherwise add `xx: 'yy'` to `LIST_FOR` to borrow language `yy`'s, or add `xx: [...]` to `EXTRA_STOPWORDS`. Optionally add `CONNECTORS` and `SUFFIXES` for it.
+3. **Deploy** the Apps Script (Deploy → Manage deployments → edit → New version) and save the n8n workflow. A language on the page with no list in n8n fails the job with *No stopword list for the target language "xx"*, naming where to add one.
+4. Add the language to `SUPPORTED` in `docs/new-language-request.html`, so the request form knows it's done.
+5. Run a small job with real client files and read the glossary's translation suggestions: a suggestion that keeps getting cut short or runs on around one word points to a stopword to add or remove.
+
+A variant such as Serbian Cyrillic needs its own code (`sr-cyrl`) and its own words: codes are matched exactly, so it never borrows the Latin `sr` list by accident.
 
 ## Log sheet columns
 
