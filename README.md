@@ -137,6 +137,8 @@ Both job pages show the same job list, with jobs of either kind.
   - an existing Drive folder: every supported file directly inside it, with no size limit;
   - uploads (25 MB per file, 20 files), which go into a new job folder in the working folder. Pick files, or a folder on your computer (subfolders included), or drag either onto the page. Unsupported files in a folder are skipped and counted. A file in a subfolder is saved as `subfolder_name.tmx`, so files with the same name don't clash.
 - **Results** go to a folder you choose (you need edit access) or to a new job folder. File names include the job ID, so nothing is overwritten.
+  - *Browse Drive…* opens a folder browser: My Drive, shared drives, folders shared with you, and a search by folder name. It lists only folders, runs as the person, and can make a new folder (named after the client by default). Folders you can only view are marked and can't be chosen. Pasting a folder link still works, and both go through the same checks.
+  - Results can't go to a folder that is only on your computer: n8n saves them to Drive after the page may have closed. With Google Drive for desktop, a Drive folder also appears on your computer.
 - **Several jobs can run at once.** Each is independent, and failures are matched to their log row by the n8n execution ID.
 - **Failures:**
   - Problems found before the reply (folders, the key, Cloudflare, n8n down or the workflow inactive) appear on the page at once, and nothing is logged.

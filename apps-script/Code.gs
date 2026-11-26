@@ -43,6 +43,7 @@ const HEADERS = [
 const MAX_FILE_MB = 25;              // per uploaded file; google.script.run payload limit
 const MAX_FILES_PER_JOB = 20;
 const MAX_FOLDER_SCAN = 500;         // files listed per source folder
+const BROWSE_PAGE_SIZE = 100;        // folders per page in the folder browser
 // TMX, XLIFF (incl. memoQ .mqxliff and compressed .mqxlz exports) and plain text.
 const ALLOWED_EXTENSIONS = ['tmx', 'xml', 'xlf', 'xliff', 'mqxliff', 'mqxlz', 'txt', 'md'];
 // Wildcards-only jobs: one glossary, plus TMX/XLIFF files if there are any.
@@ -279,6 +280,91 @@ function checkFolder(link, purpose, mode) {
   }
   info.n8n = n8n;
   return info;
+}
+
+/**
+ * One page of folders for the page's folder browser, read with the person's
+ * own Drive access. `where` is a folder ID ('root' is My Drive), or one of
+ * the lists that aren't folders themselves: 'drives' (their shared drives),
+ * 'shared' (shared with them) and 'search' (folder names containing `query`).
+ * Folders only; files are never listed.
+ *
+ * Returns { folder, items, next }: `folder` is the opened folder (null for
+ * the lists), `items` its subfolders, `next` the token for the next page.
+ * `canAdd` says whether the person can save into a folder.
+ */
+function browseFolders(where, query, pageToken) {
+  where = String(where || 'root');
+  const page = function (args) {
+    if (pageToken) args.pageToken = String(pageToken);
+    return args;
+  };
+  const item = function (f) {
+    return { id: f.id, name: f.name, canAdd: !!(f.capabilities && f.capabilities.canAddChildren) };
+  };
+  const byName = function (a, b) { return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }); };
+  const fields = 'nextPageToken,files(id,name,capabilities(canAddChildren))';
+  const folders = "mimeType='" + FOLDER_MIME + "' and trashed=false";
+
+  if (where === 'drives') {
+    const r = Drive.Drives.list(page({ pageSize: BROWSE_PAGE_SIZE, fields: 'nextPageToken,drives(id,name,capabilities(canAddChildren))' }));
+    return { folder: null, items: (r.drives || []).map(item).sort(byName), next: r.nextPageToken || '' };
+  }
+  if (where === 'shared' || where === 'search') {
+    let q = folders;
+    const args = { pageSize: BROWSE_PAGE_SIZE, fields: fields, supportsAllDrives: true };
+    if (where === 'shared') {
+      q = 'sharedWithMe and ' + q;
+    } else {
+      const text = String(query || '').trim().slice(0, 100);
+      if (!text) return { folder: null, items: [], next: '' };
+      q = "name contains '" + text.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "' and " + q;
+      args.corpora = 'allDrives';
+      args.includeItemsFromAllDrives = true;
+    }
+    args.q = q;
+    const r = Drive.Files.list(page(args));
+    return { folder: null, items: (r.files || []).map(item).sort(byName), next: r.nextPageToken || '' };
+  }
+
+  let meta;
+  try {
+    meta = Drive.Files.get(where, { fields: 'id,name,mimeType,trashed,driveId,capabilities(canAddChildren)', supportsAllDrives: true });
+  } catch (e) {
+    throw new Error("You don't have access to that folder any more.");
+  }
+  if (meta.mimeType !== FOLDER_MIME || meta.trashed) throw new Error('That folder is no longer available.');
+  const args = { q: "'" + meta.id + "' in parents and " + folders, orderBy: 'name_natural', pageSize: BROWSE_PAGE_SIZE, fields: fields, supportsAllDrives: true };
+  let r;
+  if (meta.driveId) {
+    args.includeItemsFromAllDrives = true;
+    try {
+      r = Drive.Files.list(page(Object.assign({ corpora: 'drive', driveId: meta.driveId }, args)));
+    } catch (e) {
+      // A folder shared from a shared drive the person isn't a member of.
+      r = Drive.Files.list(page(Object.assign({ corpora: 'allDrives' }, args)));
+    }
+  } else {
+    r = Drive.Files.list(page(args));
+  }
+  const folder = item(meta);
+  folder.url = folderUrl_(meta.id);
+  return { folder: folder, items: (r.files || []).map(item), next: r.nextPageToken || '' };
+}
+
+/** Folder browser: makes a new folder inside `parentId`, as the person. */
+function createBrowseFolder(parentId, name) {
+  name = String(name || '').trim();
+  if (!name) throw new Error('Type a name for the new folder.');
+  if (name.length > 200) throw new Error('That name is too long.');
+  let created;
+  try {
+    const parent = parentId === 'root' ? DriveApp.getRootFolder() : DriveApp.getFolderById(String(parentId));
+    created = parent.createFolder(name);
+  } catch (e) {
+    throw new Error("You can't add folders here. You need edit access.");
+  }
+  return { id: created.getId(), name: created.getName(), canAdd: true, url: folderUrl_(created.getId()) };
 }
 
 /**
