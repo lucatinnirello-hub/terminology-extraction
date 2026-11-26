@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<?!= include_('Styles') ?>
+</head>
+<body>
+<header>
+  <h1><?= appTitle ?></h1>
+  <div class="meta">
+    <span><?= user ?></span>
+    <? if (workFolderUrl) { ?><a href="<?= workFolderUrl ?>" target="_blank" rel="noopener">Working folder</a><? } ?>
+    <? if (logSheetUrl) { ?><a href="<?= logSheetUrl ?>" target="_blank" rel="noopener">Job log</a><? } ?>
+  </div>
+</header>
+
+<main class="page">
+  <div class="intro">
+    <h2>What would you like to do?</h2>
+    <p>Choose a tool to get started. Each one walks you through the files and settings it needs.</p>
+  </div>
+
+  <ul class="tools">
+    <li>
+      <a class="tool" href="<?= appUrl ?>?tool=glossary">
+        <div class="tool-head">
+          <span class="tool-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3"/><path d="M9 7.5h6M9 11h4"/></svg>
+          </span>
+          <h3>Glossary building</h3>
+        </div>
+        <p class="desc">Pull the key terms out of a client's translation memories and turn them into a glossary. You can also suggest translations from the files, ask the AI to review the terms, and add memoQ wildcards.</p>
+        <dl>
+          <dt>You'll need</dt><dd>TMX, XLIFF or text files</dd>
+          <dt>You get</dt><dd>A glossary (.xlsx) of ranked terms with examples</dd>
+        </dl>
+        <span class="go">Build a glossary →</span>
+      </a>
+    </li>
+    <li>
+      <div class="tool wip" aria-disabled="true">
+        <div class="tool-head">
+          <span class="tool-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/><path d="M8 10.5h5"/></svg>
+          </span>
+          <h3>Term extraction</h3>
+          <span class="pill wip">In development</span>
+        </div>
+        <p class="desc">Search a client's TMX files for the likely translations of terms you already have.</p>
+        <dl>
+          <dt>You'll need</dt><dd>A list of terms and TMX files</dd>
+          <dt>You get</dt><dd>Each term with its likely translations</dd>
+        </dl>
+        <span class="go">Not available yet</span>
+      </div>
+    </li>
+    <li>
+      <a class="tool" href="<?= appUrl ?>?tool=wildcards">
+        <div class="tool-head">
+          <span class="tool-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v16M5.1 8l13.8 8M5.1 16l13.8-8"/></svg>
+          </span>
+          <h3>Wildcard optimisation</h3>
+        </div>
+        <p class="desc">Add memoQ wildcards to the target terms of a finished glossary, so memoQ also finds their other forms. The AI lists each term's forms and checks the wildcards.</p>
+        <dl>
+          <dt>You'll need</dt><dd>A glossary (.xlsx or .csv), plus TMX or XLIFF files if you have them</dd>
+          <dt>You get</dt><dd>The glossary with memoQ wildcards added in new columns</dd>
+        </dl>
+        <span class="go">Optimise wildcards →</span>
+      </a>
+    </li>
+    <li>
+      <a class="tool" href="<?= appUrl ?>?tool=language">
+        <div class="tool-head">
+          <span class="tool-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.3 2.4 3.4 5.2 3.4 8.5s-1.1 6.1-3.4 8.5c-2.3-2.4-3.4-5.2-3.4-8.5S9.7 5.9 12 3.5z"/></svg>
+          </span>
+          <h3>New language request</h3>
+        </div>
+        <p class="desc">Need a language the tools don't support yet? Tell us which one and what it's for, and we'll look into adding it.</p>
+        <dl>
+          <dt>You'll need</dt><dd>The language, and what you need it for</dd>
+          <dt>You get</dt><dd>Your request logged and sent to the app's owner</dd>
+        </dl>
+        <span class="go">Request a language →</span>
+      </a>
+    </li>
+  </ul>
+
+  <p class="page-foot">Your jobs and their results are listed on the Glossary building and Wildcard optimisation pages.</p>
+</main>
+</body>
+</html>
