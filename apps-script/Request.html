@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<?!= include_('Styles') ?>
+</head>
+<body>
+<header>
+  <div class="title-block">
+    <a class="back" href="<?= appUrl ?>">← All tools</a>
+    <h1><?= toolTitle ?></h1>
+  </div>
+  <div class="meta">
+    <span><?= user ?></span>
+  </div>
+</header>
+
+<main class="form-page">
+  <section class="card" aria-labelledby="req-h">
+    <h2 id="req-h">Which language do you need?</h2>
+    <div class="card-body">
+      <p class="step-intro">Tell us the language and what you'd use it for. Your request is added to the language requests sheet and emailed to the app's owner, who will get back to you.</p>
+      <div id="notice" class="notice" role="status" hidden></div>
+      <form id="req-form" novalidate>
+        <div class="field">
+          <label for="language">Language</label>
+          <input id="language" type="text" autocomplete="off" required maxlength="80" placeholder="e.g. Serbian (Cyrillic), Icelandic, Arabic">
+          <div class="hint" id="language-hint">Include the script or country if it matters.</div>
+        </div>
+
+        <fieldset class="field group" id="uses">
+          <legend>What do you need it for?</legend>
+          <div class="choice stack">
+            <label><input type="checkbox" name="uses" value="source">
+              <span>Source language for glossary building<span class="opt-hint">Extracting terms from files written in this language</span></span></label>
+            <label><input type="checkbox" name="uses" value="target">
+              <span>Target language for translation suggestions<span class="opt-hint">Finding the translations of terms in this language</span></span></label>
+            <label><input type="checkbox" name="uses" value="wildcards">
+              <span>Target language for wildcard optimisation<span class="opt-hint">Adding memoQ wildcards to terms in this language</span></span></label>
+          </div>
+        </fieldset>
+
+        <div class="field">
+          <label for="client">Client or project <span class="optional">(optional)</span></label>
+          <input id="client" type="text" autocomplete="off" maxlength="80" placeholder="e.g. Acme Ltd">
+        </div>
+
+        <div class="field">
+          <label for="needed_by">Needed by <span class="optional">(optional)</span></label>
+          <input id="needed_by" type="date">
+        </div>
+
+        <div class="field">
+          <label for="notes">Notes <span class="optional">(optional)</span></label>
+          <textarea id="notes" rows="4" maxlength="1000" aria-describedby="notes_count" placeholder="e.g. We have a 50,000-segment TMX for this language, and a native-speaker reviewer who can check the results."></textarea>
+          <div class="count" id="notes_count" aria-live="polite"></div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="primary" id="submit-btn">Send request</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <details class="card supported">
+    <summary>Languages already supported</summary>
+    <div class="card-body" id="supported" data-langs="<?= languagesJson ?>"></div>
+  </details>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var langs = JSON.parse($('supported').dataset.langs);
+  var GROUPS = [
+    ['source', 'Source language for glossary building'],
+    ['target', 'Target language for translation suggestions'],
+    ['wildcards', 'Target language for wildcard optimisation'],
+  ];
+
+  GROUPS.forEach(function (g) {
+    var h = document.createElement('h4');
+    h.textContent = g[1];
+    var p = document.createElement('p');
+    p.textContent = langs[g[0]].join(', ');
+    $('supported').appendChild(h);
+    $('supported').appendChild(p);
+  });
+
+  function notice(kind, text) {
+    var n = $('notice');
+    if (!text) { n.hidden = true; return; }
+    n.className = 'notice ' + kind;
+    n.textContent = text;
+    n.hidden = false;
+  }
+
+  function errText(e) {
+    var m = (e && e.message) || String(e);
+    return m.replace(/^Exception:\s*/, '').replace(/^Error:\s*/, '');
+  }
+
+  function checked() {
+    return Array.prototype.filter.call(document.querySelectorAll('input[name="uses"]'), function (b) { return b.checked; })
+      .map(function (b) { return b.value; });
+  }
+
+  // Points out when the language is already there for what's ticked, but
+  // doesn't block the request: a variant or script may still be missing.
+  function norm(s) { return s.toLowerCase().replace(/\s+/g, ' ').trim(); }
+  function syncLanguageHint() {
+    var typed = norm($('language').value);
+    var hint = 'Include the script or country if it matters.';
+    if (typed) {
+      var have = GROUPS.filter(function (g) {
+        return langs[g[0]].some(function (l) { return norm(l) === typed; });
+      });
+      if (have.length) {
+        hint = 'Already supported as: ' + have.map(function (g) { return g[1].charAt(0).toLowerCase() + g[1].slice(1); }).join('; ') + '.';
+      }
+    }
+    $('language-hint').textContent = hint;
+  }
+  $('language').addEventListener('input', syncLanguageHint);
+
+  function updateCount() {
+    var left = 1000 - $('notes').value.length;
+    $('notes_count').textContent = left + ' characters left';
+    $('notes_count').className = 'count' + (left < 100 ? ' over' : '');
+  }
+  $('notes').addEventListener('input', updateCount);
+  updateCount();
+
+  var busy = false;
+  $('req-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (busy) return;
+    var req = {
+      language: $('language').value.trim(),
+      uses: checked(),
+      client: $('client').value.trim(),
+      needed_by: $('needed_by').value,
+      notes: $('notes').value.trim(),
+    };
+    if (!req.language) { notice('err', 'Enter the language you need.'); $('language').focus(); return; }
+    if (!req.uses.length) { notice('err', 'Choose what you need the language for.'); document.querySelector('input[name="uses"]').focus(); return; }
+
+    busy = true;
+    $('submit-btn').disabled = true;
+    $('submit-btn').textContent = 'Sending…';
+    notice('', '');
+    google.script.run
+      .withSuccessHandler(function (res) {
+        var how = res.saved && res.emailed ? 'logged and emailed to the app\'s owner'
+          : res.saved ? 'logged in the language requests sheet' : 'emailed to the app\'s owner';
+        notice('ok', 'Thanks, your request for ' + req.language + ' has been ' + how + '.');
+        $('req-form').reset();
+        updateCount();
+        syncLanguageHint();
+        done();
+      })
+      .withFailureHandler(function (err) {
+        notice('err', errText(err) + ' Your request was not sent.');
+        done();
+      })
+      .submitLanguageRequest(req);
+  });
+
+  function done() {
+    busy = false;
+    $('submit-btn').disabled = false;
+    $('submit-btn').textContent = 'Send request';
+    $('notice').scrollIntoView({ block: 'nearest' });
+  }
+})();
+</script>
+</body>
+</html>

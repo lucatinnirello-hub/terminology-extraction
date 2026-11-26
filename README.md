@@ -24,8 +24,11 @@ to the job log sheet, which the page shows.
 
 | File | What it is |
 |---|---|
-| `apps-script/Code.gs` | Server side: folder checks, uploads, the request to n8n, job list |
-| `apps-script/Index.html` | The page |
+| `apps-script/Code.gs` | Server side: page routing, folder checks, uploads, the request to n8n, job list, language requests |
+| `apps-script/Landing.html` | The landing page: one card per tool |
+| `apps-script/Index.html` | The job page, for *Glossary building* and *Wildcard optimisation* |
+| `apps-script/Request.html` | The *New language request* form |
+| `apps-script/Styles.html` | The styles all pages share |
 | `apps-script/appsscript.json` | Manifest: runs as the user, Drive advanced service on |
 | `n8n/Terminology_extraction_webhook_v4.json` | Main workflow: Webhook → checks → reply → extraction → log |
 | `n8n/Terminology_job_errors.json` | Error workflow: marks the failed job's log row, matched by execution ID |
@@ -59,11 +62,14 @@ to the job log sheet, which the page shows.
 
 1. At <https://script.google.com> create a project, e.g. *Terminology extraction*.
 2. **Project Settings**: tick *Show "appsscript.json" manifest file in editor*.
-   Paste `Code.gs` and `appsscript.json`, and add an HTML file named `Index` with `Index.html`.
+   Paste `Code.gs` and `appsscript.json`, and add four HTML files, named without `.html`: `Index`, `Landing`, `Request` and `Styles`.
 3. *(Recommended)* To keep the working folder and log in a Shared Drive, add the Script Property `PARENT_FOLDER_ID` = a folder there.
 4. Run `setup()` from the editor. It creates:
    - a **working folder**, used for uploads and for results when nobody picks a folder;
-   - a **job log** sheet. It prints the log's ID.
+   - a **job log** sheet. It prints the log's ID;
+   - a **language requests** sheet, for the *New language request* form.
+
+   Already set up before the landing page? Run `setup()` again: it keeps what exists and only adds the language requests sheet.
 5. Paste the log sheet ID into the n8n Sheets nodes, replacing `PASTE_LOG_SHEET_ID_HERE` (2 in the main workflow, 2 in the error workflow).
 6. Share:
 
@@ -71,8 +77,9 @@ to the job log sheet, which the page shows.
    |---|---|---|
    | Working folder | Editor (Contributor in a shared drive) | Editor |
    | Job log | **Viewer** | Editor |
+   | Language requests | Editor | not needed |
 
-   The team only views the log, so nobody can edit other people's rows.
+   The team only views the log, so nobody can edit other people's rows. Language requests are a separate sheet for that reason: the page runs as the person using it, so they need edit access to add a request.
 7. **Project Settings → Script Properties**:
 
    | Property | Value |
@@ -81,6 +88,7 @@ to the job log sheet, which the page shows.
    | `N8N_WEBHOOK_KEY` | the Header Auth value from n8n step 2 |
    | `CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` | the Cloudflare credentials your other script uses |
    | `N8N_EXTRA_HEADERS` | optional: JSON of any other headers your other script sends, e.g. `{"X-Other": "value"}` |
+   | `LANGUAGE_REQUEST_EMAIL` | optional: who is emailed about each new language request (several addresses: separate with commas) |
 
    If your other script sends Cloudflare credentials under different header names, put them in `N8N_EXTRA_HEADERS` instead.
    People using the page can't read these values; they can run the app but not open the project.
@@ -89,7 +97,7 @@ to the job log sheet, which the page shows.
    - Execute as: **User accessing the web app**
    - Who has access: **Anyone within ics-translate.com**
 
-   Each person approves the app's Drive access the first time they open it.
+   Each person approves the app's Drive access the first time they open it. The language request email is sent from their own account, so the approval also covers sending email; people who approved an earlier version are asked once more.
 
 ## Supported files
 
@@ -104,6 +112,19 @@ to the job log sheet, which the page shows.
 
 `.xml` files are recognised as TMX or XLIFF from their content. Formatting codes such as `{}` or `<b>` are removed, so they never become terms.
 An XLIFF file that declares a different source language from the job's is skipped, and the job's results note says so. TMX files are only read on the job's language side anyway.
+
+## The pages
+
+The app opens on a **landing page** with one card per tool. Each tool has its own address, so people can bookmark it: the app's URL plus `?tool=glossary`, `?tool=wildcards` or `?tool=language`.
+
+| Tool | What it is |
+|---|---|
+| **Glossary building** | The main workflow: statistical extraction of source terms, with optional translation suggestions, AI review and memoQ wildcards. The job page, fixed to extraction jobs (`mode: extract`). |
+| **Term extraction** | *In development*: searching TMX files for the likely translations of terms you provide. Shown on the landing page, not yet clickable. |
+| **Wildcard optimisation** | Adds memoQ wildcards to a finished glossary. The job page, fixed to wildcards-only jobs (`mode: wildcards`). |
+| **New language request** | A short form: the language, what it's needed for, and optionally the client, a date and notes. Each request is added to the language requests sheet and emailed to `LANGUAGE_REQUEST_EMAIL`, with the requester as reply-to. If one of the two fails, the request still counts and the page says which one worked. The form also lists the languages already supported. |
+
+Both job pages show the same job list, with jobs of either kind.
 
 ## How it behaves
 
@@ -120,7 +141,7 @@ An XLIFF file that declares a different source language from the job's is skippe
   - Problems found before the reply (folders, the key, Cloudflare, n8n down or the workflow inactive) appear on the page at once, and nothing is logged.
   - Problems after the reply (no usable files, no terms, Drive or Gemini errors) are written to the job's log row, with a link to the n8n execution.
   - If n8n restarts mid-job, nothing can report back, so the page flags a job still running after 45 minutes.
-- **The page has three steps:** *Job details* (client, what to do, language, files, where results go), *Job settings* (lower case, translations and extraction settings; or, for a glossary, its target language and column) and *AI review*. *Next* only moves on once the step's required fields are filled in. After a job starts, the page goes back to step 1, and the settings are kept for the next job.
+- **The page has three steps:** *Job details* (client, language, files, where results go), *Job settings* (lower case, translations and extraction settings; or, for a glossary, its target language and column) and *AI review*. *Next* only moves on once the step's required fields are filled in. After a job starts, the page goes back to step 1, and the settings are kept for the next job.
 - **Lower case** is on by default, following glossary practice. Stage 1 decides each word's case from how the files write it mid-sentence:
   - Words the files mostly write in lower case become lower case ("Pressure Valve" from a heading becomes "pressure valve").
   - Words mostly capitalised stay that way ("Siemens", German nouns), as do acronyms ("ISO") and mixed-case names ("PowerPoint").
@@ -166,7 +187,7 @@ Wildcards go on **target terms only**. memoQ reads any entry with a `|` or `*` a
 Two ways to use it, both optional:
 
 - **In an extraction job**: with *Suggest translations* on, tick *Add memoQ wildcards to the target terms*. The glossary gains `memoq_term`, `wildcard_check` and `wildcard_note`.
-- **On a finished glossary**: choose *Add memoQ wildcards to a glossary* at the top of the page and upload one `.xlsx` or `.csv` (or point to a folder holding one), plus the client's TMX/XLIFF files if you have them. Pick the target language; name the target-term column if its header isn't the language name. You get the glossary back as `wildcards_….xlsx`, with the same three columns added after the existing ones. Several terms in one cell, separated by `;`, are handled one by one. This needs AI review with the client's approval: without the AI there are no forms to work from.
+- **On a finished glossary**: open *Wildcard optimisation* from the landing page and upload one `.xlsx` or `.csv` (or point to a folder holding one), plus the client's TMX/XLIFF files if you have them. Pick the target language; name the target-term column if its header isn't the language name. You get the glossary back as `wildcards_….xlsx`, with the same three columns added after the existing ones. Several terms in one cell, separated by `;`, are handled one by one. This needs AI review with the client's approval: without the AI there are no forms to work from.
 
 How each target term gets its wildcards (batches of 25):
 
@@ -188,3 +209,9 @@ How each target term gets its wildcards (batches of 25):
 `job_id, status, submitted_at, submitted_by, client, source_lang, file_names, settings_json, job_folder_id, input_folder_id, output_folder_id, execution_id, started_at, finished_at, terms_returned, glossary_url, stage1_url, manifest_url, message`
 
 n8n matches columns by header name: reorder them if you like, but don't rename them.
+
+## Language requests columns
+
+`requested_at, requested_by, language, needed_for, client, needed_by, notes, status`
+
+`status` starts as `new`; change it by hand as requests are handled.

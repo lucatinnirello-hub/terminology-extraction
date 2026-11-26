@@ -18,7 +18,8 @@
  *   CF_ACCESS_CLIENT_ID      Cloudflare Access service token ID
  *   CF_ACCESS_CLIENT_SECRET  Cloudflare Access service token secret
  *   N8N_EXTRA_HEADERS        optional JSON object of any other headers to send
- *   WORK_FOLDER_ID, LOG_SHEET_ID   written by setup()
+ *   LANGUAGE_REQUEST_EMAIL   optional: who is emailed about new language requests
+ *   WORK_FOLDER_ID, LOG_SHEET_ID, LANGUAGE_SHEET_ID   written by setup()
  *
  * People who only use the page can't read these: they can run the web app,
  * not open the project.
@@ -155,15 +156,61 @@ const AI_FOCUS = [
 const AI_DOMAIN_MAX = 120;
 const AI_INSTRUCTIONS_MAX = 2000;
 
+// New language requests. Kept in their own sheet, not the job log: the team
+// can only view the job log, and the page runs as the person using it.
+const LANGUAGE_SHEET_NAME = 'Requests';
+const LANGUAGE_HEADERS = ['requested_at', 'requested_by', 'language', 'needed_for', 'client', 'needed_by', 'notes', 'status'];
+const LANGUAGE_NOTES_MAX = 1000;
+const LANGUAGE_USES = {
+  source: 'Source language (glossary building)',
+  target: 'Target language for translation suggestions (glossary building)',
+  wildcards: 'Target language for memoQ wildcards (wildcard optimisation)',
+};
+
 // ---------------------------------------------------------------------------
 // Web app entry point
 // ---------------------------------------------------------------------------
 
-function doGet() {
-  return HtmlService.createTemplateFromFile('Index')
-    .evaluate()
-    .setTitle(APP_TITLE)
+// The landing page lists the tools; `?tool=<key>` opens one. Glossary
+// building and wildcard optimisation are the two job types of the job page.
+// Term extraction is in development, so it has a card but no page yet.
+const TOOLS = {
+  glossary: { page: 'Index', mode: 'extract', title: 'Glossary building' },
+  wildcards: { page: 'Index', mode: 'wildcards', title: 'Wildcard optimisation' },
+  language: { page: 'Request', title: 'New language request' },
+};
+
+function doGet(e) {
+  const key = String((e && e.parameter && e.parameter.tool) || '');
+  const tool = Object.prototype.hasOwnProperty.call(TOOLS, key) ? TOOLS[key] : null;
+  const t = HtmlService.createTemplateFromFile(tool ? tool.page : 'Landing');
+  t.appTitle = APP_TITLE;
+  t.appUrl = ScriptApp.getService().getUrl();
+  t.toolTitle = tool ? tool.title : APP_TITLE;
+  t.mode = (tool && tool.mode) || '';
+  t.user = currentUser_();
+  // The landing page links to the job log and working folder; before setup()
+  // has run there are none, and the page still loads.
+  t.logSheetUrl = '';
+  t.workFolderUrl = '';
+  try {
+    const cfg = getConfig_();
+    t.logSheetUrl = 'https://docs.google.com/spreadsheets/d/' + cfg.logSheetId;
+    t.workFolderUrl = folderUrl_(cfg.workFolderId);
+  } catch (err) { /* shown on the tool pages instead */ }
+  t.languagesJson = JSON.stringify({
+    source: LANGUAGES.map(function (l) { return l.label; }).sort(),
+    target: TARGET_LANGUAGES.map(function (l) { return l.label; }),
+    wildcards: WILDCARD_TARGET_LANGUAGES.map(function (l) { return l.label; }),
+  });
+  return t.evaluate()
+    .setTitle(tool ? tool.title + ' · ' + APP_TITLE : APP_TITLE)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/** For templates: <?!= include_('Styles') ?> pastes in another HTML file. */
+function include_(name) {
+  return HtmlService.createHtmlOutputFromFile(name).getContent();
 }
 
 // ---------------------------------------------------------------------------
@@ -385,6 +432,76 @@ function listJobs(scope) {
   };
 }
 
+/**
+ * New language request: adds a row to the language requests sheet and
+ * emails LANGUAGE_REQUEST_EMAIL. Either one is enough to count as received;
+ * the reply says which worked.
+ */
+function submitLanguageRequest(req) {
+  req = req || {};
+  const text = function (v, max, name) {
+    const s = String(v || '').trim();
+    if (s.length > max) throw new Error(name + ' is too long (' + max + ' characters at most).');
+    return s;
+  };
+  const language = text(req.language, 80, 'Language');
+  if (!language) throw new Error('Enter the language you need.');
+  const uses = (Array.isArray(req.uses) ? req.uses : []).filter(function (u) { return LANGUAGE_USES[u]; });
+  if (!uses.length) throw new Error('Choose what the language is needed for.');
+  const client = text(req.client, 80, 'Client or project');
+  const neededBy = text(req.needed_by, 10, 'Needed by');
+  if (neededBy && !/^\d{4}-\d{2}-\d{2}$/.test(neededBy)) throw new Error('Enter the date as YYYY-MM-DD.');
+  const notes = text(req.notes, LANGUAGE_NOTES_MAX, 'Notes');
+
+  const user = currentUser_();
+  const now = new Date().toISOString();
+  const usesText = uses.map(function (u) { return LANGUAGE_USES[u]; }).join('; ');
+  const result = { saved: false, emailed: false };
+  const problems = [];
+
+  try {
+    const sheet = languageRequestSheet_();
+    // A leading ' keeps text such as "=…" from being read as a formula.
+    sheet.appendRow([now, user, language, usesText, client, neededBy, notes, 'new'].map(function (v) {
+      return /^[=+\-@]/.test(v) ? "'" + v : v;
+    }));
+    result.saved = true;
+  } catch (e) {
+    problems.push(e.message);
+  }
+
+  const to = String(PropertiesService.getScriptProperties().getProperty('LANGUAGE_REQUEST_EMAIL') || '').trim();
+  if (to) {
+    try {
+      MailApp.sendEmail({
+        to: to,
+        replyTo: user,
+        name: APP_TITLE,
+        subject: 'New language request: ' + language,
+        body: [
+          user + ' has asked for a new language.',
+          '',
+          'Language:    ' + language,
+          'Needed for:  ' + usesText,
+          'Client:      ' + (client || '—'),
+          'Needed by:   ' + (neededBy || '—'),
+          'Notes:       ' + (notes || '—'),
+          '',
+          result.saved ? 'It has been added to the language requests sheet.' : 'It could NOT be added to the language requests sheet: ' + problems.join(' '),
+        ].join('\n'),
+      });
+      result.emailed = true;
+    } catch (e) {
+      problems.push("The email couldn't be sent (" + e.message + ').');
+    }
+  }
+
+  if (!result.saved && !result.emailed) {
+    throw new Error(problems.join(' ') || "Language requests aren't set up yet. Ask the app's owner to run setup() again.");
+  }
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // One-time setup: run from the Apps Script editor by whoever manages the app
 // ---------------------------------------------------------------------------
@@ -427,7 +544,26 @@ function setup() {
   sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight('bold');
   sheet.setFrozenRows(1);
 
-  const missing = ['N8N_WEBHOOK_URL', 'N8N_WEBHOOK_KEY', 'CF_ACCESS_CLIENT_ID', 'CF_ACCESS_CLIENT_SECRET']
+  let requests = null;
+  const requestsId = props.getProperty('LANGUAGE_SHEET_ID');
+  if (requestsId) {
+    try { requests = SpreadsheetApp.openById(requestsId); } catch (e) { requests = null; }
+  }
+  if (!requests) {
+    requests = SpreadsheetApp.create(APP_TITLE + ' - language requests');
+    DriveApp.getFileById(requests.getId()).moveTo(parent);
+    props.setProperty('LANGUAGE_SHEET_ID', requests.getId());
+  }
+  let reqSheet = requests.getSheetByName(LANGUAGE_SHEET_NAME);
+  if (!reqSheet) {
+    reqSheet = requests.getSheets()[0];
+    reqSheet.setName(LANGUAGE_SHEET_NAME);
+  }
+  reqSheet.getRange(1, 1, reqSheet.getMaxRows(), LANGUAGE_HEADERS.length).setNumberFormat('@');
+  reqSheet.getRange(1, 1, 1, LANGUAGE_HEADERS.length).setValues([LANGUAGE_HEADERS]).setFontWeight('bold');
+  reqSheet.setFrozenRows(1);
+
+  const missing =['N8N_WEBHOOK_URL', 'N8N_WEBHOOK_KEY', 'CF_ACCESS_CLIENT_ID', 'CF_ACCESS_CLIENT_SECRET']
     .filter(function (k) { return !props.getProperty(k); });
 
   const summary = [
@@ -435,11 +571,14 @@ function setup() {
     'Working folder:  ' + folderUrl_(work.getId()),
     'Log sheet:       ' + ss.getUrl(),
     'Log sheet ID:    ' + ss.getId() + '   <- paste into the n8n Google Sheets nodes',
+    'Language requests: ' + requests.getUrl(),
     '',
     'Share:',
-    '  working folder  team: Editor (Contributor in a shared drive) · n8n account: Editor',
-    '  log sheet       team: Viewer · n8n account: Editor',
+    '  working folder     team: Editor (Contributor in a shared drive) · n8n account: Editor',
+    '  log sheet          team: Viewer · n8n account: Editor',
+    '  language requests  team: Editor',
     missing.length ? '\nStill to set in Script Properties: ' + missing.join(', ') : '',
+    props.getProperty('LANGUAGE_REQUEST_EMAIL') ? '' : '\nOptional: set LANGUAGE_REQUEST_EMAIL in Script Properties to be emailed about new language requests.',
   ].join('\n');
   Logger.log(summary);
   return summary;
@@ -618,6 +757,19 @@ function getConfig_() {
     throw new Error('The app has not been set up yet. Run setup() once from the Apps Script editor.');
   }
   return cfg;
+}
+
+function languageRequestSheet_() {
+  const id = PropertiesService.getScriptProperties().getProperty('LANGUAGE_SHEET_ID');
+  if (!id) throw new Error("The language requests sheet isn't set up yet (run setup() again).");
+  let sheet;
+  try {
+    sheet = SpreadsheetApp.openById(id).getSheetByName(LANGUAGE_SHEET_NAME);
+  } catch (e) {
+    throw new Error("You can't add to the language requests sheet. Ask for edit access to it.");
+  }
+  if (!sheet) throw new Error('The "' + LANGUAGE_SHEET_NAME + '" tab is missing from the language requests sheet.');
+  return sheet;
 }
 
 function currentUser_() {
