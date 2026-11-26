@@ -87,16 +87,20 @@
           <fieldset class="field group">
             <legend>Save results to</legend>
             <div class="choice">
-              <label><input type="radio" name="output_mode" id="output_mode_job" value="job" checked> A new folder for this job</label>
-              <label><input type="radio" name="output_mode" id="output_mode_folder" value="folder"> A Drive folder I choose</label>
+              <label><input type="radio" name="output_mode" id="output_mode_job" value="job" checked> New folder</label>
+              <label><input type="radio" name="output_mode" id="output_mode_folder" value="folder"> Choose folder</label>
             </div>
             <div id="output-folder-panel" hidden>
-              <label for="output_folder" class="sub-label">Folder link</label>
+              <div class="browse-row">
+                <button type="button" class="browse-btn" id="output_folder_browse" aria-haspopup="dialog">Browse Drive…</button>
+                <span class="hint">My Drive, shared drives and folders shared with you</span>
+              </div>
+              <label for="output_folder" class="sub-label">Or paste a folder link</label>
               <div class="folder-row">
                 <input id="output_folder" type="text" autocomplete="off" spellcheck="false" placeholder="https://drive.google.com/drive/folders/…">
                 <button type="button" class="small" id="output_folder_check">Check</button>
               </div>
-              <div class="hint">The glossary, stage 1 candidates and run manifest are added here. File names include the job ID, so nothing is overwritten.</div>
+              <div class="hint">The glossary, stage 1 candidates and run manifest are added here.</div>
               <div id="output_folder_result" class="check-result" aria-live="polite" hidden></div>
             </div>
           </fieldset>
@@ -198,7 +202,7 @@
 
         <div class="step-nav">
           <button type="button" id="back-btn" hidden>Back</button>
-          <button type="button" class="primary" id="next-btn">Next: job settings</button>
+          <button type="button" class="primary" id="next-btn">Next</button>
           <button type="submit" class="primary" id="submit-btn" hidden>Submit job</button>
         </div>
         <div class="progress" id="progress" hidden><div></div></div>
@@ -222,6 +226,38 @@
     <div id="jobs" aria-live="polite"><div class="empty">Loading jobs…</div></div>
   </section>
 </main>
+
+<dialog id="picker" class="picker" aria-labelledby="picker-h">
+  <div class="picker-head">
+    <h2 id="picker-h">Choose a folder</h2>
+    <button type="button" class="link picker-x" id="picker-close" aria-label="Close">✕</button>
+  </div>
+  <div class="picker-tools">
+    <div class="seg" role="group" aria-label="Places" id="picker-places">
+      <button type="button" data-place="root" aria-pressed="true">My Drive</button>
+      <button type="button" data-place="drives" aria-pressed="false">Shared drives</button>
+      <button type="button" data-place="shared" aria-pressed="false">Shared with me</button>
+    </div>
+    <input type="search" id="picker-search" placeholder="Search folders by name" aria-label="Search folders by name" autocomplete="off" spellcheck="false">
+  </div>
+  <nav class="crumbs" id="picker-crumbs" aria-label="Folder path"></nav>
+  <div class="picker-list" id="picker-list" aria-live="polite" aria-busy="false"></div>
+  <div class="picker-new" id="picker-new" hidden>
+    <label for="picker-new-name" class="sub-label">New folder in <span id="picker-new-in"></span></label>
+    <div class="folder-row">
+      <input type="text" id="picker-new-name" autocomplete="off" maxlength="200">
+      <button type="button" class="small" id="picker-new-ok">Create</button>
+      <button type="button" class="small" id="picker-new-cancel">Cancel</button>
+    </div>
+  </div>
+  <div class="picker-msg" id="picker-msg" role="status" hidden></div>
+  <div class="picker-foot">
+    <button type="button" id="picker-new-btn">New folder</button>
+    <span class="spacer"></span>
+    <button type="button" id="picker-cancel">Cancel</button>
+    <button type="button" class="primary" id="picker-use" disabled>Use this folder</button>
+  </div>
+</dialog>
 
 <script>
 (function () {
@@ -617,7 +653,7 @@
   $('ai_instructions').addEventListener('input', updateCount);
 
   // ---------------------------------------------------------------- steps
-  var NEXT_LABEL = { 1: 'Next: job settings', 2: 'Next: AI review' };
+  var NEXT_LABEL = { 1: 'Next', 2: 'Next' };
 
   // What's missing on step 1, as { msg, focus } or null.
   function step1Problem() {
@@ -706,7 +742,8 @@
       ['Job', mode() === 'wildcards' ? 'Wildcard optimisation' : 'Glossary building'],
       ['Language', lang],
       ['Source', source],
-      ['Results', radio('output_mode') === 'folder' ? 'Drive folder you chose' : 'New folder for this job'],
+      ['Results', radio('output_mode') !== 'folder' ? 'New folder for this job'
+        : checkedName.output ? 'Drive folder "' + checkedName.output + '"' : 'Drive folder you chose'],
     ];
     if (mode() === 'wildcards') {
       rows.push(['Target', targetLabel(config.wildcardTargetLanguages, $('wc_target_lang').value) + ($('target_column').value.trim() ? ', column "' + $('target_column').value.trim() + '"' : '')]);
@@ -748,14 +785,17 @@
   }
 
   var lastChecked = { input: '', output: '' };
+  var checkedName = { input: '', output: '' };   // name of the folder the link points to, once checked
   function checkFolderUI(purpose) {
     var value = $(purpose + '_folder').value.trim();
-    if (!value) { lastChecked[purpose] = ''; showCheck(purpose, null); return; }
+    if (!value) { lastChecked[purpose] = ''; checkedName[purpose] = ''; showCheck(purpose, null); return; }
     if (value === lastChecked[purpose]) return;
     lastChecked[purpose] = value;
+    checkedName[purpose] = '';
     showCheck(purpose, 'busy', function (b) { b.textContent = 'Checking access…'; });
     call('checkFolder', value, purpose, mode()).then(function (r) {
       if ($(purpose + '_folder').value.trim() !== value) return;   // changed meanwhile
+      checkedName[purpose] = r.name;
       var link = el('a', { href: r.url, target: '_blank', rel: 'noopener', text: r.name });
       // You can use the folder, but n8n's Google account can't (or n8n is unreachable).
       if (!r.n8n.ok) {
@@ -816,6 +856,222 @@
     input.addEventListener('paste', function () {
       clearTimeout(typingTimer);
       setTimeout(function () { checkFolderUI(purpose); }, 0);
+    });
+  });
+
+  // ---------------------------------------------------------------- folder browser
+  // A dialog that walks the person's Drive (as them, through browseFolders)
+  // and hands back the folder they pick. The page then treats it exactly like
+  // a pasted link, so the access checks are the same either way.
+  var PLACES = { root: 'My Drive', drives: 'Shared drives', shared: 'Shared with me' };
+  var FOLDER_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.4c.4 0 .8.2 1 .4L11.5 7h8A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>';
+  var picker = { stack: [], items: [], next: '', req: 0, loading: false, error: '', done: null, searchTimer: null };
+
+  function pickerHere() { return picker.stack[picker.stack.length - 1]; }
+
+  function pickerMsg(kind, text) {
+    var m = $('picker-msg');
+    m.hidden = !text;
+    m.className = 'picker-msg' + (kind ? ' ' + kind : '');
+    m.textContent = text || '';
+  }
+
+  function pickerGo(stack, focusList) {
+    picker.stack = stack;
+    $('picker-new').hidden = true;
+    pickerMsg('', '');
+    pickerLoad(false, focusList);
+  }
+
+  function pickerPlace(place) {
+    $('picker-search').value = '';
+    pickerGo([{ id: place, name: PLACES[place], list: place !== 'root' }]);
+  }
+
+  function pickerLoad(more, focusList) {
+    var here = pickerHere();
+    var req = ++picker.req;
+    picker.loading = true;
+    picker.error = '';
+    if (!more) { picker.items = []; picker.next = ''; }
+    pickerRender();
+    call('browseFolders', here.id, here.query || '', more ? picker.next : '').then(function (r) {
+      if (req !== picker.req) return;
+      if (r.folder) { here.canAdd = r.folder.canAdd; here.url = r.folder.url; }
+      picker.items = picker.items.concat(r.items);
+      picker.next = r.next;
+      picker.loading = false;
+      pickerRender();
+      if (focusList) {
+        var first = $('picker-list').querySelector('.picker-item');
+        (first || $('picker-crumbs').querySelector('[aria-current]')).focus();
+      }
+    }).catch(function (e) {
+      if (req !== picker.req) return;
+      picker.loading = false;
+      picker.error = errText(e);
+      pickerRender();
+    });
+  }
+
+  function pickerRender() {
+    var here = pickerHere();
+    var root = picker.stack[0];
+    Array.prototype.forEach.call($('picker-places').querySelectorAll('button'), function (b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-place') === root.id));
+    });
+
+    var crumbs = $('picker-crumbs');
+    crumbs.innerHTML = '';
+    picker.stack.forEach(function (c, i) {
+      if (i) crumbs.appendChild(el('span', { class: 'sep', 'aria-hidden': 'true', text: '›' }));
+      if (i === picker.stack.length - 1) {
+        crumbs.appendChild(el('span', { class: 'crumb', 'aria-current': 'location', tabindex: '-1', text: c.name }));
+      } else {
+        var b = el('button', { type: 'button', class: 'crumb link', text: c.name });
+        b.addEventListener('click', function () { pickerGo(picker.stack.slice(0, i + 1), true); });
+        crumbs.appendChild(b);
+      }
+    });
+
+    var list = $('picker-list');
+    list.innerHTML = '';
+    list.setAttribute('aria-busy', String(picker.loading));
+    if (picker.items.length) {
+      var ul = el('ul');
+      picker.items.forEach(function (f) {
+        var icon = el('span', { class: 'icon' });
+        icon.innerHTML = FOLDER_ICON;
+        var b = el('button', { type: 'button', class: 'picker-item' + (f.canAdd ? '' : ' ro') }, [
+          icon,
+          el('span', { class: 'name', text: f.name }),
+          f.canAdd ? null : el('span', { class: 'tag', text: 'view only' }),
+          el('span', { class: 'go', 'aria-hidden': 'true', text: '›' }),
+        ]);
+        b.addEventListener('click', function () {
+          pickerGo(picker.stack.concat([{ id: f.id, name: f.name, canAdd: f.canAdd }]), true);
+        });
+        ul.appendChild(el('li', {}, [b]));
+      });
+      list.appendChild(ul);
+    }
+    if (picker.loading) {
+      list.appendChild(el('div', { class: 'picker-empty' }, [el('span', { class: 'spinner' }), document.createTextNode(' Loading…')]));
+    } else if (picker.error) {
+      list.appendChild(el('div', { class: 'picker-empty err', text: picker.error }));
+    } else if (picker.next) {
+      var more = el('button', { type: 'button', class: 'small picker-more', text: 'Show more' });
+      more.addEventListener('click', function () { pickerLoad(true); });
+      list.appendChild(more);
+    } else if (!picker.items.length) {
+      list.appendChild(el('div', { class: 'picker-empty', text:
+        here.id === 'drives' ? "You aren't a member of any shared drives."
+        : here.id === 'shared' ? 'No folders have been shared with you.'
+        : here.id === 'search' ? 'No folders found with "' + here.query + '" in their name.'
+        : 'No folders inside. You can use this one, or make a new folder in it.' }));
+    }
+
+    var usable = !here.list && here.canAdd === true;
+    $('picker-use').disabled = !usable || busy;
+    $('picker-new-btn').disabled = !usable;
+    if (!picker.loading && !here.list && here.canAdd === false) {
+      pickerMsg('info', 'You can only view "' + here.name + '". Pick a folder you can edit, or ask its owner for edit access.');
+    } else if ($('picker-msg').className.indexOf('info') !== -1) {
+      pickerMsg('', '');
+    }
+  }
+
+  // Resolves with { id, name, url, path } or null if closed without choosing.
+  function openPicker() {
+    if (!picker.stack.length) picker.stack = [{ id: 'root', name: PLACES.root }];
+    pickerMsg('', '');
+    $('picker-new').hidden = true;
+    $('picker').showModal();
+    pickerLoad(false, true);
+    return new Promise(function (resolve) { picker.done = resolve; });
+  }
+
+  function closePicker(result) {
+    var done = picker.done;
+    picker.done = null;
+    picker.req++;   // ignore replies still on their way
+    if ($('picker').open) $('picker').close();
+    if (done) done(result || null);
+  }
+
+  $('picker-close').addEventListener('click', function () { closePicker(null); });
+  $('picker-cancel').addEventListener('click', function () { closePicker(null); });
+  $('picker').addEventListener('close', function () { closePicker(null); });
+  // A click on the backdrop (outside the box) closes it too.
+  $('picker').addEventListener('click', function (e) {
+    if (e.target !== $('picker')) return;
+    var r = $('picker').getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) closePicker(null);
+  });
+  Array.prototype.forEach.call($('picker-places').querySelectorAll('button'), function (b) {
+    b.addEventListener('click', function () { pickerPlace(b.getAttribute('data-place')); });
+  });
+  $('picker-use').addEventListener('click', function () {
+    var here = pickerHere();
+    closePicker({
+      id: here.id, name: here.name,
+      url: here.url || 'https://drive.google.com/drive/folders/' + here.id,
+      path: picker.stack.map(function (c) { return c.name; }).join(' › '),
+    });
+  });
+
+  function pickerSearch() {
+    clearTimeout(picker.searchTimer);
+    var q = $('picker-search').value.trim();
+    if (!q) { if (picker.stack[0].id === 'search') pickerPlace('root'); return; }
+    if (picker.stack.length === 1 && picker.stack[0].id === 'search' && picker.stack[0].query === q) return;
+    pickerGo([{ id: 'search', name: 'Search results', list: true, query: q }]);
+  }
+  $('picker-search').addEventListener('input', function () {
+    clearTimeout(picker.searchTimer);
+    picker.searchTimer = setTimeout(pickerSearch, 450);
+  });
+  $('picker-search').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); pickerSearch(); }
+  });
+
+  $('picker-new-btn').addEventListener('click', function () {
+    $('picker-new-in').textContent = '"' + pickerHere().name + '"';
+    $('picker-new-name').value = $('client').value.trim();
+    $('picker-new').hidden = false;
+    $('picker-new-name').focus();
+    $('picker-new-name').select();
+  });
+  $('picker-new-cancel').addEventListener('click', function () { $('picker-new').hidden = true; $('picker-new-btn').focus(); });
+  function createFolder() {
+    var here = pickerHere();
+    var name = $('picker-new-name').value.trim();
+    if (!name) { $('picker-new-name').focus(); return; }
+    $('picker-new-ok').disabled = true;
+    pickerMsg('', 'Creating "' + name + '"…');
+    call('createBrowseFolder', here.id, name).then(function (f) {
+      // Go straight into the new folder, ready to use.
+      pickerGo(picker.stack.concat([{ id: f.id, name: f.name, canAdd: f.canAdd, url: f.url }]), false);
+      $('picker-use').focus();
+    }).catch(function (e) {
+      pickerMsg('err', errText(e));
+    }).then(function () { $('picker-new-ok').disabled = false; });
+  }
+  $('picker-new-ok').addEventListener('click', createFolder);
+  $('picker-new-name').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); createFolder(); }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); $('picker-new').hidden = true; $('picker-new-btn').focus(); }
+  });
+
+  $('output_folder_browse').addEventListener('click', function () {
+    if (busy) return;
+    var btn = this;
+    openPicker().then(function (f) {
+      btn.focus();
+      if (!f) return;
+      $('output_folder').value = f.url;
+      lastChecked.output = '';
+      checkFolderUI('output');
     });
   });
 
