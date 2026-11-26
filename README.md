@@ -31,6 +31,7 @@ to the job log sheet, which the page shows.
 | `n8n/Terminology_job_errors.json` | Error workflow: marks the failed job's log row, matched by execution ID |
 | `docs/terminology-job-flow.html` | The diagrams |
 | `n8n/code/` | Plain copies of Code nodes changed since first setup (XLIFF support, Gemini AI review, lower-case entries, the AI brief, translation suggestions, memoQ wildcards), for pasting into an existing workflow |
+| `docs/new-language-request.html` | The form for requesting a new language |
 | `docs/workflow-nodes.html` | Every n8n node: what it does, what to set up on it, whether it can stop a job |
 | `n8n/superseded/` | The earlier scheduled-check version, for reference only |
 
@@ -185,6 +186,8 @@ How each target term gets its wildcards (batches of 25):
 
 ## Adding a language
 
+**To request one**, fill in `docs/new-language-request.html` (open it in a browser, or use the published copy: <https://claude.ai/artifact/QE6KqsUcMk1Se4FgXCEGCb>). Pick the language and most answers fill in; it produces a request to paste into a Claude Code session, with the `LANGUAGE_LIST` line ready.
+
 Everything about a language is in two places:
 
 | Where | What it holds |
@@ -220,7 +223,8 @@ No other node needs editing: the page sends each job the language's file codes a
    Run `checkLanguages()` from the editor: it lists what each language is offered for and flags mistakes (a repeated code, a space in `tmx`…).
 2. **n8n** (skip for `wildcards` languages): in *Stopword lists*, make sure the code has a list. If YAKE has one under that code, nothing to do. Otherwise add `xx: 'yy'` to `LIST_FOR` to borrow language `yy`'s, or add `xx: [...]` to `EXTRA_STOPWORDS`. Optionally add `CONNECTORS` and `SUFFIXES` for it.
 3. **Deploy** the Apps Script (Deploy → Manage deployments → edit → New version) and save the n8n workflow. A language on the page with no list in n8n fails the job with *No stopword list for the target language "xx"*, naming where to add one.
-4. Run a small job with real client files and read the glossary's translation suggestions: a suggestion that keeps getting cut short or runs on around one word points to a stopword to add or remove.
+4. Add the language to `SUPPORTED` in `docs/new-language-request.html`, so the request form knows it's done.
+5. Run a small job with real client files and read the glossary's translation suggestions: a suggestion that keeps getting cut short or runs on around one word points to a stopword to add or remove.
 
 A variant such as Serbian Cyrillic needs its own code (`sr-cyrl`) and its own words: codes are matched exactly, so it never borrows the Latin `sr` list by accident.
 
