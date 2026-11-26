@@ -87,8 +87,8 @@
           <fieldset class="field group">
             <legend>Save results to</legend>
             <div class="choice">
-              <label><input type="radio" name="output_mode" id="output_mode_job" value="job" checked> A new folder for this job</label>
-              <label><input type="radio" name="output_mode" id="output_mode_folder" value="folder"> A Drive folder I choose</label>
+              <label><input type="radio" name="output_mode" id="output_mode_job" value="job" checked> New folder</label>
+              <label><input type="radio" name="output_mode" id="output_mode_folder" value="folder"> Choose folder</label>
             </div>
             <div id="output-folder-panel" hidden>
               <div class="browse-row">
@@ -100,7 +100,7 @@
                 <input id="output_folder" type="text" autocomplete="off" spellcheck="false" placeholder="https://drive.google.com/drive/folders/…">
                 <button type="button" class="small" id="output_folder_check">Check</button>
               </div>
-              <div class="hint">The glossary, stage 1 candidates and run manifest are added here. File names include the job ID, so nothing is overwritten. With Google Drive for desktop, they also appear in that folder on your computer.</div>
+              <div class="hint">The glossary, stage 1 candidates and run manifest are added here.</div>
               <div id="output_folder_result" class="check-result" aria-live="polite" hidden></div>
             </div>
           </fieldset>
@@ -202,7 +202,7 @@
 
         <div class="step-nav">
           <button type="button" id="back-btn" hidden>Back</button>
-          <button type="button" class="primary" id="next-btn">Next: job settings</button>
+          <button type="button" class="primary" id="next-btn">Next</button>
           <button type="submit" class="primary" id="submit-btn" hidden>Submit job</button>
         </div>
         <div class="progress" id="progress" hidden><div></div></div>
@@ -229,7 +229,7 @@
 
 <dialog id="picker" class="picker" aria-labelledby="picker-h">
   <div class="picker-head">
-    <h2 id="picker-h">Choose a folder for the results</h2>
+    <h2 id="picker-h">Choose a folder</h2>
     <button type="button" class="link picker-x" id="picker-close" aria-label="Close">✕</button>
   </div>
   <div class="picker-tools">
@@ -653,7 +653,7 @@
   $('ai_instructions').addEventListener('input', updateCount);
 
   // ---------------------------------------------------------------- steps
-  var NEXT_LABEL = { 1: 'Next: job settings', 2: 'Next: AI review' };
+  var NEXT_LABEL = { 1: 'Next', 2: 'Next' };
 
   // What's missing on step 1, as { msg, focus } or null.
   function step1Problem() {
